@@ -70,6 +70,40 @@ describe("ConversationManager browser affinity", () => {
     await expect(manager.forget("atlas")).resolves.toBe(false);
     await expect(manager.affinity.get("atlas")).resolves.toBeUndefined();
   });
+
+  it("establishes affinity from the first exact tab result", async () => {
+    const calls: unknown[] = [];
+    const manager = createConversationManager(clientFor(calls, { tabId: "tab-a", conversationId: "conversation-a" }), { stateRoot: await root() });
+    await manager.remember({ key: "atlas", conversationId: "conversation-a" });
+
+    await manager.readLatest({ key: "atlas" });
+
+    await expect(manager.affinity.get("atlas")).resolves.toMatchObject({ tabId: "tab-a" });
+  });
+
+  it("propagates verified affinity when downstream omits tab id", async () => {
+    const calls: unknown[] = [];
+    const manager = createConversationManager(clientFor(calls, { conversationId: "conversation-a" }, result({ tabId: "tab-a", conversationId: "conversation-a" })), { stateRoot: await root() });
+    await manager.remember({ key: "atlas", conversationId: "conversation-a" });
+    await manager.affinity.remember({ key: "atlas", tabId: "tab-a", conversationId: "conversation-a", surface: "chat" });
+
+    const read = await manager.readLatest({ key: "atlas" });
+
+    expect(read.context.tabId).toBe("tab-a");
+    await expect(manager.affinity.get("atlas")).resolves.toMatchObject({ tabId: "tab-a" });
+  });
+
+  it("blocks downstream tab drift without persisting the new tab", async () => {
+    const calls: unknown[] = [];
+    const manager = createConversationManager(clientFor(calls, { tabId: "tab-b", conversationId: "conversation-a" }, result({ tabId: "tab-a", conversationId: "conversation-a" })), { stateRoot: await root() });
+    await manager.remember({ key: "atlas", conversationId: "conversation-a" });
+    await manager.affinity.remember({ key: "atlas", tabId: "tab-a", conversationId: "conversation-a", surface: "chat" });
+
+    const blocked = await manager.readLatest({ key: "atlas" });
+
+    expect(blocked).toMatchObject({ ok: false, blocker: { code: "tab_affinity_lost" } });
+    await expect(manager.affinity.get("atlas")).resolves.toMatchObject({ tabId: "tab-a" });
+  });
 });
 
 function clientFor(calls: unknown[], context: Record<string, string>, bootstrapResult?: CommandResult<unknown>): ConversationClient {

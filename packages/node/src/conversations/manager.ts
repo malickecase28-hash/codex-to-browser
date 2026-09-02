@@ -1,5 +1,5 @@
 import type { AskWorkflowArgs, ChatGPTClient, RunMessagesArgs, WorkflowThread } from "../client.js";
-import type { CommandResult, ReadLatestArgs } from "../types.js";
+import type { CommandContext, CommandResult, ReadLatestArgs } from "../types.js";
 import { join } from "node:path";
 import {
   ConversationRegistry,
@@ -28,6 +28,10 @@ export type ConversationAskArgs = Omit<AskWorkflowArgs, "thread"> & { conversati
 export type ConversationRunMessagesArgs = Omit<RunMessagesArgs, "thread"> & { conversation: ConversationUse };
 export type ConversationManagerOptions = ConversationRegistryOptions & { affinityStateRoot?: string };
 export type ConversationClient = Pick<ChatGPTClient, "ask" | "runMessages" | "openThread" | "readLatest" | "session">;
+type AffinityPreflight =
+  | { state: "none" }
+  | { state: "verified"; tabId: string; semantic: Pick<CommandContext, "conversationId" | "url"> }
+  | { state: "blocked"; result: CommandResult<unknown> };
 
 export class ConversationNotFoundError extends Error {
   readonly key: string;
@@ -102,43 +106,43 @@ export class ConversationManager {
 
   async open(use: ConversationUse): Promise<CommandResult<unknown>> {
     const resolution = await this.resolve(use);
-    const blocked = await this.preflightAffinity(resolution);
-    if (blocked !== undefined) return blocked;
-    const result = await this.client.openThread(resolution.thread);
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
+    const result = this.applyAffinity(await this.client.openThread(resolution.thread), preflight);
     if (result.ok) await this.persistObserved({ ...use, key: resolution.key }, result, undefined, resolution.source === "new" || resolution.source === "current");
     return result;
   }
 
   async readLatest(use: ConversationUse, args?: ReadLatestArgs): Promise<CommandResult<unknown>> {
     const resolution = await this.resolve(use);
-    const blocked = await this.preflightAffinity(resolution);
-    if (blocked !== undefined) return blocked;
-    const opened = await this.client.openThread(resolution.thread);
-    if (!opened.ok) return opened;
-    await this.persistObserved({ ...use, key: resolution.key }, opened, undefined, resolution.source === "new" || resolution.source === "current");
-    const result = await this.client.readLatest(args);
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
+    const verifiedOpened = this.applyAffinity(await this.client.openThread(resolution.thread), preflight);
+    if (!verifiedOpened.ok) return verifiedOpened;
+    await this.persistObserved({ ...use, key: resolution.key }, verifiedOpened, undefined, resolution.source === "new" || resolution.source === "current");
+    const result = this.applyAffinity(await this.client.readLatest(args), preflight);
     if (result.ok) await this.persistObserved({ ...use, key: resolution.key }, result, undefined, resolution.source === "new" || resolution.source === "current");
     return result;
   }
 
   async ask(args: ConversationAskArgs): Promise<CommandResult<unknown>> {
     const resolution = await this.resolve(args.conversation);
-    const blocked = await this.preflightAffinity(resolution);
-    if (blocked !== undefined) return blocked;
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
     const { conversation: _conversation, ...input } = args;
-    const result = await this.client.ask({ ...input, thread: resolution.thread, ...(await this.existingTab(resolution)) });
-    await this.assertObservedAffinity(resolution, result);
+    const result = this.applyAffinity(await this.client.ask({ ...input, thread: resolution.thread, ...(await this.existingTab(resolution)) }), preflight);
+    if (!result.ok) return result;
     if (result.ok) await this.persistObserved({ ...args.conversation, key: resolution.key }, result, input.experience, resolution.source === "new" || resolution.source === "current");
     return result;
   }
 
   async runMessages(args: ConversationRunMessagesArgs): Promise<CommandResult<unknown>> {
     const resolution = await this.resolve(args.conversation);
-    const blocked = await this.preflightAffinity(resolution);
-    if (blocked !== undefined) return blocked;
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
     const { conversation: _conversation, ...input } = args;
-    const result = await this.client.runMessages({ ...input, thread: resolution.thread, ...(await this.existingTab(resolution)) });
-    await this.assertObservedAffinity(resolution, result);
+    const result = this.applyAffinity(await this.client.runMessages({ ...input, thread: resolution.thread, ...(await this.existingTab(resolution)) }), preflight);
+    if (!result.ok) return result;
     if (result.ok) await this.persistObserved({ ...args.conversation, key: resolution.key }, result, input.experience, resolution.source === "new" || resolution.source === "current");
     return result;
   }
@@ -172,9 +176,9 @@ export class ConversationManager {
     return record === undefined ? {} : { existingTab: { target: { type: "tabId", tabId: record.tabId }, ifMissing: "block", ifMultiple: "block", requireChatGPT: true } };
   }
 
-  private async preflightAffinity(resolution: ConversationResolution): Promise<CommandResult<unknown> | undefined> {
+  private async preflightAffinity(resolution: ConversationResolution): Promise<AffinityPreflight> {
     const affinity = await this.affinity.get(resolution.key);
-    if (affinity === undefined) return undefined;
+    if (affinity === undefined) return { state: "none" };
 
     const result = await this.client.session.bootstrap({
       existingTab: {
@@ -185,7 +189,7 @@ export class ConversationManager {
       },
       preferExistingTab: true
     });
-    if (!result.ok) return result;
+    if (!result.ok) return { state: "blocked", result };
 
     const expectedIdentity = resolution.record?.conversationId
       ?? conversationIdFromUrl(resolution.record?.url)
@@ -197,21 +201,21 @@ export class ConversationManager {
       || !isChatGPTConversationUrl(result.context.url)
       || (expectedIdentity !== undefined && actualIdentity !== expectedIdentity)
     ) {
-      return affinityBlocker(result);
+      return { state: "blocked", result: affinityBlocker(result) };
     }
-    return undefined;
+    return { state: "verified", tabId: affinity.tabId, semantic: { ...(actualIdentity === undefined ? {} : { conversationId: actualIdentity }), ...(result.context.url === undefined ? {} : { url: result.context.url }) } };
   }
 
-  private async assertObservedAffinity(resolution: ConversationResolution, result: CommandResult<unknown>): Promise<void> {
-    if (!result.ok) return;
-    const expected = await this.affinity.get(resolution.key);
-    if (expected === undefined) return;
+  private applyAffinity(result: CommandResult<unknown>, preflight: AffinityPreflight): CommandResult<unknown> {
+    if (preflight.state !== "verified") return result;
     const actual = result.context;
-    const matchesId = expected.conversationId === undefined || actual.conversationId === expected.conversationId;
-    const matchesUrl = expected.url === undefined || (actual.url !== undefined && conversationUrlMatches(actual.url, expected.url));
-    if (actual.tabId !== expected.tabId || !isChatGPTConversationUrl(actual.url) || !matchesId || !matchesUrl) {
-      throw new Error("ChatGPT browser affinity verification failed.");
-    }
+    if (actual.tabId !== undefined && actual.tabId !== preflight.tabId) return affinityBlocker(result);
+    const actualIdentity = actual.conversationId ?? conversationIdFromUrl(actual.url);
+    if (
+      (preflight.semantic.conversationId !== undefined && actualIdentity !== preflight.semantic.conversationId)
+      || (preflight.semantic.url !== undefined && (actual.url === undefined || !conversationUrlMatches(actual.url, preflight.semantic.url)))
+    ) return affinityBlocker(result);
+    return actual.tabId === undefined ? { ...result, context: { ...actual, tabId: preflight.tabId } } : result;
   }
 
   private async rememberAffinityObserved(use: ConversationUse, result: CommandResult<unknown>, experience?: "chat" | "work"): Promise<void> {
