@@ -29,6 +29,29 @@ const result = await chatgpt.runner.run(reviewer, {
 });
 ```
 
+Remember logical conversation names without changing the default behavior of
+`chatgpt.ask()`:
+
+```ts
+import { createChatGPT, createConversationManager } from "codex-chatgpt-control";
+
+const conversations = createConversationManager(createChatGPT({ agent: globalThis.agent }));
+await conversations.remember({ key: "architecture-review", conversationId: "<conversation-id>" });
+
+await conversations.ask({
+  conversation: { key: "architecture-review" },
+  prompt: "Continue the review.",
+  wait: true,
+  read: true
+});
+```
+
+Use `policy: "new"` or `policy: "current"` for explicit new/current chats;
+unremembered keys search ChatGPT history by default. The registry stores
+conversation metadata only. Inspect it from a terminal with
+`npm run conversations -- list` or bind a known thread with
+`npm run conversations -- remember <key> --conversation-id <id>`.
+
 ## Transactional operation preview
 
 Supported Chat, Work, Runner, and Responses workflows accept an optional

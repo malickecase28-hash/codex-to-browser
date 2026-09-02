@@ -35,6 +35,7 @@
     "test:backend-conformance": "vitest run tests/unit/backend-conformance.test.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "conversations": "tsx src/scripts/conversations.ts",
     "thread": "tsx src/scripts/continue-thread.ts",
     "capture:intelligence-locales": "tsx src/scripts/capture-intelligence-locales.ts",
     "capture:intelligence-locales:queue": "tsx src/scripts/capture-intelligence-locales.ts --print-queue",

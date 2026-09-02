@@ -32,6 +32,8 @@ export * from "./commands/helpers.js";
 export * from "./commands/doctor.js";
 export * from "./commands/reports.js";
 export * from "./commands/registry.js";
+export * from "./conversations/registry.js";
+export * from "./conversations/manager.js";
 export * from "./client.js";
 export * from "./browser/downloads.js";
 export * from "./dom/menus.js";
