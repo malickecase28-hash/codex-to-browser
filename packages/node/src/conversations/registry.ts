@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { nodeErrorCode } from "../errors.js";
 
 // ponytail: process-local registry queue; add a lockfile if cross-process writers become a supported workload.
 const writeQueues = new Map<string, Promise<unknown>>();
@@ -252,5 +253,5 @@ function isConversationRecord(value: unknown): value is ConversationRecord {
 }
 
 function isNodeError(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code;
+  return nodeErrorCode(error) === code;
 }

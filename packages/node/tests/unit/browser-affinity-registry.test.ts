@@ -14,6 +14,13 @@ async function root(): Promise<string> {
 afterEach(async () => Promise.all(roots.splice(0).map(value => rm(value, { recursive: true, force: true }))));
 
 describe("BrowserAffinityRegistry", () => {
+  it("returns empty results for a missing state root", async () => {
+    const registry = new BrowserAffinityRegistry({ stateRoot: join(tmpdir(), "chatgpt-affinity-missing-root") });
+
+    await expect(registry.get("atlas")).resolves.toBeUndefined();
+    await expect(registry.list()).resolves.toEqual([]);
+  });
+
   it("persists strict metadata atomically with private permissions", async () => {
     const stateRoot = await root();
     const registry = new BrowserAffinityRegistry({ stateRoot });

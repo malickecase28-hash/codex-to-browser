@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { dirname, join } from "node:path";
+import { nodeErrorCode } from "../errors.js";
 import type { ConversationSurface } from "./registry.js";
 
 const writeQueues = new Map<string, Promise<unknown>>();
@@ -131,4 +132,4 @@ function isBrowserAffinityRecord(value: unknown): value is BrowserAffinityRecord
   if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") return false;
   return (record.conversationId === undefined || typeof record.conversationId === "string") && (record.url === undefined || typeof record.url === "string") && (record.conversationId !== undefined || record.url !== undefined);
 }
-function isNodeError(error: unknown, code: string): boolean { return error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code; }
+function isNodeError(error: unknown, code: string): boolean { return nodeErrorCode(error) === code; }

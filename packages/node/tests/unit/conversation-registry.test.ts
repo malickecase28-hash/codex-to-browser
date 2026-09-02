@@ -17,6 +17,13 @@ afterEach(async () => {
 });
 
 describe("ConversationRegistry", () => {
+  it("returns empty results for a missing state root", async () => {
+    const registry = new ConversationRegistry({ stateRoot: join(tmpdir(), "chatgpt-conversations-missing-root") });
+
+    await expect(registry.get("atlas")).resolves.toBeUndefined();
+    await expect(registry.list()).resolves.toEqual([]);
+  });
+
   it("remembers and retrieves conversation metadata", async () => {
     const registry = new ConversationRegistry({ stateRoot: await temporaryRoot() });
 
