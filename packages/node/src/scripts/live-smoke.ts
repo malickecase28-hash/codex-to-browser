@@ -1,11 +1,13 @@
 import { join } from "node:path";
+import { resolveChatGPTBrowser } from "../browser/attach.js";
+import { loadCodexBrowserAgent } from "../environment.js";
 import { BROWSER_BRIDGE_REMEDIATION, BROWSER_BRIDGE_UNAVAILABLE_MESSAGE } from "../errors.js";
 import { envText, filterScenarios, runLiveSmoke } from "./live-smoke/harness.js";
 import { optionalScenarios, requiredScenarios } from "./live-smoke/scenarios.js";
 import type { LiveSmokeBrowser, LiveSmokeContext } from "./live-smoke/types.js";
 
 const globals = globalThis as Record<string, unknown>;
-const agent = globals.agent;
+const agent = globals.agent ?? await loadCodexBrowserAgent();
 
 if (agent === undefined) {
   console.log(JSON.stringify({
@@ -22,12 +24,13 @@ if (agent === undefined) {
 } else {
   const context: LiveSmokeContext = {
     agent,
+    browser: await resolveChatGPTBrowser({ agent }),
     reportDir: join(process.cwd(), "reports", "live-smoke")
   };
 
   const browser = globals.browser as LiveSmokeBrowser | undefined;
   if (browser !== undefined) {
-    context.browser = browser;
+    context.cleanupBrowser = browser;
   }
   const knownThreadQuery = envText("CHATGPT_SMOKE_QUERY");
   if (knownThreadQuery !== undefined) {

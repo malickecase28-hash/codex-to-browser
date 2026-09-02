@@ -83,10 +83,37 @@ function readDataMember<T>(value: ObjectLike, key: PropertyKey, label: string): 
 }
 
 function optionalCallable(value: ObjectLike, key: PropertyKey, label: string): AnyFunction | undefined {
-  const member = readDataMember<unknown>(value, key, label);
-  if (member === undefined) return undefined;
-  if (typeof member !== "function") return invalid(`${label} is not callable`);
-  return member as AnyFunction;
+  let current: ObjectLike | null = value;
+  for (let depth = 0; current !== null && depth < MAX_PROTO_DEPTH; depth += 1) {
+    let descriptor: PropertyDescriptor | undefined;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(current, key);
+    } catch (error) {
+      return invalid(`Cannot inspect ${label}: provider property access failed`, error);
+    }
+    if (descriptor !== undefined) {
+      if (!("value" in descriptor)) return invalid(`Cannot use ${label}: accessor-backed provider members are not supported`);
+      if (descriptor.value === undefined) return undefined;
+      if (typeof descriptor.value !== "function") return invalid(`${label} is not callable`);
+      if (current !== value) {
+        try {
+          const receiverSafe = Reflect.get(value, key, value);
+          if (typeof receiverSafe === "function") return receiverSafe as AnyFunction;
+        } catch (error) {
+          return invalid(`Cannot inspect ${label}: provider property access failed`, error);
+        }
+      }
+      return descriptor.value as AnyFunction;
+    }
+    try {
+      const prototype = Object.getPrototypeOf(current);
+      current = isObjectLike(prototype) ? prototype : null;
+    } catch (error) {
+      return invalid(`Cannot inspect ${label}: provider prototype access failed`, error);
+    }
+  }
+  if (current !== null) return invalid(`Cannot inspect ${label}: provider prototype depth exceeded`);
+  return undefined;
 }
 
 function normalizeOwner(owner: CoordinatorOwner | undefined): CoordinatorOwner {

@@ -22,7 +22,90 @@ const deferred = <T = void>() => {
 
 const owner = (id: string) => ({ backendSessionId: "session", ownerId: id });
 
+class PrivateTabsProvider {
+  #tabId = "private-tab";
+
+  list(): PageLike[] {
+    return [{ id: this.#tabId }];
+  }
+}
+
+class PrivateUserProvider {
+  #tabId = "private-tab";
+
+  openTabs(): Array<{ id: string }> {
+    return [{ id: this.#tabId }];
+  }
+}
+
+function boundPrivateProvider<T extends object>(provider: T): T {
+  return new Proxy(provider, {
+    get(target, key) {
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+}
+
 describe("coordinated browser runtime facade", () => {
+  it("rejects accessor-backed tab methods without invoking getters", () => {
+    let getterReads = 0;
+    const tabs = {} as NonNullable<BrowserLike["tabs"]>;
+    Object.defineProperty(tabs, "list", {
+      get: () => {
+        getterReads += 1;
+        return async () => [];
+      }
+    });
+    const user = {} as NonNullable<BrowserLike["user"]>;
+    Object.defineProperty(user, "openTabs", {
+      get: () => {
+        getterReads += 1;
+        return async () => [];
+      }
+    });
+
+    expect(() => createCoordinatedBrowser({ name: "chrome", tabs }, {
+      coordinator: new ProcessTabCoordinator(),
+      owner: owner("accessor-tabs")
+    })).toThrow(/accessor-backed provider members are not supported/);
+    expect(() => createCoordinatedBrowser({ name: "chrome", user }, {
+      coordinator: new ProcessTabCoordinator(),
+      owner: owner("accessor-user")
+    })).toThrow(/accessor-backed provider members are not supported/);
+    expect(getterReads).toBe(0);
+  });
+
+  it("calls ordinary own data function providers", async () => {
+    const browser: BrowserLike = {
+      name: "chrome",
+      tabs: { list: async () => [{ id: "own-tab" }] }
+    };
+    const coordinated = createCoordinatedBrowser(browser, {
+      coordinator: new ProcessTabCoordinator(),
+      owner: owner("own-function")
+    });
+
+    await expect(coordinated.tabs!.list!()).resolves.toEqual([{ id: "own-tab" }]);
+  });
+
+  it("preserves provider private brands through normal method access", async () => {
+    const browser: BrowserLike = {
+      name: "chrome",
+      tabs: boundPrivateProvider(new PrivateTabsProvider()),
+      user: boundPrivateProvider(new PrivateUserProvider())
+    };
+    const directTabs = browser.tabs!.list!();
+    const directOpenTabs = browser.user!.openTabs!();
+    const coordinated = createCoordinatedBrowser(browser, {
+      coordinator: new ProcessTabCoordinator(),
+      owner: owner("private-brand")
+    });
+
+    await expect(coordinated.tabs!.list!()).resolves.toEqual(directTabs);
+    await expect(coordinated.user!.openTabs!()).resolves.toEqual(directOpenTabs);
+  });
+
   it("serializes browser methods across separate clients sharing one browser", async () => {
     const gate = deferred();
     const events: string[] = [];

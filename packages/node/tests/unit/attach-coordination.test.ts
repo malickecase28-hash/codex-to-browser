@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachChatGPTBrowser } from "../../src/browser/attach.js";
+import { attachChatGPTBrowser, resolveChatGPTBrowser } from "../../src/browser/attach.js";
 import { unwrapCoordinatedBrowser } from "../../src/runtime/coordinated-browser.js";
 import { unwrapCoordinatedPage } from "../../src/runtime/coordinated-page.js";
 import type { BrowserLike, PageLike } from "../../src/types.js";
@@ -18,6 +18,28 @@ function pageFixture(id: string): PageLike {
 }
 
 describe("ChatGPT browser attachment coordination", () => {
+  it("normalizes descriptor tabs returned by the agent browser", async () => {
+    const agent = {
+      browsers: {
+        get: async () => ({
+          name: "chrome",
+          tabs: {
+            list: async () => [{ id: "descriptor-tab", url: "https://chatgpt.com/c/descriptor", title: "Descriptor tab" }]
+          }
+        })
+      }
+    };
+
+    const browser = await resolveChatGPTBrowser({ agent });
+    const [tab] = await browser.tabs!.list!();
+
+    expect(tab?.id).toBe("descriptor-tab");
+    expect(tab?.url).toBeTypeOf("function");
+    expect(tab?.title).toBeTypeOf("function");
+    expect(await tab?.url!()).toBe("https://chatgpt.com/c/descriptor");
+    expect(await tab?.title!()).toBe("Descriptor tab");
+  });
+
   it("normalizes receiver-bound browser bridge proxies before coordination", async () => {
     const rawPage = pageFixture("private-field-tab");
     let createCalls = 0;
