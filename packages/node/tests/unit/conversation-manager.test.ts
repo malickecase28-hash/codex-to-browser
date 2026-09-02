@@ -167,6 +167,7 @@ function clientFor(calls: unknown[], context: Record<string, string> = {}): Conv
   });
 
   return {
+    session: { bootstrap: async () => ok() },
     ask: async args => {
       calls.push({ method: "ask", args });
       return ok();

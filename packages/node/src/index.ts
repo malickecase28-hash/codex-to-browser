@@ -38,6 +38,7 @@ export * from "./commands/reports.js";
 export * from "./commands/registry.js";
 export * from "./conversations/registry.js";
 export * from "./conversations/manager.js";
+export * from "./conversations/browser-affinity.js";
 export * from "./client.js";
 export * from "./environment.js";
 export * from "./browser/downloads.js";
