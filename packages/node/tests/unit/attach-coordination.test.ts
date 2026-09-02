@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachChatGPTBrowser, resolveChatGPTBrowser } from "../../src/browser/attach.js";
+import { attachChatGPTBrowser, bindPageTabId, resolveChatGPTBrowser, tabIdFromPage } from "../../src/browser/attach.js";
 import { unwrapCoordinatedBrowser } from "../../src/runtime/coordinated-browser.js";
 import { unwrapCoordinatedPage } from "../../src/runtime/coordinated-page.js";
 import type { BrowserLike, PageLike } from "../../src/types.js";
@@ -115,5 +115,33 @@ describe("ChatGPT browser attachment coordination", () => {
     } }, { preferExistingTab: false });
     expect(unwrapCoordinatedPage(created.page)).toBe(createdPage);
     expect(created.tabId).toBe("created-tab");
+  });
+
+  it("binds the inventory id when the claimed page reports a misleading id", async () => {
+    const claimedPage = pageFixture("misleading-page-id");
+    const browser: BrowserLike = {
+      name: "chrome",
+      user: {
+        openTabs: async () => [{ id: "tab-a", url: "https://chatgpt.com/c/attach-test" }],
+        claimTab: async () => claimedPage
+      }
+    };
+
+    const attached = await attachChatGPTBrowser({ browser }, { existingTab: true });
+
+    expect(attached.tabId).toBe("tab-a");
+  });
+
+  it("does not infer identity from an unbound page", async () => {
+    expect(tabIdFromPage(pageFixture("generic"))).toBeUndefined();
+  });
+
+  it("keeps binding provenance stable across ordinary identity mutation and authoritative rebinding", () => {
+    const page = pageFixture("tab-a");
+    bindPageTabId(page, "tab-a");
+    page.id = "tab-b";
+    expect(tabIdFromPage(page)).toBe("tab-a");
+    bindPageTabId(page, "tab-b");
+    expect(tabIdFromPage(page)).toBe("tab-b");
   });
 });

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createChatGPT } from "../../src/client.js";
+import { bindPageTabId } from "../../src/browser/attach.js";
 import type { BrowserLike, CommandResult, PageLike } from "../../src/types.js";
 import { OperationJournal } from "../../src/operations/journal.js";
 import type { OperationHandleAdapterFactoryContext } from "../../src/operations/client.js";
@@ -1499,14 +1500,14 @@ describe("createChatGPT", () => {
     });
   });
 
-  it("blocks direct primitives when the claimed tab changes after bootstrap", async () => {
+  it("blocks direct primitives after authoritative rebinding", async () => {
     const page = fakeChatGPTPage() as PageLike;
     page.id = "tab-1";
     const browser: BrowserLike = { name: "chrome", tabs: { selected: () => page } };
     const chatgpt = createChatGPT({ browser });
 
     const boot = await chatgpt.session.bootstrap({ preferExistingTab: true });
-    page.id = "tab-2";
+    bindPageTabId(page, "tab-2");
     const result = await chatgpt.messages.status();
 
     expect(boot.ok).toBe(true);
@@ -1517,6 +1518,46 @@ describe("createChatGPT", () => {
       kind: "selector_drift",
       code: "tab_affinity_lost"
     });
+  });
+
+  it("blocks a distinct trusted page bound to the wrong tab before the command body", async () => {
+    const page = fakeChatGPTPage() as PageLike;
+    bindPageTabId(page, "tab-b");
+    const result = await createChatGPT({ page, expectedTabId: "tab-a" }).messages.status();
+
+    expect(result).toMatchObject({ ok: false, status: "blocked", blocker: { code: "tab_affinity_lost" } });
+  });
+
+  it("does not use page.id as an affinity claim", async () => {
+    const page = fakeChatGPTPage() as PageLike;
+    page.id = "tab-a";
+    const result = await createChatGPT({ page, expectedTabId: "tab-a" }).messages.status();
+
+    expect(result).toMatchObject({ ok: false, status: "blocked", blocker: { code: "tab_affinity_unverifiable" } });
+  });
+
+  it("requires a present inventory to retain the trusted tab", async () => {
+    const page = fakeChatGPTPage() as PageLike;
+    bindPageTabId(page, "tab-a");
+    const result = await createChatGPT({
+      page,
+      browser: { user: { openTabs: async () => [{ id: "tab-b", url: "https://chatgpt.com/" }] } },
+      expectedTabId: "tab-a"
+    }).messages.status();
+
+    expect(result).toMatchObject({ ok: false, status: "blocked", blocker: { code: "tab_affinity_lost" } });
+  });
+
+  it("fails closed when inventory verification is unavailable", async () => {
+    const page = fakeChatGPTPage() as PageLike;
+    bindPageTabId(page, "tab-a");
+    const result = await createChatGPT({
+      page,
+      browser: { user: { openTabs: async () => { throw new Error("temporary bridge failure"); } } },
+      expectedTabId: "tab-a"
+    }).messages.status();
+
+    expect(result).toMatchObject({ ok: false, status: "blocked", blocker: { kind: "browser_bridge_unavailable" } });
   });
 });
 

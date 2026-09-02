@@ -32,11 +32,6 @@ export async function contextFromPage(
     ...partial
   };
 
-  const tabId = dataString(page, "id") ?? dataString(page, "tabId");
-  if (tabId !== undefined) {
-    context.tabId = tabId;
-  }
-
   if (url !== undefined) {
     context.url = url;
   }
@@ -54,11 +49,4 @@ export async function contextFromPage(
   }
 
   return context;
-}
-
-function dataString(value: object, key: string): string | undefined {
-  const descriptor = Object.getOwnPropertyDescriptor(value, key);
-  return descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string"
-    ? descriptor.value
-    : undefined;
 }

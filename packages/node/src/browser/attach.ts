@@ -14,7 +14,13 @@ const MAX_EXISTING_TAB_DIAGNOSTIC_FIELD_LENGTH = 240;
 
 type ExistingTabSelectionOutcome = {
   page?: PageLike;
+  tabId?: string;
   diagnostics?: ExistingTabDiagnostics;
+};
+
+export type AttachedPageSelection = {
+  page: PageLike;
+  tabId?: string;
 };
 
 export type AttachedBrowser = {
@@ -30,7 +36,9 @@ export async function attachChatGPTBrowser(
   coordination?: CoordinatedBrowserOptions
 ): Promise<AttachedBrowser> {
   const browser = await getBrowser(env, coordination);
-  const page = await getOrCreateChatGPTPage(browser, env, args, coordination);
+  const selection = await getOrCreateChatGPTPage(browser, env, args, coordination);
+  const { page } = selection;
+  bindPageTabId(page, selection.tabId);
   await assertPageOnChatGPTOrigin(page);
   const state = await readPageState(page);
   if (!isChatGPTUrl(state.url)) throw unsafeChatGPTOriginError();
@@ -45,10 +53,7 @@ export async function attachChatGPTBrowser(
     browserName: browser.name ?? "chrome"
   };
 
-  const tabId = tabIdFromPage(page);
-  if (tabId !== undefined) {
-    attached.tabId = tabId;
-  }
+  if (selection.tabId !== undefined) attached.tabId = selection.tabId;
 
   return attached;
 }
@@ -103,7 +108,7 @@ async function getOrCreateChatGPTPage(
   env: RuntimeEnv,
   args: BootstrapArgs,
   coordination?: CoordinatedBrowserOptions
-): Promise<PageLike> {
+): Promise<AttachedPageSelection> {
   const targetUrl = args.url ?? CHATGPT_HOME;
   assertSafeChatGPTNavigation(targetUrl);
   const explicitExistingPolicy = normalizeExplicitExistingTabPolicy(args);
@@ -114,14 +119,15 @@ async function getOrCreateChatGPTPage(
     // the explicit seam so a page is never nested under two coordinators.
     const cached = createCoordinatedPageForBrowser(normalizePage(env.page), browser, coordination);
     if (await cachedPageMatchesBootstrapArgs(cached, args, explicitExistingPolicy)) {
-      return cached;
+      const tabId = tabIdFromPage(env.page);
+      return tabId === undefined ? { page: cached } : { page: cached, tabId };
     }
   }
 
   if (explicitExistingPolicy !== undefined) {
     const existing = await selectExistingTab(browser, explicitExistingPolicy);
     if (existing.page !== undefined) {
-      return existing.page;
+      return existing as AttachedPageSelection;
     }
 
     const ifMissing = explicitExistingPolicy.ifMissing ?? "block";
@@ -138,7 +144,7 @@ async function getOrCreateChatGPTPage(
       : targetUrl;
     const created = await createTab(browser, missingUrl);
     if (created !== undefined) {
-      return created;
+      return pageSelection(created);
     }
     throw new BrowserBridgeUnavailableError("Codex can access a browser object, but no tab creation API was found.");
   }
@@ -152,7 +158,7 @@ async function getOrCreateChatGPTPage(
 
   const created = await createTab(browser, targetUrl);
   if (created !== undefined) {
-    return created;
+    return pageSelection(created);
   }
 
   throw new BrowserBridgeUnavailableError("Codex can access a browser object, but no tab creation API was found.");
@@ -208,8 +214,8 @@ async function selectExistingTab(browser: BrowserLike, policy: ExistingTabPolicy
     const selected = await Promise.resolve(browser.tabs.selected.call(browser.tabs)).catch(() => undefined);
     if (selected !== undefined) {
       const normalized = normalizePage(selected);
-      if (await pageMatchesExistingTarget(normalized, policy)) {
-        return { page: normalized };
+      if (await pageMatchesExistingTarget(normalized, policy, pageIdValue(normalized))) {
+        return pageSelection(normalized);
       }
     }
   }
@@ -218,21 +224,22 @@ async function selectExistingTab(browser: BrowserLike, policy: ExistingTabPolicy
     const tab = await Promise.resolve(browser.tabs.get.call(browser.tabs, policy.target.tabId)).catch(() => undefined);
     if (tab !== undefined) {
       const normalized = normalizePage(tab);
-      if (await pageMatchesExistingTarget(normalized, policy)) {
-        return { page: normalized };
+      if (await pageMatchesExistingTarget(normalized, policy, policy.target.tabId)) {
+        return { page: normalized, tabId: policy.target.tabId };
       }
     }
   }
 
   if (typeof browser.tabs?.list === "function") {
     const controlled = await Promise.resolve(browser.tabs.list.call(browser.tabs)).catch(() => []);
-    const matches: PageLike[] = [];
+    const matches: AttachedPageSelection[] = [];
     for (const candidate of controlled) {
       const page = await hydrateTab(browser, candidate);
-      if (await pageMatchesExistingTarget(page, policy)) matches.push(page);
+      const tabId = pageIdValue(candidate) ?? pageIdValue(page);
+      if (await pageMatchesExistingTarget(page, policy, tabId)) matches.push({ page, ...(tabId === undefined ? {} : { tabId }) });
     }
     if (matches.length === 1 || (matches.length > 1 && (policy.ifMultiple ?? "block") === "first")) {
-      return { page: matches[0]! };
+      return matches[0]!;
     }
     if (matches.length > 1) {
       throw new ExistingTabSelectionError(
@@ -283,7 +290,7 @@ async function selectExistingUserTab(
   const selected = matches[0]!;
   const page = normalizePage(await claimTab.call(browser.user, selected));
   await assertPageOnChatGPTOrigin(page);
-  return diagnostics === undefined ? { page } : { page, diagnostics };
+  return diagnostics === undefined ? { page, tabId: selected.id } : { page, tabId: selected.id, diagnostics };
 }
 
 function userTabMatchesTarget(tab: BrowserUserTabInfo, policy: ExistingTabPolicy): boolean {
@@ -412,16 +419,16 @@ function mismatchReasonForNoMatches(
   }
 }
 
-async function pageMatchesExistingTarget(page: PageLike, policy: ExistingTabPolicy): Promise<boolean> {
+async function pageMatchesExistingTarget(page: PageLike, policy: ExistingTabPolicy, authoritativeTabId?: string): Promise<boolean> {
   const url = await Promise.resolve(page.url?.()).catch(() => undefined);
   const title = await Promise.resolve(page.title?.()).catch(() => undefined);
-  const tab: BrowserUserTabInfo = { id: tabIdFromPage(page) ?? "" };
+  const tab: BrowserUserTabInfo = { id: authoritativeTabId ?? "" };
   if (url !== undefined) tab.url = url;
   if (title !== undefined) tab.title = title;
   return userTabMatchesTarget(tab, policy);
 }
 
-async function findExistingChatGPTTab(browser: BrowserLike): Promise<PageLike | undefined> {
+async function findExistingChatGPTTab(browser: BrowserLike): Promise<AttachedPageSelection | undefined> {
   // Reuse a tab already controlled by this browser session before attempting
   // to claim an external user tab. Claiming a tab that is still associated
   // with an interrupted host call can otherwise wait on a stale control lock
@@ -434,7 +441,7 @@ async function findExistingChatGPTTab(browser: BrowserLike): Promise<PageLike | 
         const normalized = normalizePage(current);
         try {
           if (isChatGPTUrl(await normalized.url?.())) {
-            return normalized;
+            return pageSelection(normalized);
           }
         } catch {
           // Continue to full tab list.
@@ -452,7 +459,7 @@ async function findExistingChatGPTTab(browser: BrowserLike): Promise<PageLike | 
     for (const tab of normalized) {
       try {
         if (isChatGPTUrl(await tab.url?.())) {
-          return tab;
+          return pageSelection(tab);
         }
       } catch {
         // Keep looking.
@@ -472,7 +479,7 @@ async function findExistingChatGPTTab(browser: BrowserLike): Promise<PageLike | 
     return { page: undefined };
   });
   if (userTab.page !== undefined) {
-    return userTab.page;
+    return userTab as AttachedPageSelection;
   }
   return undefined;
 }
@@ -787,7 +794,28 @@ function isPageWrapper(value: unknown): value is PageLike {
 }
 
 export function tabIdFromPage(page: PageLike): string | undefined {
-  const maybe = page as Record<string, unknown>;
-  const id = maybe.id ?? maybe.tabId;
-  return typeof id === "string" ? id : undefined;
+  return pageTabIds.get(page as object) ?? pageTabIds.get(unwrapCoordinatedPage(page) as object);
+}
+
+function pageSelection(page: PageLike): AttachedPageSelection {
+  const tabId = pageIdValue(page);
+  return tabId === undefined ? { page } : { page, tabId };
+}
+
+function pageIdValue(value: unknown): string | undefined {
+  if ((typeof value !== "object" && typeof value !== "function") || value === null) return undefined;
+  for (const key of ["id", "tabId"] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string") return descriptor.value;
+  }
+  return undefined;
+}
+
+const pageTabIds = new WeakMap<object, string>();
+
+export function bindPageTabId(page: PageLike, tabId: string | undefined): void {
+  if (tabId === undefined) return;
+  pageTabIds.set(page as object, tabId);
+  const raw = unwrapCoordinatedPage(page);
+  if (typeof raw === "object" && raw !== null) pageTabIds.set(raw, tabId);
 }

@@ -1,6 +1,6 @@
 import { attachChatGPTBrowser, isChatGPTUrl, tabIdFromPage } from "../browser/attach.js";
 import { readPageState } from "../browser/page-state.js";
-import { resultError, resultOk } from "../errors.js";
+import { BrowserBridgeUnavailableError, resultError, resultOk } from "../errors.js";
 import { unwrapCoordinatedPage } from "../runtime/coordinated-page.js";
 import type { BootstrapArgs, BootstrapData, CommandResult, RuntimeEnv } from "../types.js";
 import { contextFromPage } from "./context.js";
@@ -100,16 +100,43 @@ export async function verifyTabAffinity(env: RuntimeEnv): Promise<CommandResult<
   // Affinity verification has a different job: it must inspect the provider
   // page that the facade protects and detect a changed/reused tab claim.
   const actualTabId = tabIdFromPage(unwrapCoordinatedPage(env.page));
-  if (actualTabId === env.expectedTabId) {
+  if (actualTabId === undefined) {
+    return affinityResult(env, "tab_affinity_unverifiable", actualTabId);
+  }
+  if (actualTabId !== env.expectedTabId) {
+    return affinityResult(env, "tab_affinity_lost", actualTabId);
+  }
+
+  const openTabs = env.browser?.user?.openTabs;
+  if (typeof openTabs !== "function") {
     return undefined;
   }
 
-  const code = actualTabId === undefined ? "tab_affinity_unverifiable" : "tab_affinity_lost";
-  const message = actualTabId === undefined
-    ? `ChatGPT command cannot verify it is still attached to expected tab ${env.expectedTabId}.`
-    : `ChatGPT command would run on tab ${actualTabId}, but the workflow expected tab ${env.expectedTabId}.`;
+  let tabs: Awaited<ReturnType<NonNullable<typeof openTabs>>>;
+  try {
+    tabs = await Promise.resolve(openTabs.call(env.browser!.user));
+  } catch {
+    return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+  }
+  if (!Array.isArray(tabs)) {
+    return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+  }
+  if (!tabs.some(tab => tab.id === env.expectedTabId)) {
+    return affinityResult(env, "tab_affinity_lost", actualTabId);
+  }
+  return undefined;
+}
 
-  return {
+function affinityResult(
+  env: RuntimeEnv,
+  code: "tab_affinity_lost" | "tab_affinity_unverifiable",
+  actualTabId: string | undefined
+): Promise<CommandResult<unknown>> {
+  const message = code === "tab_affinity_unverifiable"
+    ? `ChatGPT command cannot verify it is still attached to expected tab ${env.expectedTabId}.`
+    : `ChatGPT command would run on tab ${actualTabId ?? env.expectedTabId}, but the workflow expected tab ${env.expectedTabId}.`;
+
+  return contextFromPage(env.page, tabContext(env, actualTabId)).then(context => ({
     ok: false,
     status: "blocked",
     warnings: [],
@@ -126,8 +153,8 @@ export async function verifyTabAffinity(env: RuntimeEnv): Promise<CommandResult<
       ],
       resumable: false
     },
-    context: await contextFromPage(env.page, tabContext(env, actualTabId))
-  };
+    context
+  }));
 }
 
 function tabContext(

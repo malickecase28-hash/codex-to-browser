@@ -1,5 +1,6 @@
 import {
   attachChatGPTBrowser,
+  bindPageTabId,
   isChatGPTUrl,
   resolveChatGPTBrowser,
   tabIdFromPage
@@ -1121,6 +1122,11 @@ async function selectExactSelectedPage(browser: BrowserLike | undefined): Promis
   try {
     const candidate = await Promise.resolve(selected.call(tabs));
     if (candidate === undefined) return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(candidate, "id");
+    const candidateTabId = descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string"
+      ? descriptor.value
+      : undefined;
+    bindPageTabId(candidate, candidateTabId);
     // `candidate` is a coordinated page returned by the coordinated browser.
     // Validate its URL while retaining that wrapper so the read stays inside
     // the browser actor; unwrap only after the exact selected-tab proof.
