@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import type { ChatGPTClient } from "../../src/client.js";
 import type { CommandResult } from "../../src/types.js";
 import {
+  createContinueThreadClient,
   parseContinueThreadCliArgs,
   runContinueThread,
   threadSelectorFromTarget
 } from "../../src/scripts/continue-thread.js";
 
 describe("continue-thread entrypoint", () => {
+  it("uses the configured terminal transport instead of the app bridge", () => {
+    expect(() => createContinueThreadClient({ CODEX_BROWSER_PROVIDER: "unsupported" }))
+      .toThrow("Unknown CODEX_BROWSER_PROVIDER: unsupported");
+  });
+
   it("treats pasted ChatGPT thread URLs as URL thread selectors", () => {
     expect(threadSelectorFromTarget("https://chatgpt.com/c/6a20e900-4744-83ea-9b80-2c75fb85bd63")).toEqual({
       type: "url",
@@ -51,6 +57,32 @@ describe("continue-thread entrypoint", () => {
       },
       format: "normalized_text"
     });
+  });
+
+  it("parses new-thread mode with a prompt", () => {
+    expect(parseContinueThreadCliArgs([
+      "--new",
+      "--prompt",
+      "Create X, Y, and Z."
+    ], {})).toEqual({
+      newThread: true,
+      prompt: "Create X, Y, and Z.",
+      format: "markdown"
+    });
+  });
+
+  it("asks in a new thread when new-thread mode is supplied", async () => {
+    const calls: string[] = [];
+    const client = fakeClient(calls);
+
+    const result = await runContinueThread(client, {
+      newThread: true,
+      prompt: "Create X, Y, and Z.",
+      format: "markdown"
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls).toEqual(["ask:new:Create X, Y, and Z."]);
   });
 
   it("parses existing conversation ids with explicit open-if-missing fallback", () => {
@@ -139,7 +171,7 @@ describe("continue-thread entrypoint", () => {
   });
 });
 
-function fakeClient(calls: string[]): Pick<ChatGPTClient, "askInThread" | "openThread" | "readLatest" | "session"> {
+function fakeClient(calls: string[]): Pick<ChatGPTClient, "ask" | "askInThread" | "openThread" | "readLatest" | "session"> {
   return {
     session: {
       bootstrap: async args => {
@@ -153,6 +185,11 @@ function fakeClient(calls: string[]): Pick<ChatGPTClient, "askInThread" | "openT
         calls.push(`bootstrap:${target}`);
         return ok({});
       }
+    },
+    ask: async args => {
+      const thread = args.thread;
+      calls.push(`ask:${thread !== undefined && "type" in thread ? thread.type : "default"}:${args.prompt}`);
+      return ok({ responseText: "created" });
     },
     askInThread: async args => {
       const thread = args.thread as { query?: string; url?: string };

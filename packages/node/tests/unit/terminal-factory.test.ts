@@ -7,12 +7,16 @@ describe("terminal browser provider selection", () => {
     expect(createTerminalBrowserTransport({ provider: "browser-harness" }).name).toBe("browser-harness");
   });
 
-  it("defaults to Browser Harness and forwards its browser name", async () => {
+  it("uses Browser Harness only when explicitly configured", async () => {
     vi.stubEnv("CODEX_BROWSER_PROVIDER", "browser-harness");
     vi.stubEnv("CODEX_BROWSER_NAME", "chrome");
     const browser = createTerminalBrowserFromEnv();
     expect(browser.name).toBe("browser-harness");
     vi.unstubAllEnvs();
+  });
+
+  it("does not silently select a remote-debugging provider", () => {
+    expect(() => createTerminalBrowserFromEnv({})).toThrow("CODEX_BROWSER_PROVIDER");
   });
 
   it("rejects unknown providers", () => {

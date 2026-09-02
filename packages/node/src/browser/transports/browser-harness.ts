@@ -98,6 +98,16 @@ export class BrowserHarnessBackend implements TerminalBrowserBackend {
     ].join("\n"));
   }
 
+  async waitForEvent(pageId: string, event: string): Promise<unknown> {
+    if (event !== "filechooser") {
+      throw new Error(`Browser Harness does not expose ${event} events.`);
+    }
+    return {
+      isMultiple: () => this.evaluate<boolean>(pageId, "() => Boolean(document.querySelector(\"input[type='file']\")?.multiple)"),
+      setFiles: (paths: string[]) => this.uploadFiles(pageId, "input[type='file']", paths)
+    };
+  }
+
   private async execJson<T>(script: string, envelope = false): Promise<T> {
     const line = lastJsonValue(await this.exec(["import json", script].join("\n")));
     const parsed: unknown = JSON.parse(line);

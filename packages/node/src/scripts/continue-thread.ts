@@ -4,6 +4,8 @@ import {
   type ChatGPTClient,
   type WorkflowThread
 } from "../client.js";
+import { createTerminalBrowserFromEnv } from "../browser/transports/terminal.js";
+import { createChatGPTFromEnvironment } from "../environment.js";
 import type {
   CommandContext,
   CommandResult,
@@ -32,6 +34,7 @@ export const CONTINUE_THREAD_USAGE = [
   "  npm run thread -- \"<target>\" --prompt \"Continue from the latest answer.\"",
   "  npm run thread -- --existing selected",
   "  npm run thread -- --existing-conversation-id \"<conversation-id>\" --prompt \"Continue.\"",
+  "  npm run thread -- --new --prompt \"Create X, Y, and Z.\"",
   "  CHATGPT_THREAD_TARGET=\"<target>\" CHATGPT_THREAD_PROMPT=\"<prompt>\" npm run thread",
   "",
   "Options:",
@@ -41,6 +44,7 @@ export const CONTINUE_THREAD_USAGE = [
   "  --existing-conversation-id    Claim an open tab by ChatGPT conversation id.",
   "  --existing-tab-id             Claim an open user tab by browser bridge tab id.",
   "  --open-if-missing             Open a URL/conversation target if no matching open tab exists.",
+  "  --new                         Start a new ChatGPT thread (requires --prompt).",
   "  --prompt, -p                  Optional prompt to send after opening the thread. Omit to read only.",
   "  --format                      Response format for the read step. Default: markdown.",
   "  --max-chars                   Maximum response characters to return.",
@@ -51,6 +55,7 @@ export const CONTINUE_THREAD_USAGE = [
 export type ContinueThreadOptions = {
   target?: string;
   existing?: ExistingTabPolicy;
+  newThread?: boolean;
   prompt?: string;
   format: ResponseFormat;
   maxChars?: number;
@@ -58,7 +63,7 @@ export type ContinueThreadOptions = {
   stableMs?: number;
 };
 
-export type ContinueThreadClient = Pick<ChatGPTClient, "askInThread" | "openThread" | "readLatest" | "session">;
+export type ContinueThreadClient = Pick<ChatGPTClient, "ask" | "askInThread" | "openThread" | "readLatest" | "session">;
 export type ContinueThreadSelector = Exclude<WorkflowThread, { type: "new" }>;
 
 export class ContinueThreadUsageError extends Error {
@@ -83,6 +88,7 @@ export function parseContinueThreadCliArgs(
   let existingConversationIdFlag: string | undefined;
   let existingTabIdFlag: string | undefined;
   let openIfMissingFlag = false;
+  let newThreadFlag = false;
   const positionals: string[] = [];
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -127,6 +133,9 @@ export function parseContinueThreadCliArgs(
       case "--open-if-missing":
         openIfMissingFlag = true;
         break;
+      case "--new":
+        newThreadFlag = true;
+        break;
       default:
         positionals.push(arg);
         break;
@@ -141,8 +150,15 @@ export function parseContinueThreadCliArgs(
     tabId: firstText(existingTabIdFlag, env.CHATGPT_THREAD_EXISTING_TAB_ID),
     openIfMissing: openIfMissingFlag || env.CHATGPT_THREAD_OPEN_IF_MISSING === "1" || env.CHATGPT_THREAD_OPEN_IF_MISSING === "true"
   });
-  if (target === undefined && existing === undefined) {
+  const newThread = newThreadFlag || env.CHATGPT_THREAD_NEW === "1" || env.CHATGPT_THREAD_NEW === "true";
+  if (target === undefined && existing === undefined && !newThread) {
     throw new ContinueThreadUsageError(`Missing ChatGPT thread URL, search query, or existing-tab selector.\n\n${CONTINUE_THREAD_USAGE}`);
+  }
+  if (newThread && (target !== undefined || existing !== undefined)) {
+    throw new ContinueThreadUsageError("Use --new without a thread target or existing-tab selector.");
+  }
+  if (newThread && firstText(promptFlag, env.CHATGPT_THREAD_PROMPT) === undefined) {
+    throw new ContinueThreadUsageError("--new requires --prompt.");
   }
   if (target !== undefined && existing !== undefined) {
     throw new ContinueThreadUsageError(`Use either a target/search query or an existing-tab selector, not both.\n\n${CONTINUE_THREAD_USAGE}`);
@@ -153,6 +169,7 @@ export function parseContinueThreadCliArgs(
   };
   if (target !== undefined) options.target = target;
   if (existing !== undefined) options.existing = existing;
+  if (newThread) options.newThread = true;
 
   const prompt = firstText(promptFlag, env.CHATGPT_THREAD_PROMPT);
   if (prompt !== undefined) options.prompt = prompt;
@@ -197,6 +214,18 @@ export async function runContinueThread(
 ): Promise<CommandResult<unknown>> {
   const read = readArgs(options);
   const prompt = options.prompt?.trim();
+
+  if (options.newThread) {
+    if (prompt === undefined || prompt.length === 0) {
+      throw new ContinueThreadUsageError("--new requires --prompt.");
+    }
+    return client.ask({
+      thread: { type: "new" },
+      prompt,
+      wait: waitArgs(options) ?? true,
+      read
+    });
+  }
 
   if (options.existing !== undefined) {
     const bootstrapped = await client.session.bootstrap({ existingTab: options.existing });
@@ -264,7 +293,7 @@ export async function main(
 ): Promise<number> {
   try {
     const options = parseContinueThreadCliArgs(argv, env);
-    const chatgpt = createChatGPT({ agent: (globalThis as Record<string, unknown>).agent });
+    const chatgpt = await createContinueThreadClientFromEnvironment(env);
     const result = await runContinueThread(chatgpt, options);
     console.log(JSON.stringify(renderContinueThreadOutput(result), null, 2));
     return result.ok ? 0 : result.blocker !== undefined ? 2 : 1;
@@ -276,6 +305,21 @@ export async function main(
     console.error(error instanceof Error ? error.message : String(error));
     return 1;
   }
+}
+
+export function createContinueThreadClient(
+  env: Record<string, string | undefined> = process.env
+): ChatGPTClient {
+  const agent = (globalThis as Record<string, unknown>).agent;
+  return env.CODEX_BROWSER_PROVIDER !== undefined || agent === undefined
+    ? createChatGPT({ browser: createTerminalBrowserFromEnv(env) })
+    : createChatGPT({ agent });
+}
+
+export async function createContinueThreadClientFromEnvironment(
+  env: Record<string, string | undefined> = typeof process === "undefined" ? {} : process.env
+): Promise<ChatGPTClient> {
+  return createChatGPTFromEnvironment(env);
 }
 
 function requiredValue(argv: string[], index: number, flag: string): string {

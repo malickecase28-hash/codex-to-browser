@@ -7,7 +7,7 @@ description: Use when Codex should delegate a visible, user-directed task to Cha
 
 Use this skill for outcome-oriented delegation to the visible ChatGPT product. Choose Chat for a conversational answer or review. Choose Work for a longer task with progress, steering, files, or deliverable artifacts. Use the official Codex SDK or CLI—not this skill—for repository editing, terminal execution, sandboxing, and code deployment.
 
-This is a workflow over the `codex-chatgpt-control` plugin. It operates visible UI only and must not call private ChatGPT endpoints, inspect credentials or browser storage, bypass login or confirmation, or submit sensitive material without the user's approval.
+This is a workflow over the `codex-chatgpt-control` plugin. It operates visible UI only and must not call private ChatGPT endpoints, inspect credentials or browser storage, bypass login or confirmation, or submit sensitive material without the user's approval. Use the connected `@Browser` extension only; never select the in-app Browser, Browser Harness, Chrome DevTools, CDP, or remote debugging.
 
 ## Runtime Loader
 
@@ -19,17 +19,26 @@ const loaderUrl = new URL(
   "file:///absolute/path/to/plugins/codex-chatgpt-control/skills/chatgpt-delegate/SKILL.md"
 );
 const { importChatGPTControl } = await import(`${loaderUrl.href}?t=${Date.now()}`);
-const { createChatGPT } = await importChatGPTControl();
-
-const chatgpt = createChatGPT({
-  agent: globalThis.agent,
-  reporting: { enabled: true, includeContent: false }
-});
+const { createChatGPTFromEnvironment } = await importChatGPTControl();
+const chatgpt = await createChatGPTFromEnvironment();
 ```
 
-If `globalThis.agent` is absent, use the bridge-bootstrap instructions in the broad `codex-chatgpt-control` skill. An ordinary-shell `browser_bridge_unavailable` result is expected and should be reported, not worked around.
+Use `createChatGPTFromEnvironment()` inside the Browser skill's supported
+bridge host so the plugin can use the connected `@Browser` extension. Do not
+run the SDK in an ordinary shell and then switch to direct Chrome control.
+Browser Harness and Chrome DevTools remain explicit opt-in providers only.
 
 ## Choose The Experience
+
+Route by intent rather than literal phrases. Retrieval of existing content
+(including summaries, explanations, or pasting a result) is strictly
+non-mutating: open the conversation and read the latest assistant response;
+never send the retrieval request into ChatGPT. A request to have ChatGPT
+perform new work—such as answering, researching, analyzing, creating,
+continuing, or revising—is mutating: use `askInThread` on the current thread,
+wait, and return the new response. For compound requests, retrieve first and
+then perform the new task. If intent is genuinely ambiguous, do not submit;
+ask the user to disambiguate.
 
 - `chat`: reviews, questions, synthesis, brainstorming, search-oriented answers, or continuing an existing conversation.
 - `work`: longer research or production tasks that benefit from progress checks, steering, files, or artifacts.

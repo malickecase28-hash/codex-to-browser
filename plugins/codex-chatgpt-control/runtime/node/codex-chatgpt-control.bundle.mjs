@@ -3634,11 +3634,12 @@ async function readPageState(page) {
   return state;
 }
 async function readVisibleText(page) {
+  const operationTimeoutMs = page.operationTimeoutMs ?? 1e3;
   if (typeof page.evaluate === "function") {
     try {
       return await withTimeout(
         page.evaluate(() => document.body?.innerText ?? ""),
-        1e3,
+        operationTimeoutMs,
         "Timed out while reading visible page text."
       );
     } catch {
@@ -3659,6 +3660,7 @@ async function readVisibleText(page) {
   return "";
 }
 async function readPageSurfaceSnapshot(page) {
+  const operationTimeoutMs = page.operationTimeoutMs ?? 1e3;
   if (typeof page.evaluate === "function") {
     try {
       const snapshot2 = await withTimeout(page.evaluate(() => {
@@ -3673,20 +3675,13 @@ async function readPageSurfaceSnapshot(page) {
           "[class*='toast' i]",
           "[class*='banner' i]"
         ].join(", ");
-        const visible = (element) => {
-          if (element.hidden || element.closest("[hidden], [inert], [aria-hidden='true']") !== null) return false;
-          const style = window.getComputedStyle(element);
-          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || style.pointerEvents === "none") return false;
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 || rect.height > 0;
-        };
-        const blockerText = Array.from(document.querySelectorAll(systemSelector)).filter((element) => visible(element)).filter((element) => element.closest(messageSelector) === null).map((element) => `${element.textContent ?? ""} ${element.getAttribute("aria-label") ?? ""}`).join(" ");
+        const blockerText = Array.from(document.querySelectorAll(systemSelector)).filter((element) => element.hidden === false && element.closest("[hidden], [inert], [aria-hidden='true']") === null).filter((element) => element.closest(messageSelector) === null).map((element) => `${element.textContent ?? ""} ${element.getAttribute("aria-label") ?? ""}`).join(" ");
         return {
           visibleText: document.body?.innerText ?? "",
           blockerText,
-          hasConversationMessages: Array.from(document.querySelectorAll(messageSelector)).some(visible)
+          hasConversationMessages: Array.from(document.querySelectorAll(messageSelector)).some((element) => element.hidden === false && element.closest("[hidden], [inert], [aria-hidden='true']") === null)
         };
-      }), 1e3, "Timed out while reading the visible ChatGPT page surface.");
+      }), operationTimeoutMs, "Timed out while reading the visible ChatGPT page surface.");
       if (typeof snapshot2 === "string") {
         return {
           visibleText: snapshot2,
@@ -5432,7 +5427,7 @@ function buildPage(state) {
   const rawPage = state.rawPage;
   const wrapper = {};
   rawValues.set(wrapper, rawPage);
-  for (const property of ["id", "tabId"]) {
+  for (const property of ["id", "tabId", "operationTimeoutMs"]) {
     const value = readDataMember(rawPage, property, `page.${property}`);
     if (value !== void 0) wrapper[property] = value;
   }
@@ -5894,7 +5889,7 @@ async function getBrowser(env, coordination) {
   const agent = env.agent ?? anyEnv.agent ?? globalThis.agent;
   const browsers = agent?.browsers;
   if (browsers !== void 0 && typeof browsers === "object") {
-    const maybeBrowser = await tryBrowserGetPreferredListed(browsers) ?? await tryBrowserGet(browsers, "extension") ?? await tryBrowserGet(browsers, "chrome");
+    const maybeBrowser = await tryBrowserGet(browsers, "extension");
     if (maybeBrowser !== void 0) {
       return createCoordinatedBrowser(maybeBrowser, coordination);
     }
@@ -5908,25 +5903,6 @@ async function tryBrowserGet(browsers, name) {
   }
   try {
     const browser = await get.call(browsers, name);
-    return normalizeBrowser(browser);
-  } catch {
-    return void 0;
-  }
-}
-async function tryBrowserGetPreferredListed(browsers) {
-  const list = browsers.list;
-  const get = browsers.get;
-  if (typeof list !== "function" || typeof get !== "function") {
-    return void 0;
-  }
-  try {
-    const available = await list.call(browsers);
-    const preferred = available.find((browser2) => browser2.type === "extension") ?? available.find((browser2) => typeof browser2.name === "string" && /chrome/i.test(browser2.name)) ?? available[0];
-    const id2 = preferred?.id;
-    if (typeof id2 !== "string") {
-      return void 0;
-    }
-    const browser = await get.call(browsers, id2);
     return normalizeBrowser(browser);
   } catch {
     return void 0;
@@ -6515,18 +6491,589 @@ function tabIdFromPage(page) {
   return typeof id2 === "string" ? id2 : void 0;
 }
 
+// src/browser/transports/terminal-backend.ts
+function createTerminalBrowser(backend) {
+  const pages = /* @__PURE__ */ new Map();
+  const pageFor2 = (info) => {
+    const existing = pages.get(info.id);
+    if (existing !== void 0) return existing;
+    const page = createTerminalPage(backend, info.id);
+    pages.set(info.id, page);
+    return page;
+  };
+  const list = async () => (await backend.listPages()).map(pageFor2);
+  const get = async (id2) => {
+    const info = (await backend.listPages()).find((candidate) => candidate.id === id2);
+    if (info === void 0) throw new Error(`Browser page not found: ${id2}`);
+    return pageFor2(info);
+  };
+  return {
+    name: backend.name,
+    user: {
+      async openTabs() {
+        return (await backend.listPages()).map((info) => ({ id: info.id, url: info.url, title: info.title }));
+      },
+      async claimTab(tab) {
+        const id2 = typeof tab === "string" ? tab : tab.id;
+        await backend.activatePage(id2);
+        return get(id2);
+      }
+    },
+    tabs: {
+      create: async (url) => pageFor2(await backend.createPage(url)),
+      new: async (url = "about:blank") => pageFor2(await backend.createPage(url)),
+      async selected() {
+        const selected = await backend.selectedPageId?.();
+        if (selected !== void 0) return get(selected);
+        const info = (await backend.listPages())[0];
+        return info === void 0 ? void 0 : pageFor2(info);
+      },
+      list,
+      get,
+      async finalize() {
+      }
+    },
+    async newPage() {
+      return pageFor2(await backend.createPage("about:blank"));
+    }
+  };
+}
+function createTerminalPage(backend, pageId) {
+  return {
+    id: pageId,
+    tabId: pageId,
+    operationTimeoutMs: 3e4,
+    async url() {
+      return (await findPage(backend, pageId)).url;
+    },
+    async goto(url) {
+      await backend.navigate(pageId, url);
+    },
+    async title() {
+      return (await findPage(backend, pageId)).title;
+    },
+    locator(selector) {
+      return createLocator(backend, pageId, { kind: "css", selector });
+    },
+    getByRole(role, options = {}) {
+      const name = matcherFromUnknown(options.name);
+      return createLocator(backend, pageId, name === void 0 ? { kind: "role", role } : { kind: "role", role, name });
+    },
+    getByPlaceholder(value) {
+      return createLocator(backend, pageId, { kind: "placeholder", text: matcher(value) });
+    },
+    getByText(value) {
+      return createLocator(backend, pageId, { kind: "text", text: matcher(value) });
+    },
+    keyboard: {
+      async press(key) {
+        if (backend.pressKey !== void 0) return backend.pressKey(pageId, key);
+        await backend.evaluate(pageId, keyboardExpression(key));
+      }
+    },
+    async waitForTimeout(ms2) {
+      await new Promise((resolve8) => setTimeout(resolve8, ms2));
+    },
+    async evaluate(fn, arg, _options) {
+      return backend.evaluate(pageId, `async () => { const __name = value => value; const fn = (${fn.toString()}); const arg = ${serialize(arg)}; return await fn(arg); }`);
+    },
+    async content() {
+      return backend.evaluate(pageId, "() => document.documentElement.outerHTML");
+    },
+    async waitForEvent(event, options) {
+      if (backend.waitForEvent === void 0) throw new Error(`${backend.name} does not expose ${event} events.`);
+      return backend.waitForEvent(pageId, event, options);
+    },
+    async close() {
+      await backend.closePage(pageId);
+    }
+  };
+}
+function createLocator(backend, pageId, target) {
+  return {
+    async click() {
+      await backend.evaluate(pageId, domOperation(target, "element.scrollIntoView({block: 'center', inline: 'center'}); element.click(); return true;"));
+    },
+    async press(key) {
+      await backend.evaluate(pageId, domOperation(target, `element.focus(); element.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })); element.dispatchEvent(new KeyboardEvent('keyup', { key: ${JSON.stringify(key)}, bubbles: true })); return true;`));
+    },
+    async fill(value) {
+      await backend.evaluate(pageId, domOperation(target, `element.focus(); const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLInputElement ? HTMLInputElement.prototype : undefined; const descriptor = prototype === undefined ? undefined : Object.getOwnPropertyDescriptor(prototype, 'value'); if (descriptor?.set !== undefined) descriptor.set.call(element, ${JSON.stringify(value)}); else if ('value' in element) element.value = ${JSON.stringify(value)}; else element.textContent = ${JSON.stringify(value)}; element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true })); return true;`));
+    },
+    async textContent() {
+      return backend.evaluate(pageId, domOperation(target, "return element.textContent;"));
+    },
+    async innerText() {
+      return backend.evaluate(pageId, domOperation(target, "return element instanceof HTMLElement ? element.innerText : element.textContent ?? '';"));
+    },
+    async innerHTML() {
+      return backend.evaluate(pageId, domOperation(target, "return element.innerHTML;"));
+    },
+    async count() {
+      return backend.evaluate(pageId, domCountOperation(target));
+    },
+    async allTextContents() {
+      return backend.evaluate(pageId, domAllOperation(target, "return elements.map(element => element.textContent ?? '');"));
+    },
+    nth(index) {
+      return createLocator(backend, pageId, { kind: "nth", target, index });
+    },
+    first() {
+      return createLocator(backend, pageId, { kind: "nth", target, index: 0 });
+    },
+    last() {
+      return createLocator(backend, pageId, { kind: "nth", target, index: -1 });
+    },
+    async isVisible() {
+      return backend.evaluate(pageId, domOperation(target, "const style = window.getComputedStyle(element); const rect = element.getBoundingClientRect(); return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;"));
+    },
+    async evaluate(fn, arg) {
+      return backend.evaluate(pageId, domOperation(target, `const fn = (${fn.toString()}); return await fn(element, ${serialize(arg)});`, true));
+    },
+    locator(selector) {
+      return createLocator(backend, pageId, { kind: "child", parent: target, selector });
+    },
+    filter(options) {
+      const hasText = matcherFromUnknown(options.hasText);
+      return createLocator(backend, pageId, hasText === void 0 ? { kind: "filter", target } : { kind: "filter", target, hasText });
+    },
+    getByRole(role, options = {}) {
+      const name = matcherFromUnknown(options.name);
+      const roleTarget = name === void 0 ? { kind: "role", role, scope: target } : { kind: "role", role, name, scope: target };
+      return createLocator(backend, pageId, roleTarget);
+    },
+    getByText(value) {
+      return createLocator(backend, pageId, {
+        kind: "filter",
+        target: { kind: "child", parent: target, selector: "*" },
+        hasText: matcher(value)
+      });
+    },
+    async setInputFiles(paths) {
+      if (backend.uploadFiles === void 0) throw new Error(`${backend.name} does not expose file upload.`);
+      const selector = cssSelectorFromTarget(target);
+      if (selector === void 0) throw new Error("File upload currently requires a CSS-backed locator.");
+      await backend.uploadFiles(pageId, selector, paths);
+    }
+  };
+}
+async function findPage(backend, pageId) {
+  const page = (await backend.listPages()).find((candidate) => candidate.id === pageId);
+  if (page === void 0) throw new Error(`Browser page disappeared: ${pageId}`);
+  return page;
+}
+function matcher(value) {
+  return typeof value === "string" ? { kind: "string", value } : { kind: "regex", source: value.source, flags: value.flags };
+}
+function matcherFromUnknown(value) {
+  if (typeof value === "string" || value instanceof RegExp) return matcher(value);
+  if (typeof value === "object" && value !== null) {
+    const record = value;
+    if (typeof record.value === "string" && (record.exact === void 0 || typeof record.exact === "boolean")) {
+      return { kind: "string", value: record.value, ...record.exact === void 0 ? {} : { exact: record.exact } };
+    }
+  }
+  return void 0;
+}
+function serialize(value) {
+  return value === void 0 ? "undefined" : JSON.stringify(value);
+}
+function domOperation(target, body, asyncBody = false) {
+  return `${asyncBody ? "async " : ""}() => { const elements = ${resolverSource(target)}; const element = elements[0]; if (!element) throw new Error('DOM target not found.'); ${body} }`;
+}
+function domAllOperation(target, body) {
+  return `() => { const elements = ${resolverSource(target)}; ${body} }`;
+}
+function domCountOperation(target) {
+  return `() => { const elements = ${resolverSource(target)}; return elements.length; }`;
+}
+function resolverSource(target) {
+  return `(() => { const target = ${JSON.stringify(target)}; const matchesText = (value, matcher) => { if (!matcher) return true; const text = String(value ?? ''); return matcher.kind === 'string' ? (matcher.exact ? text === matcher.value : text.includes(matcher.value)) : new RegExp(matcher.source, matcher.flags).test(text); }; const isVisible = element => { if (element.hidden || element.closest("[hidden], [inert], [aria-hidden='true']") !== null) return false; const style = window.getComputedStyle(element); return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0; }; const roleOf = element => { const explicit = element.getAttribute('role'); if (explicit) return explicit; const tag = element.tagName.toLowerCase(); if (tag === 'button') return 'button'; if (tag === 'a' && element.hasAttribute('href')) return 'link'; if (tag === 'textarea') return 'textbox'; if (tag === 'input') { const type = (element.getAttribute('type') ?? 'text').toLowerCase(); if (['text', 'search', 'email', 'url', 'tel', 'password'].includes(type)) return 'textbox'; if (type === 'checkbox') return 'checkbox'; if (type === 'radio') return 'radio'; } return ''; }; const accessibleName = element => element.getAttribute('aria-label') ?? element.getAttribute('title') ?? element.getAttribute('placeholder') ?? element.textContent ?? ''; const resolve = current => { switch (current.kind) { case 'css': return Array.from(document.querySelectorAll(current.selector)); case 'role': { const root = current.scope ? resolve(current.scope) : [document]; return root.flatMap(parent => Array.from(parent.querySelectorAll('*')).filter(element => roleOf(element) === current.role && isVisible(element) && matchesText(accessibleName(element), current.name))); } case 'text': return Array.from(document.querySelectorAll('body *')).filter(element => matchesText(element.textContent, current.text)); case 'placeholder': return Array.from(document.querySelectorAll('[placeholder]')).filter(element => matchesText(element.getAttribute('placeholder'), current.text)); case 'child': return resolve(current.parent).flatMap(parent => Array.from(parent.querySelectorAll(current.selector))); case 'nth': { const values = resolve(current.target); const index = current.index < 0 ? values.length + current.index : current.index; return values[index] ? [values[index]] : []; } case 'filter': return resolve(current.target).filter(element => matchesText(element.textContent, current.hasText)); } }; return resolve(target); })()`;
+}
+function cssSelectorFromTarget(target) {
+  if (target.kind === "css") return target.selector;
+  if (target.kind === "child") {
+    const parent = cssSelectorFromTarget(target.parent);
+    return parent === void 0 ? void 0 : `${parent} ${target.selector}`;
+  }
+  return void 0;
+}
+function keyboardExpression(key) {
+  return `() => { const target = document.activeElement ?? document.body; target.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })); target.dispatchEvent(new KeyboardEvent('keyup', { key: ${JSON.stringify(key)}, bubbles: true })); }`;
+}
+
+// src/browser/transports/chrome-devtools.ts
+import { spawn } from "node:child_process";
+function createChromeDevToolsBrowser(options = {}) {
+  return createTerminalBrowser(new ChromeDevToolsBackend(options));
+}
+var ChromeDevToolsBackend = class {
+  name = "chrome-devtools";
+  command;
+  cwd;
+  env;
+  timeoutMs;
+  constructor(options = {}) {
+    this.command = options.command ?? "chrome-devtools";
+    this.cwd = options.cwd;
+    this.env = { ...process.env, ...options.env };
+    this.timeoutMs = options.timeoutMs ?? 3e4;
+  }
+  async listPages() {
+    return parsePages(await this.run(["list_pages", "--output-format=json"]));
+  }
+  async createPage(url) {
+    const before = await this.listPages();
+    const output = await this.run(["new_page", url, "--output-format=json"]);
+    const reported = parsePages(output).find((page) => !before.some((existing) => existing.id === page.id));
+    if (reported !== void 0) return reported;
+    const created = (await this.listPages()).find((page) => !before.some((existing) => existing.id === page.id));
+    if (created !== void 0) return created;
+    throw new Error("Chrome DevTools created a page but did not return a new page identity.");
+  }
+  async activatePage(pageId) {
+    await this.run(["select_page", pageId]);
+  }
+  async closePage(pageId) {
+    await this.run(["close_page", pageId]);
+  }
+  async navigate(pageId, url) {
+    await this.run(["navigate_page", pageId, "--url", url]);
+  }
+  async evaluate(pageId, expression) {
+    const wrapped = `async () => { const fn = (${expression}); const value = await fn(); return JSON.stringify({ __codexToBrowser: true, value: value === undefined ? null : value }); }`;
+    return extractEvaluation(await this.run(["evaluate_script", wrapped, "--pageId", pageId, "--output-format=json"]));
+  }
+  async pressKey(pageId, key) {
+    await this.run(["press_key", pageId, key]);
+  }
+  async uploadFiles(_pageId, _selector, _paths) {
+    throw new Error("Chrome DevTools terminal file upload adapter is not enabled yet. Add UID resolution before using files.attach.");
+  }
+  async run(args) {
+    return new Promise((resolve8, reject) => {
+      const child = spawn(this.command, args, {
+        cwd: this.cwd,
+        env: this.env,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      const finish = (error, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error === void 0) resolve8(value ?? "");
+        else reject(error);
+      };
+      const timer = setTimeout(() => {
+        child.kill();
+        finish(new Error(`chrome-devtools timed out after ${this.timeoutMs}ms: ${args.join(" ")}`));
+      }, this.timeoutMs);
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.once("error", (error) => finish(error));
+      child.once("close", (code) => {
+        if (code !== 0) {
+          finish(new Error([`chrome-devtools exited with code ${code}.`, stderr.trim(), stdout.trim()].filter(Boolean).join("\n")));
+          return;
+        }
+        finish(void 0, stdout.trim());
+      });
+    });
+  }
+};
+function parsePages(raw) {
+  const results = [];
+  visit(parseJsonLoose(raw), (value) => {
+    if (typeof value !== "object" || value === null) return;
+    const record = value;
+    const id2 = readString(record.pageId ?? record.id ?? record.pageIdx ?? record.index);
+    const url = readString(record.url);
+    if (id2 === void 0 || url === void 0 || results.some((page) => page.id === id2)) return;
+    results.push({ id: id2, url, title: readString(record.title) ?? "" });
+  });
+  if (results.length > 0) return results;
+  const text = JSON.stringify(parseJsonLoose(raw));
+  const regex = /(?:pageId|id)["']?\s*[:=]\s*["']?(\d+|[^,"'}\s]+)["']?[\s\S]{0,250}?url["']?\s*[:=]\s*["']([^"']+)["']/gi;
+  for (const match of text.matchAll(regex)) {
+    if (match[1] !== void 0 && match[2] !== void 0 && !results.some((page) => page.id === match[1])) {
+      results.push({ id: match[1], url: match[2], title: "" });
+    }
+  }
+  return results;
+}
+function extractEvaluation(raw) {
+  let envelope;
+  visit(parseJsonLoose(raw), (value) => {
+    if (envelope !== void 0) return;
+    if (typeof value === "string") {
+      try {
+        const candidate = JSON.parse(value);
+        if (isEvaluationEnvelope(candidate)) envelope = candidate;
+      } catch {
+      }
+    }
+    if (isEvaluationEnvelope(value)) envelope = value;
+  });
+  if (envelope === void 0) throw new Error(`Could not decode chrome-devtools evaluate_script result: ${raw.slice(0, 1e3)}`);
+  return envelope.value;
+}
+function isEvaluationEnvelope(value) {
+  return typeof value === "object" && value !== null && value.__codexToBrowser === true;
+}
+function parseJsonLoose(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    const starts = [value.indexOf("{"), value.indexOf("[")].filter((index) => index >= 0);
+    if (starts.length === 0) return value;
+    try {
+      return JSON.parse(value.slice(Math.min(...starts)));
+    } catch {
+      return value;
+    }
+  }
+}
+function visit(value, callback) {
+  callback(value);
+  if (Array.isArray(value)) {
+    for (const child of value) visit(child, callback);
+  } else if (typeof value === "object" && value !== null) {
+    for (const child of Object.values(value)) visit(child, callback);
+  }
+}
+function readString(value) {
+  return typeof value === "string" || typeof value === "number" ? String(value) : void 0;
+}
+
+// src/browser/transports/browser-harness.ts
+import { spawn as spawn2 } from "node:child_process";
+function createBrowserHarnessBrowser(options = {}) {
+  return createTerminalBrowser(new BrowserHarnessBackend(options));
+}
+var BrowserHarnessBackend = class {
+  name = "browser-harness";
+  command;
+  args;
+  cwd;
+  env;
+  timeoutMs;
+  constructor(options = {}) {
+    this.command = options.command ?? "browser-harness";
+    this.args = options.args ?? [];
+    this.cwd = options.cwd;
+    this.env = { ...process.env, ...options.env };
+    if (options.browserName !== void 0) this.env.BU_NAME = options.browserName;
+    this.timeoutMs = options.timeoutMs ?? 3e4;
+  }
+  async listPages() {
+    return this.execJson([
+      "tabs = list_tabs()",
+      'result = [{"id": tab.get("targetId") or tab.get("target_id"), "url": tab.get("url", ""), "title": tab.get("title", "")} for tab in tabs]',
+      "print(json.dumps(result))"
+    ].join("\n"));
+  }
+  async createPage(url) {
+    return this.execJson([
+      "target_id = new_tab(" + pythonString(url) + ")",
+      "tabs = list_tabs()",
+      'match = next((tab for tab in tabs if (tab.get("targetId") or tab.get("target_id")) == target_id), None)',
+      "if match is None:",
+      '    raise RuntimeError("new_tab did not produce an identifiable tab")',
+      'print(json.dumps({"id": match.get("targetId") or match.get("target_id"), "url": match.get("url", ""), "title": match.get("title", "")}))'
+    ].join("\n"));
+  }
+  async activatePage(pageId) {
+    await this.exec("switch_tab(" + pythonString(pageId) + ")");
+  }
+  async closePage(pageId) {
+    await this.exec("close_tab(" + pythonString(pageId) + ")");
+  }
+  async selectedPageId() {
+    const pageId = await this.execJson([
+      "tab = current_tab()",
+      'print(json.dumps(tab.get("targetId") or tab.get("target_id")))'
+    ].join("\n"));
+    return pageId ?? void 0;
+  }
+  async navigate(pageId, url) {
+    await this.exec([
+      "switch_tab(" + pythonString(pageId) + ")",
+      "goto_url(" + pythonString(url) + ")",
+      "wait_for_load()"
+    ].join("\n"));
+  }
+  async evaluate(pageId, expression) {
+    return this.execJson([
+      "switch_tab(" + pythonString(pageId) + ")",
+      "expression = " + pythonString(normalizeBrowserExpression(expression)),
+      "value = js(expression)",
+      'print(json.dumps({"__codexToBrowser": True, "value": value}, default=str))'
+    ].join("\n"), true);
+  }
+  async pressKey(pageId, key) {
+    await this.exec([
+      "switch_tab(" + pythonString(pageId) + ")",
+      "press_key(" + pythonString(key) + ")"
+    ].join("\n"));
+  }
+  async uploadFiles(pageId, selector, paths) {
+    await this.exec([
+      "switch_tab(" + pythonString(pageId) + ")",
+      "upload_file(" + pythonString(selector) + ", " + pythonValue(paths) + ")"
+    ].join("\n"));
+  }
+  async waitForEvent(pageId, event) {
+    if (event !== "filechooser") {
+      throw new Error(`Browser Harness does not expose ${event} events.`);
+    }
+    return {
+      isMultiple: () => this.evaluate(pageId, `() => Boolean(document.querySelector("input[type='file']")?.multiple)`),
+      setFiles: (paths) => this.uploadFiles(pageId, "input[type='file']", paths)
+    };
+  }
+  async execJson(script, envelope = false) {
+    const line = lastJsonValue(await this.exec(["import json", script].join("\n")));
+    const parsed = JSON.parse(line);
+    if (envelope) {
+      if (!isEnvelope(parsed)) throw new Error("Invalid Browser Harness result envelope: " + line);
+      return parsed.value;
+    }
+    return parsed;
+  }
+  async exec(script) {
+    const result3 = this.queue.then(() => this.execOnce(script), () => this.execOnce(script));
+    this.queue = result3.then(() => void 0, () => void 0);
+    return result3;
+  }
+  queue = Promise.resolve();
+  async execOnce(script) {
+    return new Promise((resolve8, reject) => {
+      const child = spawn2(this.command, this.args, {
+        cwd: this.cwd,
+        env: this.env,
+        windowsHide: true,
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      let timer;
+      const finish = (error, value = "") => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error === void 0) resolve8(value);
+        else reject(error);
+      };
+      timer = setTimeout(() => {
+        child.kill();
+        finish(new Error("browser-harness timed out after " + this.timeoutMs + "ms."));
+      }, this.timeoutMs);
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.once("error", (error) => finish(error));
+      child.once("close", (code) => {
+        if (code !== 0) {
+          finish(new Error(["browser-harness exited with code " + code + ".", stderr.trim(), stdout.trim()].filter(Boolean).join("\n")));
+          return;
+        }
+        finish(void 0, stdout.trim());
+      });
+      child.stdin.end(script);
+    });
+  }
+};
+function normalizeBrowserExpression(expression) {
+  return "(" + expression + ")()";
+}
+function pythonString(value) {
+  return JSON.stringify(value).replace(/[^\x00-\x7F]/gu, (character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint <= 65535 ? `\\u${codePoint.toString(16).padStart(4, "0")}` : `\\U${codePoint.toString(16).padStart(8, "0")}`;
+  });
+}
+function pythonValue(value) {
+  if (value === null) return "None";
+  if (typeof value === "string") return pythonString(value);
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "True" : "False";
+  if (Array.isArray(value)) return "[" + value.map(pythonValue).join(", ") + "]";
+  throw new Error("Unsupported Python literal.");
+}
+function lastJsonValue(value) {
+  const trimmed = value.trim();
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index];
+      if (line.startsWith("{") || line.startsWith("[")) {
+        try {
+          JSON.parse(line);
+          return line;
+        } catch {
+        }
+      }
+    }
+  }
+  throw new Error("Browser Harness returned no JSON: " + value.slice(0, 1e3));
+}
+function isEnvelope(value) {
+  return typeof value === "object" && value !== null && value.__codexToBrowser === true;
+}
+
+// src/browser/transports/terminal.ts
+function createTerminalBrowserTransport(options) {
+  switch (options.provider) {
+    case "chrome-devtools":
+      return createChromeDevToolsBrowser(options.chromeDevTools);
+    case "browser-harness":
+      return createBrowserHarnessBrowser(options.browserHarness);
+  }
+}
+function createTerminalBrowserFromEnv(env = process.env) {
+  const provider = env.CODEX_BROWSER_PROVIDER;
+  if (provider === void 0) {
+    throw new Error("CODEX_BROWSER_PROVIDER must be set explicitly; refusing to start a remote-debugging browser provider implicitly.");
+  }
+  if (provider === "chrome-devtools") return createChromeDevToolsBrowser();
+  if (provider === "browser-harness") {
+    const browserName = env.CODEX_BROWSER_NAME;
+    return createBrowserHarnessBrowser(browserName === void 0 ? {} : { browserName });
+  }
+  throw new Error(`Unknown CODEX_BROWSER_PROVIDER: ${provider}`);
+}
+
 // src/browser/clipboard.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 var execFileAsync = promisify(execFile);
-function clipboardReadCommandsForPlatform(platform2, env = {}) {
-  if (platform2 === "darwin") {
+function clipboardReadCommandsForPlatform(platform3, env = {}) {
+  if (platform3 === "darwin") {
     return [{ command: "pbpaste", args: [] }];
   }
-  if (platform2 === "win32") {
+  if (platform3 === "win32") {
     return [{ command: "powershell.exe", args: ["-NoProfile", "-Command", "Get-Clipboard -Raw"] }];
   }
-  if (platform2 === "linux") {
+  if (platform3 === "linux") {
     const waylandCommand = { command: "wl-paste", args: ["--no-newline"] };
     const x11Commands = [
       { command: "xclip", args: ["-selection", "clipboard", "-o"] },
@@ -6828,16 +7375,16 @@ function parseAttrs(token) {
   }
   return attrs;
 }
-function walkElements(element, visit) {
-  visit(element);
+function walkElements(element, visit2) {
+  visit2(element);
   for (const child of element.children) {
-    if (child.type === "element") walkElements(child, visit);
+    if (child.type === "element") walkElements(child, visit2);
   }
 }
-function walkElementsWithAncestors(element, ancestors, visit) {
-  visit(element, ancestors);
+function walkElementsWithAncestors(element, ancestors, visit2) {
+  visit2(element, ancestors);
   for (const child of element.children) {
-    if (child.type === "element") walkElementsWithAncestors(child, [...ancestors, element], visit);
+    if (child.type === "element") walkElementsWithAncestors(child, [...ancestors, element], visit2);
   }
 }
 function serializeChildren(element) {
@@ -11450,7 +11997,7 @@ async function discoverPowerSlider(page, options = {}) {
         depth += 1;
       }
     };
-    const visit = (node) => {
+    const visit2 = (node) => {
       visitedNodes += 1;
       if (visitedNodes > config.maxNodes) throw new Error("node limit exceeded");
       appendText(node);
@@ -11469,13 +12016,13 @@ async function discoverPowerSlider(page, options = {}) {
         const walker = ownerDocument.createTreeWalker(ownerDocument, 4294967295);
         let current = walker.nextNode();
         while (current !== null) {
-          visit(current);
+          visit2(current);
           current = walker.nextNode();
         }
       } else {
         let current = ownerDocument.firstChild;
         while (current !== null) {
-          visit(current);
+          visit2(current);
           if (current.firstChild !== null) {
             current = current.firstChild;
             continue;
@@ -13489,19 +14036,19 @@ import { platform as readHostPlatform } from "node:os";
 function currentHostPathPlatform() {
   return readHostPlatform();
 }
-function isHostAbsolutePath(value, platform2 = currentHostPathPlatform()) {
+function isHostAbsolutePath(value, platform3 = currentHostPathPlatform()) {
   if (value.length === 0) return false;
-  if (platform2 === "win32") return isFullyQualifiedWindowsPath(value);
+  if (platform3 === "win32") return isFullyQualifiedWindowsPath(value);
   return path.posix.isAbsolute(value);
 }
-function resolveForHostPath(value, platform2 = currentHostPathPlatform()) {
-  if (!isHostAbsolutePath(value, platform2)) {
+function resolveForHostPath(value, platform3 = currentHostPathPlatform()) {
+  if (!isHostAbsolutePath(value, platform3)) {
     throw new Error(`File attachment path must be absolute for the backend host: ${value}`);
   }
-  return platform2 === "win32" ? path.win32.resolve(value) : path.posix.resolve(value);
+  return platform3 === "win32" ? path.win32.resolve(value) : path.posix.resolve(value);
 }
-function basenameForHostPath(value, platform2 = currentHostPathPlatform()) {
-  return platform2 === "win32" ? path.win32.basename(value) : path.posix.basename(value);
+function basenameForHostPath(value, platform3 = currentHostPathPlatform()) {
+  return platform3 === "win32" ? path.win32.basename(value) : path.posix.basename(value);
 }
 function isFullyQualifiedWindowsPath(value) {
   return /^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\]+\\[^\\]+[\\/]/.test(value);
@@ -17540,8 +18087,322 @@ function cloneDescriptor(descriptor) {
   };
 }
 
+// src/conversations/registry.ts
+import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
+import { mkdir as mkdir4, readFile as readFile4, readdir, rename, unlink as unlink2, writeFile as writeFile3 } from "node:fs/promises";
+import { homedir, platform } from "node:os";
+import { join as join4 } from "node:path";
+var writeQueues = /* @__PURE__ */ new Map();
+var ConversationRegistry = class {
+  stateRoot;
+  now;
+  constructor(options = {}) {
+    this.stateRoot = options.stateRoot ?? defaultConversationStateRoot();
+    this.now = options.now ?? (() => /* @__PURE__ */ new Date());
+  }
+  async get(key) {
+    const normalizedKey = normalizeKey(key);
+    const path3 = this.recordPath(normalizedKey);
+    try {
+      const parsed = JSON.parse(await readFile4(path3, "utf8"));
+      if (!isConversationRecord(parsed)) throw new Error(`Invalid conversation registry record: ${path3}`);
+      if (parsed.key !== normalizedKey) throw new Error(`Conversation registry key mismatch: ${path3}`);
+      return parsed;
+    } catch (error) {
+      if (isNodeError4(error, "ENOENT")) return void 0;
+      throw error;
+    }
+  }
+  async find(keyOrAlias) {
+    const candidate = normalizeKey(keyOrAlias);
+    const direct = await this.get(candidate);
+    if (direct !== void 0) return direct;
+    const wanted = candidate.toLocaleLowerCase();
+    for (const record of await this.list()) {
+      if (record.aliases.some((alias) => alias.toLocaleLowerCase() === wanted)) return record;
+    }
+    return void 0;
+  }
+  async remember(args) {
+    const key = normalizeKey(args.key);
+    return this.withMutationLock(async () => {
+      const existing = await this.get(key);
+      const now = this.now().toISOString();
+      const aliases = existing?.aliases.slice() ?? [];
+      for (const alias of args.aliases ?? []) {
+        const normalizedAlias = alias.trim();
+        if (normalizedAlias.length > 0 && !aliases.includes(normalizedAlias)) aliases.push(normalizedAlias);
+      }
+      const conversationId = args.replaceIdentity ? args.conversationId : args.conversationId ?? existing?.conversationId;
+      const url = args.replaceIdentity ? args.url : args.url ?? existing?.url;
+      const title = args.title ?? existing?.title;
+      if (args.conversationId !== void 0 && args.conversationId.trim().length === 0) throw new Error("conversationId must not be empty.");
+      if (args.url !== void 0 && args.url.trim().length === 0) throw new Error("URL must not be empty.");
+      const suppliedUrlId = args.url === void 0 ? void 0 : conversationIdFromUrl(args.url);
+      const existingUrlId = existing?.url === void 0 ? void 0 : conversationIdFromUrl(existing.url);
+      if (args.conversationId !== void 0 && suppliedUrlId !== void 0 && suppliedUrlId !== args.conversationId) {
+        throw new Error(`Conversation "${key}" URL does not match its conversationId.`);
+      }
+      if (!args.replaceIdentity && args.url !== void 0 && existing?.conversationId !== void 0 && suppliedUrlId !== void 0 && suppliedUrlId !== existing.conversationId) {
+        throw new Error(`Conversation "${key}" URL does not match its remembered conversationId.`);
+      }
+      if (!args.replaceIdentity && args.conversationId !== void 0 && existingUrlId !== void 0 && existingUrlId !== args.conversationId) {
+        throw new Error(`Conversation "${key}" conversationId does not match its remembered URL.`);
+      }
+      const identities = new Set([key, ...aliases].map((identity) => identity.toLocaleLowerCase()));
+      for (const other of await this.list()) {
+        if (other.key === key) continue;
+        if (identities.has(other.key.toLocaleLowerCase()) || other.aliases.some((alias) => identities.has(alias.toLocaleLowerCase()))) {
+          throw new Error(`Conversation identifier for "${key}" already identifies "${other.key}".`);
+        }
+      }
+      const record = {
+        schemaVersion: 1,
+        key,
+        surface: args.surface ?? existing?.surface ?? "chat",
+        aliases,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        lastUsedAt: args.touch === false ? existing?.lastUsedAt ?? now : now
+      };
+      if (conversationId !== void 0) record.conversationId = conversationId;
+      if (url !== void 0) record.url = url;
+      if (title !== void 0) record.title = title;
+      if (record.conversationId === void 0 && record.url === void 0) {
+        throw new Error(`Conversation "${key}" needs a conversationId or URL before it can be remembered.`);
+      }
+      await this.writeRecordFile(record, this.recordPath(key));
+      return record;
+    });
+  }
+  async touch(key) {
+    const existing = await this.get(key);
+    return existing === void 0 ? void 0 : this.remember({ key: existing.key });
+  }
+  async list() {
+    let names;
+    try {
+      names = await readdir(this.stateRoot);
+    } catch (error) {
+      if (isNodeError4(error, "ENOENT")) return [];
+      throw error;
+    }
+    const records = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      try {
+        const parsed = JSON.parse(await readFile4(join4(this.stateRoot, name), "utf8"));
+        if (!isConversationRecord(parsed)) throw new Error(`Invalid conversation registry record: ${join4(this.stateRoot, name)}`);
+        records.push(parsed);
+      } catch (error) {
+        if (!isNodeError4(error, "ENOENT")) throw error;
+      }
+    }
+    records.sort((left, right) => right.lastUsedAt.localeCompare(left.lastUsedAt));
+    return records;
+  }
+  async forget(key) {
+    const normalizedKey = normalizeKey(key);
+    return this.withMutationLock(async () => {
+      try {
+        await unlink2(this.recordPath(normalizedKey));
+        return true;
+      } catch (error) {
+        if (isNodeError4(error, "ENOENT")) return false;
+        throw error;
+      }
+    });
+  }
+  recordPath(key) {
+    const digest4 = createHash4("sha256").update(key, "utf8").digest("hex");
+    return join4(this.stateRoot, `${digest4}.json`);
+  }
+  async withMutationLock(action) {
+    const target = this.stateRoot;
+    const previous = writeQueues.get(target) ?? Promise.resolve();
+    const queued = previous.catch(() => void 0).then(action);
+    writeQueues.set(target, queued);
+    try {
+      return await queued;
+    } finally {
+      if (writeQueues.get(target) === queued) writeQueues.delete(target);
+    }
+  }
+  async writeRecordFile(record, target) {
+    await mkdir4(this.stateRoot, { recursive: true, mode: 448 });
+    const temporary = join4(this.stateRoot, `${randomUUID3()}.tmp`);
+    try {
+      await writeFile3(temporary, `${JSON.stringify(record, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await rename(temporary, target);
+          break;
+        } catch (error) {
+          if (attempt >= 2 || !(isNodeError4(error, "EPERM") || isNodeError4(error, "EBUSY"))) throw error;
+          await new Promise((resolve8) => setTimeout(resolve8, 10));
+        }
+      }
+    } finally {
+      await unlink2(temporary).catch(() => void 0);
+    }
+  }
+};
+function defaultConversationStateRoot() {
+  if (platform() === "darwin") return join4(homedir(), "Library", "Application Support", "codex-chatgpt-control", "conversations-v1");
+  if (platform() === "win32") {
+    const localAppData = process.env.LOCALAPPDATA;
+    return join4(localAppData?.trim() || join4(homedir(), "AppData", "Local"), "codex-chatgpt-control", "conversations-v1");
+  }
+  const xdgStateHome = process.env.XDG_STATE_HOME;
+  return join4(xdgStateHome?.trim() || join4(homedir(), ".local", "state"), "codex-chatgpt-control", "conversations-v1");
+}
+function normalizeKey(key) {
+  const normalized = key.trim();
+  if (normalized.length === 0) throw new Error("Conversation key must not be empty.");
+  if (normalized.length > 200) throw new Error("Conversation key must be 200 characters or fewer.");
+  return normalized;
+}
+function conversationIdFromUrl(value) {
+  try {
+    const pathname = new URL(value).pathname;
+    if (!pathname.startsWith("/c/")) return void 0;
+    const id2 = pathname.slice(3).split("/")[0];
+    return id2 === "" ? void 0 : id2;
+  } catch {
+    return void 0;
+  }
+}
+function isConversationRecord(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value;
+  if (record.schemaVersion !== 1 || typeof record.key !== "string" || record.key.length === 0) return false;
+  if (record.surface !== "chat" && record.surface !== "work") return false;
+  if (!Array.isArray(record.aliases) || !record.aliases.every((alias) => typeof alias === "string")) return false;
+  if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string" || typeof record.lastUsedAt !== "string") return false;
+  if (record.conversationId !== void 0 && (typeof record.conversationId !== "string" || record.conversationId.trim().length === 0)) return false;
+  if (record.url !== void 0 && (typeof record.url !== "string" || record.url.trim().length === 0)) return false;
+  if (record.title !== void 0 && typeof record.title !== "string") return false;
+  return record.conversationId !== void 0 || record.url !== void 0;
+}
+function isNodeError4(error, code) {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
+// src/conversations/manager.ts
+var ConversationNotFoundError = class extends Error {
+  key;
+  constructor(key) {
+    super(`No remembered ChatGPT conversation exists for "${key}".`);
+    this.name = "ConversationNotFoundError";
+    this.key = key;
+  }
+};
+var ConversationManager = class {
+  constructor(client, options = {}) {
+    this.client = client;
+    this.registry = new ConversationRegistry(options);
+  }
+  client;
+  registry;
+  remember(args) {
+    return this.registry.remember(args);
+  }
+  get(key) {
+    return this.registry.get(key);
+  }
+  find(keyOrAlias) {
+    return this.registry.find(keyOrAlias);
+  }
+  list() {
+    return this.registry.list();
+  }
+  forget(key) {
+    return this.registry.forget(key);
+  }
+  async resolve(use) {
+    const policy = use.policy ?? "reuse";
+    if (policy === "new") return { key: use.key, source: "new", thread: { type: "new" } };
+    if (policy === "current") return { key: use.key, source: "current", thread: { type: "current" } };
+    const record = await this.registry.find(use.key);
+    if (record?.conversationId !== void 0) {
+      return { key: record.key, source: "registry", thread: { type: "conversationId", conversationId: record.conversationId }, record };
+    }
+    if (record?.url !== void 0) return { key: record.key, source: "registry", thread: { type: "url", url: record.url }, record };
+    const ifMissing = use.ifMissing ?? "search";
+    if (ifMissing === "create") return { key: use.key, source: "new", thread: { type: "new" } };
+    if (ifMissing === "search") {
+      const thread = { type: "search", query: use.searchQuery ?? use.key };
+      if (use.select !== void 0) thread.select = use.select;
+      if (use.limit !== void 0) thread.limit = use.limit;
+      return { key: use.key, source: "history-search", thread };
+    }
+    throw new ConversationNotFoundError(use.key);
+  }
+  async open(use) {
+    const resolution = await this.resolve(use);
+    const result3 = await this.client.openThread(resolution.thread);
+    if (result3.ok) await this.persistObserved({ ...use, key: resolution.key }, result3, void 0, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async readLatest(use, args) {
+    const resolution = await this.resolve(use);
+    const opened = await this.client.openThread(resolution.thread);
+    if (!opened.ok) return opened;
+    await this.persistObserved({ ...use, key: resolution.key }, opened, void 0, resolution.source === "new" || resolution.source === "current");
+    const result3 = await this.client.readLatest(args);
+    if (result3.ok) await this.persistObserved({ ...use, key: resolution.key }, result3, void 0, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async ask(args) {
+    const resolution = await this.resolve(args.conversation);
+    const { conversation: _conversation, ...input } = args;
+    const result3 = await this.client.ask({ ...input, thread: resolution.thread });
+    if (result3.ok) await this.persistObserved({ ...args.conversation, key: resolution.key }, result3, input.experience, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async runMessages(args) {
+    const resolution = await this.resolve(args.conversation);
+    const { conversation: _conversation, ...input } = args;
+    const result3 = await this.client.runMessages({ ...input, thread: resolution.thread });
+    if (result3.ok) await this.persistObserved({ ...args.conversation, key: resolution.key }, result3, input.experience, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async rememberObserved(use, result3, experience, replaceIdentity = false) {
+    const { conversationId, url, title } = result3.context;
+    const usableUrl = url !== void 0 && isConversationUrl(url) ? url : void 0;
+    if (conversationId === void 0 && usableUrl === void 0) return;
+    const args = { key: use.key };
+    if (conversationId !== void 0) args.conversationId = conversationId;
+    if (usableUrl !== void 0) args.url = usableUrl;
+    if (title !== void 0) args.title = title;
+    if (use.surface !== void 0) args.surface = use.surface;
+    else if (experience === "chat" || experience === "work") args.surface = experience;
+    if (replaceIdentity) args.replaceIdentity = true;
+    await this.registry.remember(args);
+  }
+  async persistObserved(use, result3, experience, replaceIdentity = false) {
+    try {
+      await this.rememberObserved(use, result3, experience, replaceIdentity);
+    } catch {
+      result3.warnings.push("Conversation metadata could not be persisted.");
+    }
+  }
+};
+function createConversationManager(client, options = {}) {
+  return new ConversationManager(client, options);
+}
+function isConversationUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname) && url.pathname.startsWith("/c/");
+  } catch {
+    return false;
+  }
+}
+
 // src/client.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import { AsyncLocalStorage as AsyncLocalStorage2 } from "node:async_hooks";
 
 // src/runner/agent.ts
@@ -18254,7 +19115,7 @@ function runItemEventName(item) {
 // src/operations/file-identity.ts
 import { constants as fsConstants } from "node:fs";
 import { basename as basename3, resolve as resolve4 } from "node:path";
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 import { lstat, open } from "node:fs/promises";
 var DEFAULT_HASH_CHUNK_BYTES = 64 * 1024;
 var OperationFileIdentityError = class extends Error {
@@ -18317,7 +19178,7 @@ async function hashRegularFile(sourcePath, options) {
     if (!before.isFile() || before.dev !== pathMetadata.dev || before.ino !== pathMetadata.ino) {
       throw new OperationFileIdentityError("operation_file_changed", "The operation input file changed while it was being opened.");
     }
-    const digest4 = createHash4("sha256");
+    const digest4 = createHash5("sha256");
     const stream = handle.createReadStream({
       autoClose: false,
       highWaterMark: chunkBytes,
@@ -21811,16 +22672,16 @@ import { constants as fsConstants2 } from "node:fs";
 import {
   lstat as lstat2,
   link as link2,
-  mkdir as mkdir4,
+  mkdir as mkdir5,
   open as open2,
   opendir,
   realpath,
-  rename,
-  unlink as unlink2
+  rename as rename2,
+  unlink as unlink3
 } from "node:fs/promises";
-import { homedir, hostname, platform } from "node:os";
-import { dirname as dirname2, isAbsolute, join as join4, resolve as resolve5, sep } from "node:path";
-import { randomBytes, randomUUID as randomUUID3 } from "node:crypto";
+import { homedir as homedir2, hostname, platform as platform2 } from "node:os";
+import { dirname as dirname2, isAbsolute, join as join5, resolve as resolve5, sep } from "node:path";
+import { randomBytes, randomUUID as randomUUID4 } from "node:crypto";
 
 // src/runtime/value-boundaries.ts
 function isByteArrayView(value) {
@@ -22379,7 +23240,7 @@ function assertExactKeys(value, label, allowed, code = "invalid_operation_reques
 function validateJsonValue(value, label) {
   const budget = { nodes: 0, bytes: 0 };
   const active = /* @__PURE__ */ new WeakSet();
-  const visit = (candidate, depth) => {
+  const visit2 = (candidate, depth) => {
     budget.nodes += 1;
     if (budget.nodes > MAX_JSON_NODES) throw new OperationHandleError("invalid_operation_configuration", `${label} exceeds the bounded node limit.`);
     if (depth > MAX_JSON_DEPTH) throw new OperationHandleError("invalid_operation_configuration", `${label} exceeds the bounded nesting limit.`);
@@ -22408,7 +23269,7 @@ function validateJsonValue(value, label) {
     try {
       if (isArray) {
         const entries = readArrayEntries(candidate, "invalid_operation_configuration", label, MAX_JSON_NODES);
-        for (const entry of entries) visit(entry, depth + 1);
+        for (const entry of entries) visit2(entry, depth + 1);
         return;
       }
       try {
@@ -22419,7 +23280,7 @@ function validateJsonValue(value, label) {
           }
           budget.bytes += Buffer.byteLength(key, "utf8");
           if (budget.bytes > MAX_JSON_STRING_BYTES) throw new OperationHandleError("invalid_operation_configuration", `${label} exceeds the bounded byte limit.`);
-          visit(entry, depth + 1);
+          visit2(entry, depth + 1);
         }
         return;
       } catch (error) {
@@ -22430,7 +23291,7 @@ function validateJsonValue(value, label) {
       active.delete(object);
     }
   };
-  visit(value, 0);
+  visit2(value, 0);
 }
 function snapshotRecord(value, label, code = "invalid_operation_request") {
   if (value === null || typeof value !== "object") {
@@ -22656,11 +23517,11 @@ var OperationJournal = class _OperationJournal {
     }
     await ensureSecureDirectory(requestedRoot);
     const canonicalRoot = await realpath(requestedRoot);
-    await ensureSecureDirectory(join4(canonicalRoot, LOG_DIRECTORY));
-    await ensureSecureDirectory(join4(canonicalRoot, LOCK_DIRECTORY));
-    await ensureSecureDirectory(join4(canonicalRoot, TERMINAL_DIRECTORY));
-    await ensureSecureDirectory(join4(canonicalRoot, SNAPSHOT_DIRECTORY));
-    await ensureSecureDirectory(join4(canonicalRoot, TOMBSTONE_DIRECTORY));
+    await ensureSecureDirectory(join5(canonicalRoot, LOG_DIRECTORY));
+    await ensureSecureDirectory(join5(canonicalRoot, LOCK_DIRECTORY));
+    await ensureSecureDirectory(join5(canonicalRoot, TERMINAL_DIRECTORY));
+    await ensureSecureDirectory(join5(canonicalRoot, SNAPSHOT_DIRECTORY));
+    await ensureSecureDirectory(join5(canonicalRoot, TOMBSTONE_DIRECTORY));
     const key = await loadOrCreateKey(canonicalRoot, entropy);
     const journal = new _OperationJournal(canonicalRoot, key, clock, entropy, options);
     await journal.ensureQuotaCounter();
@@ -23254,7 +24115,7 @@ var OperationJournal = class _OperationJournal {
       if (beforeBytes === void 0) {
         return { value: 0, byteDelta: 0, entryDelta: 0 };
       }
-      await unlink2(path3);
+      await unlink3(path3);
       await syncDirectory(dirname2(path3));
       await afterDelete?.();
       return { value: beforeBytes, byteDelta: -beforeBytes, entryDelta: -1 };
@@ -23314,21 +24175,21 @@ var OperationJournal = class _OperationJournal {
   }
 };
 function defaultOperationStateRoot() {
-  if (platform() === "darwin") {
-    return join4(homedir(), "Library", "Application Support", "codex-chatgpt-control", "operations-v1");
+  if (platform2() === "darwin") {
+    return join5(homedir2(), "Library", "Application Support", "codex-chatgpt-control", "operations-v1");
   }
-  if (platform() === "win32") {
+  if (platform2() === "win32") {
     const localAppData = process.env.LOCALAPPDATA;
     if (localAppData !== void 0 && isAbsolute(localAppData)) {
-      return join4(localAppData, "codex-chatgpt-control", "operations-v1");
+      return join5(localAppData, "codex-chatgpt-control", "operations-v1");
     }
-    return join4(homedir(), "AppData", "Local", "codex-chatgpt-control", "operations-v1");
+    return join5(homedir2(), "AppData", "Local", "codex-chatgpt-control", "operations-v1");
   }
   const xdgState = process.env.XDG_STATE_HOME;
   if (xdgState !== void 0 && isAbsolute(xdgState)) {
-    return join4(xdgState, "codex-chatgpt-control", "operations-v1");
+    return join5(xdgState, "codex-chatgpt-control", "operations-v1");
   }
-  return join4(homedir(), ".local", "state", "codex-chatgpt-control", "operations-v1");
+  return join5(homedir2(), ".local", "state", "codex-chatgpt-control", "operations-v1");
 }
 function journalEventDigest(key, revision, previousEventDigest, event) {
   return hmacDigest(key, "codex-chatgpt-control/operation-event/v1", {
@@ -23504,10 +24365,10 @@ async function readAuthenticatedFile(path3, key, domain, digestField, errorCode4
   try {
     handle = await open2(path3, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) {
+    if (isNodeError5(error, "ENOENT")) {
       throw new OperationJournalError("operation_not_found", "No durable operation record exists.");
     }
-    if (isNodeError4(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation record.");
+    if (isNodeError5(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation record.");
     throw error;
   }
   let raw;
@@ -23622,7 +24483,7 @@ function withoutField(value, field) {
 }
 async function writeAtomicJson(path3, value, entropy, inject2, replaceExisting) {
   const directory = dirname2(path3);
-  const temporaryPath = join4(directory, `.${path3.split(sep).at(-1) ?? "operation"}-${entropyUuid(entropy)}.tmp`);
+  const temporaryPath = join5(directory, `.${path3.split(sep).at(-1) ?? "operation"}-${entropyUuid(entropy)}.tmp`);
   let handle;
   let createdTemporary = false;
   try {
@@ -23633,7 +24494,7 @@ async function writeAtomicJson(path3, value, entropy, inject2, replaceExisting) 
         POSIX_FILE_MODE
       );
     } catch (error) {
-      if (isNodeError4(error, "EEXIST")) {
+      if (isNodeError5(error, "EEXIST")) {
         throw new OperationJournalError("journal_temp_conflict", "A temporary operation state file already exists.");
       }
       throw error;
@@ -23646,25 +24507,25 @@ async function writeAtomicJson(path3, value, entropy, inject2, replaceExisting) 
     handle = void 0;
     if (replaceExisting) {
       await assertReplaceableRegularFile(path3);
-      await rename(temporaryPath, path3);
+      await rename2(temporaryPath, path3);
     } else {
       try {
         await link2(temporaryPath, path3);
       } catch (error) {
-        if (isNodeError4(error, "EEXIST")) {
+        if (isNodeError5(error, "EEXIST")) {
           throw new OperationJournalError("durable_record_conflict", "Refusing to replace an existing durable operation record.");
         }
         throw error;
       }
-      await unlink2(temporaryPath);
+      await unlink3(temporaryPath);
     }
     await syncDirectory(directory);
     await inject2(injectPointForPath(path3));
   } finally {
     await handle?.close();
     if (createdTemporary) {
-      await unlink2(temporaryPath).catch((error) => {
-        if (!isNodeError4(error, "ENOENT")) throw error;
+      await unlink3(temporaryPath).catch((error) => {
+        if (!isNodeError5(error, "ENOENT")) throw error;
       });
     }
   }
@@ -23679,7 +24540,7 @@ async function assertReplaceableRegularFile(path3) {
   try {
     metadata = await lstat2(path3);
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return;
+    if (isNodeError5(error, "ENOENT")) return;
     throw error;
   }
   if (metadata.isSymbolicLink() || !metadata.isFile()) {
@@ -23692,7 +24553,7 @@ async function pathExists(path3) {
     await lstat2(path3);
     return true;
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return false;
+    if (isNodeError5(error, "ENOENT")) return false;
     throw error;
   }
 }
@@ -23707,7 +24568,7 @@ async function optionalFileSize(path3) {
   try {
     return await fileSize(path3);
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return void 0;
+    if (isNodeError5(error, "ENOENT")) return void 0;
     throw error;
   }
 }
@@ -23778,7 +24639,7 @@ async function closeDirectory(handle) {
   try {
     await handle.close();
   } catch (error) {
-    if (isNodeError4(error, "ERR_DIR_CLOSED")) return;
+    if (isNodeError5(error, "ERR_DIR_CLOSED")) return;
     throw error;
   }
 }
@@ -23795,7 +24656,7 @@ async function appendRecord(args) {
       POSIX_FILE_MODE
     );
   } catch (error) {
-    if (args.createExclusive && isNodeError4(error, "EEXIST")) {
+    if (args.createExclusive && isNodeError5(error, "EEXIST")) {
       throw new OperationJournalError("revision_conflict", "The operation log appeared during exclusive creation.");
     }
     throw error;
@@ -23849,13 +24710,13 @@ async function readLog(logPath, key, allowMissing) {
   try {
     handle = await open2(logPath, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT") && allowMissing) {
+    if (isNodeError5(error, "ENOENT") && allowMissing) {
       return { exists: false, envelopes: [], committedBytes: 0, partialTailBytes: 0 };
     }
-    if (isNodeError4(error, "ENOENT")) {
+    if (isNodeError5(error, "ENOENT")) {
       throw new OperationJournalError("operation_not_found", "No durable operation exists for this operation ID.");
     }
-    if (isNodeError4(error, "ELOOP")) {
+    if (isNodeError5(error, "ELOOP")) {
       throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation log.");
     }
     throw error;
@@ -23905,7 +24766,7 @@ async function ensureLogDurable(logPath) {
   try {
     handle = await open2(logPath, fsConstants2.O_RDWR | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ELOOP")) {
+    if (isNodeError5(error, "ELOOP")) {
       throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation log.");
     }
     throw error;
@@ -23965,10 +24826,10 @@ async function loadOrCreateKey(stateRoot, entropy) {
   try {
     await link2(temporaryKeyPath, keyPath);
   } catch (error) {
-    if (!isNodeError4(error, "EEXIST")) throw error;
+    if (!isNodeError5(error, "EEXIST")) throw error;
   } finally {
-    await unlink2(temporaryKeyPath).catch((error) => {
-      if (!isNodeError4(error, "ENOENT")) throw error;
+    await unlink3(temporaryKeyPath).catch((error) => {
+      if (!isNodeError5(error, "ENOENT")) throw error;
     });
   }
   await syncDirectory(stateRoot);
@@ -23979,8 +24840,8 @@ async function readKey(keyPath) {
   try {
     handle = await open2(keyPath, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) throw new OperationJournalError("journal_key_missing", "Operation journal key is missing.");
-    if (isNodeError4(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_key", "Refusing to follow a symlinked journal key.");
+    if (isNodeError5(error, "ENOENT")) throw new OperationJournalError("journal_key_missing", "Operation journal key is missing.");
+    if (isNodeError5(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_key", "Refusing to follow a symlinked journal key.");
     throw error;
   }
   try {
@@ -23998,7 +24859,7 @@ async function readKey(keyPath) {
   }
 }
 async function ensureSecureDirectory(directory) {
-  await mkdir4(directory, { recursive: true, mode: POSIX_DIRECTORY_MODE });
+  await mkdir5(directory, { recursive: true, mode: POSIX_DIRECTORY_MODE });
   const metadata = await lstat2(directory);
   if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
     throw new OperationJournalError("unsafe_state_root", "Operation state path is not a secure directory.");
@@ -24012,7 +24873,7 @@ async function assertSecureFileHandle(handle, path3) {
   return metadata;
 }
 function assertOwnerAndMode(metadata, path3, expectedMode) {
-  if (platform() === "win32") return;
+  if (platform2() === "win32") return;
   const getuid = process.getuid;
   if (typeof getuid === "function" && Number(metadata.uid) !== getuid()) {
     throw new OperationJournalError("unsafe_state_owner", "Operation state path is not owned by the current user.");
@@ -24056,7 +24917,7 @@ async function acquireLock(lockPath, timeoutMs, clock, entropy) {
       if (createdIdentity !== void 0) {
         await removeFailedExclusiveLock(lockPath, createdIdentity);
       }
-      if (!isNodeError4(error, "EEXIST")) throw error;
+      if (!isNodeError5(error, "EEXIST")) throw error;
       let owner;
       try {
         owner = await readLock(lockPath);
@@ -24100,10 +24961,10 @@ async function readLock(lockPath) {
   try {
     handle = await open2(lockPath, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) {
+    if (isNodeError5(error, "ENOENT")) {
       throw new OperationJournalError("journal_lock_changed", "Operation journal lock changed while being inspected.");
     }
-    if (isNodeError4(error, "ELOOP")) {
+    if (isNodeError5(error, "ELOOP")) {
       throw new OperationJournalError("journal_lock_corrupt", "Refusing to follow a symlinked operation lock.");
     }
     throw error;
@@ -24145,16 +25006,16 @@ async function quarantineAbandonedLock(lockPath, expectedToken, clock, entropy) 
       return false;
     }
     try {
-      await rename(lockPath, quarantinePath);
+      await rename2(lockPath, quarantinePath);
     } catch (error) {
-      if (isNodeError4(error, "ENOENT")) return false;
+      if (isNodeError5(error, "ENOENT")) return false;
       throw error;
     }
     const moved = await readLock(quarantinePath);
     if (moved.token !== expectedToken) {
       throw new OperationJournalError("journal_lock_changed", "Operation journal lock ownership changed during recovery.");
     }
-    await unlink2(quarantinePath);
+    await unlink3(quarantinePath);
     return true;
   } finally {
     await releaseLock(guard);
@@ -24190,7 +25051,7 @@ async function tryAcquireRecoveryGuard(lockPath, clock, entropy) {
       handle = void 0;
       await removeFailedExclusiveLock(guardPath, createdIdentity);
     }
-    if (!isNodeError4(error, "EEXIST")) throw error;
+    if (!isNodeError5(error, "EEXIST")) throw error;
     let owner;
     try {
       owner = await readLock(guardPath);
@@ -24214,7 +25075,7 @@ async function removeFailedExclusiveLock(path3, created) {
   try {
     current = await lstat2(path3);
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return;
+    if (isNodeError5(error, "ENOENT")) return;
     throw error;
   }
   if (current.isSymbolicLink() || !current.isFile() || current.dev !== created.dev || current.ino !== created.ino) {
@@ -24223,7 +25084,7 @@ async function removeFailedExclusiveLock(path3, created) {
       "A failed exclusive lock creation no longer names the file that this process created."
     );
   }
-  await unlink2(path3);
+  await unlink3(path3);
 }
 async function releaseLock(lock) {
   let owner;
@@ -24236,14 +25097,14 @@ async function releaseLock(lock) {
   if (owner.token !== lock.token) {
     throw new OperationJournalError("journal_lock_lost", "Operation journal lock ownership changed before release.");
   }
-  await unlink2(lock.path);
+  await unlink3(lock.path);
 }
 function processExists(pid) {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return !isNodeError4(error, "ESRCH");
+    return !isNodeError5(error, "ESRCH");
   }
 }
 async function serializeInProcess(key, action) {
@@ -24265,7 +25126,7 @@ async function serializeInProcess(key, action) {
   }
 }
 async function syncDirectory(directory) {
-  if (platform() === "win32") return;
+  if (platform2() === "win32") return;
   const handle = await open2(directory, fsConstants2.O_RDONLY);
   try {
     await handle.sync();
@@ -24312,7 +25173,7 @@ function isIsoTimestamp(value) {
 function isRecord6(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function isNodeError4(error, code) {
+function isNodeError5(error, code) {
   return nodeErrorCode(error) === code;
 }
 function validatePositiveInteger2(value, label) {
@@ -24343,7 +25204,7 @@ function resolveEntropy(value) {
   if (value === void 0) {
     return {
       randomBytes: (size) => randomBytes(size),
-      randomUUID: () => randomUUID3()
+      randomUUID: () => randomUUID4()
     };
   }
   try {
@@ -24423,7 +25284,7 @@ function delay(milliseconds) {
 }
 
 // src/operations/service.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 
 // src/operations/recovery.ts
 function decideOperationRecovery(state, observation) {
@@ -29400,8 +30261,8 @@ var OperationService = class {
       state: loaded.state,
       handle: this.journal.handleFromState(loaded.state),
       actionIds: {
-        sendActionId: send?.actionId ?? randomUUID4(),
-        ...files.length === 0 ? {} : { fileHandoffActionId: handoff?.actionId ?? randomUUID4() }
+        sendActionId: send?.actionId ?? randomUUID5(),
+        ...files.length === 0 ? {} : { fileHandoffActionId: handoff?.actionId ?? randomUUID5() }
       }
     };
     const submission = await runAtomicSubmission(
@@ -29809,7 +30670,7 @@ var OperationService = class {
     if (unsettled.length > 1) {
       throw new OperationServiceError("operation_state_corrupt", "Operation contains duplicate unsettled staging actions.");
     }
-    return unsettled[0]?.actionId ?? randomUUID4();
+    return unsettled[0]?.actionId ?? randomUUID5();
   }
   async persistStagingIntent(identity) {
     const current = await this.journal.load(identity.operationId, identity.requestDigest);
@@ -32066,7 +32927,7 @@ function createRuntimeEnvSession(options) {
 }
 
 // src/operations/production-configuration.ts
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 var DIGEST_PATTERN9 = /^hmac-sha256:[0-9a-f]{64}$/u;
 var ID_PATTERN3 = /^[A-Za-z0-9._:-]{1,512}$/u;
 var MAX_CONFIGURATION_FIELDS = 8;
@@ -33003,7 +33864,7 @@ function safeDigest(evidenceDigest, domain, material) {
   }
 }
 function opaqueFingerprint(value) {
-  return createHash5("sha256").update(value, "utf8").digest("hex");
+  return createHash6("sha256").update(value, "utf8").digest("hex");
 }
 function normalizeRequest(request) {
   const source = snapshotDataRecord(request, "staging_request_mismatch");
@@ -35422,7 +36283,7 @@ function readPageObservation(args) {
     url.pathname = url.pathname.replace(/\/{2,}/g, "/").replace(/\/$/u, "") || "/";
     return url.toString();
   };
-  const conversationIdFromUrl = (urlValue) => {
+  const conversationIdFromUrl2 = (urlValue) => {
     const url = new URL(urlValue);
     const parts = url.pathname.split("/").filter(Boolean);
     const index = parts.findIndex((part) => part === "c" || part === "conversation");
@@ -35517,7 +36378,7 @@ function readPageObservation(args) {
     throw new Error("navigation unavailable");
   }
   const canonicalUrl = canonicalizeUrl(currentUrl);
-  const fromUrl = conversationIdFromUrl(canonicalUrl);
+  const fromUrl = conversationIdFromUrl2(canonicalUrl);
   const conversationValues = /* @__PURE__ */ new Set();
   const threadValues = /* @__PURE__ */ new Set();
   const roots = [];
@@ -38656,17 +39517,17 @@ function cloneOwnershipBaseline2(value) {
 function deepFreeze2(value) {
   if (value === null || typeof value !== "object" && typeof value !== "function") return value;
   const seen = /* @__PURE__ */ new WeakSet();
-  const visit = (current) => {
+  const visit2 = (current) => {
     if (current === null || typeof current !== "object" && typeof current !== "function") return;
     const object = current;
     if (seen.has(object)) return;
     seen.add(object);
     for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(object))) {
-      if ("value" in descriptor) visit(descriptor.value);
+      if ("value" in descriptor) visit2(descriptor.value);
     }
     Object.freeze(object);
   };
-  visit(value);
+  visit2(value);
   return value;
 }
 function validateOwnershipBaseline(value) {
@@ -38764,7 +39625,7 @@ import { resolve as resolve7 } from "node:path";
 
 // src/operations/artifact-output.ts
 import { constants as fsConstants3, unlinkSync } from "node:fs";
-import { createHash as createHash6, randomBytes as randomBytes2 } from "node:crypto";
+import { createHash as createHash7, randomBytes as randomBytes2 } from "node:crypto";
 import { isAbsolute as isAbsolute2, relative, resolve as resolve6, sep as sep2 } from "node:path";
 import { lstat as lstat3, open as open3, opendir as opendir2, realpath as realpath2 } from "node:fs/promises";
 
@@ -38803,7 +39664,7 @@ var MAX_TEMP_SCAN_ENTRIES = 65536;
 var MAX_GRAPH_DEPTH2 = 16;
 var MAX_GRAPH_NODES2 = 1024;
 var POSIX_FILE_MODE2 = 384;
-var EMPTY_SHA256 = createHash6("sha256").digest("hex");
+var EMPTY_SHA256 = createHash7("sha256").digest("hex");
 var ArtifactOutputError = class extends Error {
   constructor(code, message) {
     super(message);
@@ -39692,7 +40553,7 @@ async function createOwnedTemp(directory, prefix, hooks, runtime) {
 async function writeSource(temp, options, runtime) {
   const handle = temp.handle;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_ARTIFACT_BYTES;
-  const digest4 = createHash6("sha256");
+  const digest4 = createHash7("sha256");
   let bytes = 0;
   let chunkCount = 0;
   let iterator;
@@ -39854,7 +40715,7 @@ async function retainedTempMatches(temp, expected, runtime) {
     checkRuntime(runtime);
     const before = await temp.handle.stat({ bigint: true });
     if (!before.isFile() || before.isSymbolicLink() || before.dev !== temp.device || before.ino !== temp.inode || before.size !== BigInt(expected.bytes)) return false;
-    const digest4 = createHash6("sha256");
+    const digest4 = createHash7("sha256");
     const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.bytes)));
     let position = 0;
     while (position < expected.bytes) {
@@ -39877,7 +40738,7 @@ async function closeTempHandle(temp) {
 }
 async function copyRetainedTemp(temp, destination, expected, runtime) {
   const source = temp.handle;
-  const digest4 = createHash6("sha256");
+  const digest4 = createHash7("sha256");
   const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.bytes)));
   let position = 0;
   try {
@@ -39943,7 +40804,7 @@ async function verifyDestination(destination, finalPath, expected, runtime) {
     throw new InstallOutcome("blocked", "commit_indeterminate");
   }
   const before = await destination.stat({ bigint: true });
-  const digest4 = createHash6("sha256");
+  const digest4 = createHash7("sha256");
   const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.bytes)));
   let position = 0;
   while (position < expected.bytes) {
@@ -39982,7 +40843,7 @@ async function inspectExistingFinal(finalPath, expected, runtime) {
   try {
     const before = await handle.stat({ bigint: true });
     if (!before.isFile() || before.dev !== metadata.dev || before.ino !== metadata.ino) return "unavailable";
-    const digest4 = createHash6("sha256");
+    const digest4 = createHash7("sha256");
     let bytes = 0;
     const stream = handle.createReadStream({ autoClose: false, highWaterMark: 64 * 1024 });
     try {
@@ -40081,7 +40942,7 @@ async function inject(hooks, point, runtime) {
   checkRuntime(runtime);
 }
 function outputIdentityDigest(input, extension) {
-  const hash = createHash6("sha256");
+  const hash = createHash7("sha256");
   hash.update("codex-chatgpt-control/artifact-output/v1\0", "utf8");
   updateLengthPrefixed(hash, input.operationId);
   updateLengthPrefixed(hash, input.artifactIdentity);
@@ -46870,18 +47731,18 @@ function cloneSafeData(value, seen = /* @__PURE__ */ new Set(), depth = 0) {
 
 // src/client.ts
 function createChatGPT(options = {}) {
-  const runtimeEnvironment = runtimeEnv(options);
-  const runtime = createRuntimeEnvSession(runtimeEnvironment);
+  const runtimeEnvironment2 = runtimeEnv(options);
+  const runtime = createRuntimeEnvSession(runtimeEnvironment2);
   const operationRuntime = new AsyncLocalStorage2();
   const operationOwner = Object.freeze({
-    backendSessionId: randomUUID5()
+    backendSessionId: randomUUID6()
   });
   const limits = normalizeLimits(options.limits);
   let operationClientPromise;
   const operationClient = () => {
     operationClientPromise ??= createOperationClientForChatGPT(
       options,
-      () => operationRuntime.getStore() ?? runtimeEnvironment,
+      () => operationRuntime.getStore() ?? runtimeEnvironment2,
       operationOwner
     );
     return operationClientPromise;
@@ -47466,7 +48327,7 @@ function runtimeEnv(options) {
   if (options.expectedTabId !== void 0) env.expectedTabId = options.expectedTabId;
   return coordinateRuntimeEnv(env);
 }
-async function createOperationClientForChatGPT(options, runtimeEnvironment, owner) {
+async function createOperationClientForChatGPT(options, runtimeEnvironment2, owner) {
   const operationOptions = options.operations ?? {};
   const journal = await OperationJournal.open(
     operationOptions.stateRoot === void 0 ? {} : { stateRoot: operationOptions.stateRoot }
@@ -47485,17 +48346,17 @@ async function createOperationClientForChatGPT(options, runtimeEnvironment, owne
     return journal.evidenceDigest("provider-evidence", { domain, material });
   };
   const adapterFactory = hasCustomAdapter ? operationOptions.adapterFactory : async (context) => createChatGPTOperationAdapterFactory({
-    env: runtimeEnvironment(),
+    env: runtimeEnvironment2(),
     owner,
     evidenceDigest
   })(context);
   const handleAdapterFactory = hasCustomAdapter ? operationOptions.handleAdapterFactory : async (context) => createChatGPTOperationHandleAdapterFactory({
-    env: runtimeEnvironment(),
+    env: runtimeEnvironment2(),
     owner,
     evidenceDigest
   })(context);
   const controlAdapterFactory = hasCustomAdapter ? operationOptions.controlAdapterFactory : async (context) => createChatGPTOperationControlAdapterFactory({
-    env: runtimeEnvironment(),
+    env: runtimeEnvironment2(),
     owner,
     evidenceDigest
   })(context);
@@ -48694,9 +49555,47 @@ function arrayInput(input, key) {
   return value;
 }
 
+// src/environment.ts
+import { access as access3, readdir as readdir2 } from "node:fs/promises";
+import { homedir as homedir3 } from "node:os";
+import { join as join7 } from "node:path";
+import { pathToFileURL } from "node:url";
+async function createChatGPTFromEnvironment(env = runtimeEnvironment()) {
+  if (env.CODEX_BROWSER_PROVIDER !== void 0) {
+    return createChatGPT({ browser: createTerminalBrowserFromEnv(env) });
+  }
+  const agent = globalThis.agent ?? await loadCodexBrowserAgent(env);
+  return agent === void 0 ? createChatGPT() : createChatGPT({ agent });
+}
+async function loadCodexBrowserAgent(env = runtimeEnvironment()) {
+  const modulePath = env.CODEX_BROWSER_CLIENT_MODULE ?? await discoverBrowserClientModule(env);
+  if (modulePath === void 0) return void 0;
+  try {
+    const module = await import(`${pathToFileURL(modulePath).href}?t=${Date.now()}`);
+    if (typeof module.setupBrowserRuntime !== "function") return void 0;
+    const agent = await module.setupBrowserRuntime();
+    return agent;
+  } catch {
+    return void 0;
+  }
+}
+function runtimeEnvironment() {
+  return typeof process === "undefined" ? {} : process.env;
+}
+async function discoverBrowserClientModule(env) {
+  const root = join7(env.CODEX_HOME ?? join7(homedir3(), ".codex"), "plugins", "cache", "openai-bundled", "browser");
+  const entries = await readdir2(root, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries.sort((left, right) => right.name.localeCompare(left.name))) {
+    if (!entry.isDirectory()) continue;
+    const candidate = join7(root, entry.name, "scripts", "browser-client.mjs");
+    if (await access3(candidate).then(() => true, () => false)) return candidate;
+  }
+  return void 0;
+}
+
 // src/backend/client.ts
-import { spawn } from "node:child_process";
-import { randomUUID as randomUUID6 } from "node:crypto";
+import { spawn as spawn3 } from "node:child_process";
+import { randomUUID as randomUUID7 } from "node:crypto";
 import { TextDecoder } from "node:util";
 
 // src/operations/wire-requests.ts
@@ -50125,7 +51024,7 @@ var BackendClientError = class extends Error {
 };
 function createChatGPTBackendClient(transport) {
   let nextRequestId = 0;
-  const requestIdPrefix = `req_${process.pid}_${randomUUID6()}`;
+  const requestIdPrefix = `req_${process.pid}_${randomUUID7()}`;
   const allocateRequestId = () => `${requestIdPrefix}_${++nextRequestId}`;
   const request = async (command, payload = {}) => {
     const response = await transport.request({
@@ -50344,7 +51243,7 @@ var StdioBackendTransport = class {
   handshakeState = "unknown";
   handshakePromise;
   handshakeGeneration = 0;
-  requestIdPrefix = `transport_${process.pid}_${randomUUID6()}`;
+  requestIdPrefix = `transport_${process.pid}_${randomUUID7()}`;
   handshakeError;
   compatibilityReport;
   protocolQuarantined = false;
@@ -50509,7 +51408,7 @@ var StdioBackendTransport = class {
     if (command === void 0) {
       throw new BackendClientError("invalid_backend_command", "Stdio backend command must not be empty.", false);
     }
-    const child = spawn(command, args, {
+    const child = spawn3(command, args, {
       cwd: this.options.cwd,
       env: this.options.env,
       stdio: ["pipe", "pipe", "pipe"]
@@ -51879,8 +52778,8 @@ function validateTransportOptions(options) {
 }
 
 // src/backend/session.ts
-import { randomUUID as randomUUID7 } from "node:crypto";
-var PROCESS_BACKEND_SESSION_ID = randomUUID7();
+import { randomUUID as randomUUID8 } from "node:crypto";
+var PROCESS_BACKEND_SESSION_ID = randomUUID8();
 var MAX_IDENTITY_FIELD_LENGTH = 512;
 var BackendSession = class {
   constructor(options = {}) {
@@ -52486,6 +53385,7 @@ export {
   BackendClientError,
   BackendSession,
   BrowserBridgeUnavailableError,
+  BrowserHarnessBackend,
   BrowserObservationError,
   BrowserTargetError,
   COLLECTOR_SCHEMA_VERSION,
@@ -52496,8 +53396,12 @@ export {
   COORDINATED_PAGE_PRIORITIES,
   ChatGPTControlError,
   ChatGPTRuntimeFactoryError,
+  ChromeDevToolsBackend,
   ConfirmationRequiredError,
   ControlInputError,
+  ConversationManager,
+  ConversationNotFoundError,
+  ConversationRegistry,
   CoordinatedBrowserError,
   CoordinatedPageError,
   CoordinatorAbortedError,
@@ -52609,16 +53513,20 @@ export {
   countMessages,
   countPageArtifacts,
   countPageMessages,
+  createBrowserHarnessBrowser,
   createBrowserResourceKey,
   createChatGPT,
   createChatGPTAgent,
   createChatGPTBackendClient,
   createChatGPTControlAdapterFactory,
+  createChatGPTFromEnvironment,
   createChatGPTOperationAdapterFactory,
   createChatGPTOperationControlAdapterFactory,
   createChatGPTOperationHandleAdapterFactory,
   createChatGPTOperationRecoveryFactory,
   createChatGPTOperationRuntimeFactory,
+  createChromeDevToolsBrowser,
+  createConversationManager,
   createCoordinatedBrowser,
   createCoordinatedPage,
   createCoordinatedPageForBrowser,
@@ -52636,9 +53544,13 @@ export {
   createRuntimeEnvSession,
   createRuntimeOperationBrowserAdapter,
   createTabResourceKey,
+  createTerminalBrowser,
+  createTerminalBrowserFromEnv,
+  createTerminalBrowserTransport,
   cssSelectors,
   decideOperationRecovery,
   decodeBasicEntities,
+  defaultConversationStateRoot,
   defaultOperationStateRoot,
   defaultSequencePolicy,
   deriveOperationOutputKey,
@@ -52683,6 +53595,7 @@ export {
   listLatestArtifacts,
   listPageArtifacts,
   listProjectSources,
+  loadCodexBrowserAgent,
   locatorCountWithTimeout,
   messageStatus,
   newChatButton,

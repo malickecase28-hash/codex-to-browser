@@ -22,6 +22,7 @@ export interface TerminalBrowserBackend {
   evaluate<T>(pageId: string, expression: string): Promise<T>;
   pressKey?(pageId: string, key: string): Promise<void>;
   uploadFiles?(pageId: string, selector: string, paths: string[]): Promise<void>;
+  waitForEvent?(pageId: string, event: string, options?: unknown): Promise<unknown>;
   selectedPageId?(): Promise<string | undefined>;
 }
 
@@ -115,6 +116,10 @@ function createTerminalPage(backend: TerminalBrowserBackend, pageId: string): Pa
       return backend.evaluate<T>(pageId, `async () => { const __name = value => value; const fn = (${fn.toString()}); const arg = ${serialize(arg)}; return await fn(arg); }`);
     },
     async content() { return backend.evaluate<string>(pageId, "() => document.documentElement.outerHTML"); },
+    async waitForEvent(event: string, options?: unknown) {
+      if (backend.waitForEvent === undefined) throw new Error(`${backend.name} does not expose ${event} events.`);
+      return backend.waitForEvent(pageId, event, options);
+    },
     async close() { await backend.closePage(pageId); }
   };
 }

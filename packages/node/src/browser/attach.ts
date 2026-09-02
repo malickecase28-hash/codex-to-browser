@@ -74,9 +74,7 @@ async function getBrowser(
   const browsers = (agent as { browsers?: unknown } | undefined)?.browsers;
 
   if (browsers !== undefined && typeof browsers === "object") {
-    const maybeBrowser = await tryBrowserGetPreferredListed(browsers)
-      ?? await tryBrowserGet(browsers, "extension")
-      ?? await tryBrowserGet(browsers, "chrome");
+    const maybeBrowser = await tryBrowserGet(browsers, "extension");
 
     if (maybeBrowser !== undefined) {
       return createCoordinatedBrowser(maybeBrowser, coordination);
@@ -94,51 +92,6 @@ async function tryBrowserGet(browsers: unknown, name: string): Promise<BrowserLi
 
   try {
     const browser = await get.call(browsers, name);
-    return normalizeBrowser(browser);
-  } catch {
-    return undefined;
-  }
-}
-
-async function tryBrowserGetFirst(browsers: unknown): Promise<BrowserLike | undefined> {
-  const list = (browsers as { list?: () => Promise<unknown[]> | unknown[] }).list;
-  const get = (browsers as { get?: (browserName: string) => Promise<unknown> | unknown }).get;
-
-  if (typeof list !== "function" || typeof get !== "function") {
-    return undefined;
-  }
-
-  try {
-    const names = await list.call(browsers);
-    const first = names.find(name => typeof name === "string") as string | undefined;
-    if (first === undefined) {
-      return undefined;
-    }
-    const browser = await get.call(browsers, first);
-    return normalizeBrowser(browser);
-  } catch {
-    return undefined;
-  }
-}
-
-async function tryBrowserGetPreferredListed(browsers: unknown): Promise<BrowserLike | undefined> {
-  const list = (browsers as { list?: () => Promise<Array<Record<string, unknown>>> | Array<Record<string, unknown>> }).list;
-  const get = (browsers as { get?: (browserName: string) => Promise<unknown> | unknown }).get;
-
-  if (typeof list !== "function" || typeof get !== "function") {
-    return undefined;
-  }
-
-  try {
-    const available = await list.call(browsers);
-    const preferred = available.find(browser => browser.type === "extension")
-      ?? available.find(browser => typeof browser.name === "string" && /chrome/i.test(browser.name))
-      ?? available[0];
-    const id = preferred?.id;
-    if (typeof id !== "string") {
-      return undefined;
-    }
-    const browser = await get.call(browsers, id);
     return normalizeBrowser(browser);
   } catch {
     return undefined;

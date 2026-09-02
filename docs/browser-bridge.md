@@ -32,7 +32,14 @@ Real ChatGPT control additionally needs:
 
 `globalThis.agent` is host-provided. The SDK does not create or fake a browser bridge from an ordinary shell.
 
-## Terminal transports
+## Connected Browser transport
+
+The ChatGPT Surface Control plugin uses the connected `@Browser` extension
+bridge. It does not select Browser Harness, Chrome DevTools, CDP, or remote
+debugging. If the extension bridge is unavailable, browser-required work stops
+with a structured `browser_bridge_unavailable` blocker.
+
+## Explicit terminal transports (legacy)
 
 The Node package also accepts a terminal-owned `BrowserLike` transport. This
 avoids the Codex Desktop bridge while retaining the visible-session boundary:
@@ -44,14 +51,18 @@ const chatgpt = createChatGPT({ browser: createTerminalBrowserFromEnv() });
 await chatgpt.session.bootstrap({ preferExistingTab: true });
 ```
 
-Set `CODEX_BROWSER_PROVIDER=browser-harness` (the default) or
-`CODEX_BROWSER_PROVIDER=chrome-devtools`. Browser Harness uses its persistent
+Set `CODEX_BROWSER_PROVIDER=browser-harness` or
+`CODEX_BROWSER_PROVIDER=chrome-devtools` only when an explicit terminal
+provider is desired. With the variable unset, the SDK discovers the installed
+Codex/Browser bridge first and does not launch a remote-debugging browser.
+Browser Harness uses its persistent
 daemon and supports visible tab listing, navigation, JavaScript, keyboard
 input, and file upload. Chrome DevTools supports the same core page controls;
 its file upload adapter remains deliberately blocked until UID resolution is
 implemented.
 
-Install and verify Browser Harness:
+Browser Harness is an explicit legacy provider only; it is not selected by the
+plugin:
 
 ```bash
 uv tool install --python 3.12 --upgrade --force browser-harness
@@ -65,6 +76,18 @@ For Chrome 144+, enable remote debugging at
 `chrome://inspect/#remote-debugging` before attaching to an existing Chrome
 profile. The no-send `npm run smoke:terminal-browser` command performs the
 first bootstrap/read check.
+
+For the actual terminal workflow, run the existing-thread or new-thread
+command from the repository root:
+
+```powershell
+$env:CODEX_BROWSER_PROVIDER = "browser-harness"
+npm --prefix packages/node run thread -- --existing selected --prompt "Read the current chat and continue carrying out its instructions."
+npm --prefix packages/node run thread -- --new --prompt "Create X, Y, and Z."
+```
+
+The CLI sends only the explicit prompt and returns structured output. Local
+file and shell changes remain under the Codex Terminal orchestration layer.
 
 Install and verify the alternate Chrome DevTools provider:
 

@@ -36,6 +36,7 @@ USAGE = "\n".join(
         '  python -m codex_chatgpt_control.thread_entrypoint "<target>" --prompt "Continue from the latest answer."',
         '  python -m codex_chatgpt_control.thread_entrypoint --existing selected',
         '  python -m codex_chatgpt_control.thread_entrypoint --existing-conversation-id "<conversation-id>" --prompt "Continue."',
+        '  python -m codex_chatgpt_control.thread_entrypoint --new --prompt "Create X, Y, and Z."',
         '  CHATGPT_THREAD_TARGET="<target>" CHATGPT_THREAD_PROMPT="<prompt>" python -m codex_chatgpt_control.thread_entrypoint',
         "",
         "Options:",
@@ -45,6 +46,7 @@ USAGE = "\n".join(
         "  --existing-conversation-id    Claim an open tab by ChatGPT conversation id.",
         "  --existing-tab-id             Claim an open user tab by browser bridge tab id.",
         "  --open-if-missing             Open a URL/conversation target if no matching open tab exists.",
+        "  --new                         Start a new ChatGPT thread (requires --prompt).",
         "  --prompt, -p                  Optional prompt to send after opening the thread. Omit to read only.",
         "  --format                      Response format for the read step. Default: markdown.",
         "  --max-chars                   Maximum response characters to return.",
@@ -63,6 +65,9 @@ class ContinueThreadSession(Protocol):
 class ContinueThreadClient(Protocol):
     @property
     def session(self) -> ContinueThreadSession:
+        ...
+
+    def ask(self, **kwargs: Any) -> CommandResult:
         ...
 
     def ask_in_thread(self, **kwargs: Any) -> CommandResult:
@@ -97,6 +102,7 @@ def parse_continue_thread_args(
     existing_conversation_id_flag: str | None = None
     existing_tab_id_flag: str | None = None
     open_if_missing_flag = False
+    new_thread_flag = False
     positionals: list[str] = []
 
     index = 0
@@ -139,6 +145,8 @@ def parse_continue_thread_args(
             existing_tab_id_flag = _required_value(argv, index, arg)
         elif arg == "--open-if-missing":
             open_if_missing_flag = True
+        elif arg == "--new":
+            new_thread_flag = True
         else:
             positionals.append(arg)
         index += 1
@@ -151,8 +159,13 @@ def parse_continue_thread_args(
         tab_id=_first_text(existing_tab_id_flag, env.get("CHATGPT_THREAD_EXISTING_TAB_ID")),
         open_if_missing=open_if_missing_flag or _env_truthy(env.get("CHATGPT_THREAD_OPEN_IF_MISSING")),
     )
-    if target is None and existing is None:
+    new_thread = new_thread_flag or _env_truthy(env.get("CHATGPT_THREAD_NEW"))
+    if target is None and existing is None and not new_thread:
         raise ContinueThreadUsageError(f"Missing ChatGPT thread URL, search query, or existing-tab selector.\n\n{USAGE}")
+    if new_thread and (target is not None or existing is not None):
+        raise ContinueThreadUsageError("Use --new without a thread target or existing-tab selector.")
+    if new_thread and _first_text(prompt_flag, env.get("CHATGPT_THREAD_PROMPT")) is None:
+        raise ContinueThreadUsageError("--new requires --prompt.")
     if target is not None and existing is not None:
         raise ContinueThreadUsageError(f"Use either a target/search query or an existing-tab selector, not both.\n\n{USAGE}")
 
@@ -163,6 +176,8 @@ def parse_continue_thread_args(
         options["target"] = target
     if existing is not None:
         options["existing"] = existing
+    if new_thread:
+        options["new_thread"] = True
 
     prompt = _first_text(prompt_flag, env.get("CHATGPT_THREAD_PROMPT"))
     if prompt is not None:
@@ -207,6 +222,11 @@ def thread_selector_from_target(target: str, *, limit: int = DEFAULT_SEARCH_LIMI
 def run_continue_thread(chatgpt: ContinueThreadClient, options: dict[str, Any]) -> CommandResult:
     read = _read_kwargs(options)
     prompt = str(options.get("prompt", "")).strip()
+
+    if options.get("new_thread"):
+        if not prompt:
+            raise ContinueThreadUsageError("--new requires --prompt.")
+        return chatgpt.ask(thread={"type": "new"}, prompt=prompt, wait=_wait_kwargs(options) or True, read=read)
 
     existing = options.get("existing")
     if existing is not None:

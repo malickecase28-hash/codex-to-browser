@@ -29,10 +29,17 @@ const result = await chatgpt.runner.run(reviewer, {
 });
 ```
 
-## Terminal browser transports
+## Connected Browser transport
 
-Terminal runs can use a persistent Browser Harness daemon or Chrome DevTools
-CLI instead of `globalThis.agent`. Browser Harness is the default provider:
+The plugin uses the connected `@Browser` extension bridge. Browser Harness,
+Chrome DevTools, CDP, and remote debugging are not selected by the plugin.
+They remain explicit SDK-level terminal providers only.
+
+## Explicit terminal browser transports
+
+Terminal runs first discover the installed Codex/Browser bridge. A persistent
+Browser Harness daemon or Chrome DevTools CLI is available only as an explicit
+terminal provider:
 
 ```powershell
 uv tool install --python 3.12 --upgrade --force browser-harness
@@ -58,6 +65,20 @@ Applications can select either provider explicitly with
 `createTerminalBrowserTransport(...)`, or let
 `createTerminalBrowserFromEnv()` read `CODEX_BROWSER_PROVIDER`. The terminal
 providers use only visible browser controls; terminal finalization does not close user-owned tabs.
+
+Run the workflow directly from the repository root:
+
+```powershell
+$env:CODEX_BROWSER_PROVIDER = "browser-harness"
+npm --prefix packages/node run thread -- --existing selected --prompt "Read the current chat and continue carrying out its instructions."
+npm --prefix packages/node run thread -- --new --prompt "Create X, Y, and Z."
+npm --prefix packages/node run thread -- "<ChatGPT thread URL or history search query>" --prompt "Continue from the latest answer."
+```
+
+The first command continues the visible selected ChatGPT tab; `--new` starts
+a new visible thread. The CLI accepts the natural-language prompt, while
+Codex Terminal remains the local orchestration layer for any resulting file
+or shell work.
 
 For direct construction:
 

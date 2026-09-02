@@ -2,4 +2,4 @@ interface:
   display_name: "ChatGPT Surface Control"
   short_description: "Visible Chat and Work delegation for Codex"
   brand_color: "#10A37F"
-  default_prompt: "Use $codex-chatgpt-control to delegate this task to the appropriate visible Chat or Work experience."
+  default_prompt: "Use $codex-chatgpt-control with the connected @Browser extension as its transport. Route retrieval and new work by intent, and never substitute direct Chrome control, Browser Harness, CDP, remote debugging, or an ordinary-shell fallback."

@@ -2,7 +2,7 @@
 
 Use this reference when `globalThis.agent` is missing, when the Chrome bridge state is unclear, or when a user says an existing ChatGPT tab is already open.
 
-In a true Codex Chrome-plugin run, initialize the Chrome plugin runtime before using the SDK:
+In a true Codex browser-plugin run, initialize the browser runtime before using the SDK:
 
 ```js
 const { setupBrowserRuntime } = await import("/absolute/path/to/browser-client.mjs");

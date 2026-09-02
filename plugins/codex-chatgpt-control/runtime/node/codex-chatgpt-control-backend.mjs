@@ -3507,6 +3507,7 @@ async function readPageState(page) {
   return state;
 }
 async function readPageSurfaceSnapshot(page) {
+  const operationTimeoutMs = page.operationTimeoutMs ?? 1e3;
   if (typeof page.evaluate === "function") {
     try {
       const snapshot2 = await withTimeout(page.evaluate(() => {
@@ -3521,20 +3522,13 @@ async function readPageSurfaceSnapshot(page) {
           "[class*='toast' i]",
           "[class*='banner' i]"
         ].join(", ");
-        const visible = (element) => {
-          if (element.hidden || element.closest("[hidden], [inert], [aria-hidden='true']") !== null) return false;
-          const style = window.getComputedStyle(element);
-          if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0" || style.pointerEvents === "none") return false;
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 || rect.height > 0;
-        };
-        const blockerText = Array.from(document.querySelectorAll(systemSelector)).filter((element) => visible(element)).filter((element) => element.closest(messageSelector) === null).map((element) => `${element.textContent ?? ""} ${element.getAttribute("aria-label") ?? ""}`).join(" ");
+        const blockerText = Array.from(document.querySelectorAll(systemSelector)).filter((element) => element.hidden === false && element.closest("[hidden], [inert], [aria-hidden='true']") === null).filter((element) => element.closest(messageSelector) === null).map((element) => `${element.textContent ?? ""} ${element.getAttribute("aria-label") ?? ""}`).join(" ");
         return {
           visibleText: document.body?.innerText ?? "",
           blockerText,
-          hasConversationMessages: Array.from(document.querySelectorAll(messageSelector)).some(visible)
+          hasConversationMessages: Array.from(document.querySelectorAll(messageSelector)).some((element) => element.hidden === false && element.closest("[hidden], [inert], [aria-hidden='true']") === null)
         };
-      }), 1e3, "Timed out while reading the visible ChatGPT page surface.");
+      }), operationTimeoutMs, "Timed out while reading the visible ChatGPT page surface.");
       if (typeof snapshot2 === "string") {
         return {
           visibleText: snapshot2,
@@ -6393,7 +6387,7 @@ function buildPage(state) {
   const rawPage = state.rawPage;
   const wrapper = {};
   rawValues.set(wrapper, rawPage);
-  for (const property of ["id", "tabId"]) {
+  for (const property of ["id", "tabId", "operationTimeoutMs"]) {
     const value = readDataMember(rawPage, property, `page.${property}`);
     if (value !== void 0) wrapper[property] = value;
   }
@@ -6855,7 +6849,7 @@ async function getBrowser(env, coordination) {
   const agent = env.agent ?? anyEnv.agent ?? globalThis.agent;
   const browsers = agent?.browsers;
   if (browsers !== void 0 && typeof browsers === "object") {
-    const maybeBrowser = await tryBrowserGetPreferredListed(browsers) ?? await tryBrowserGet(browsers, "extension") ?? await tryBrowserGet(browsers, "chrome");
+    const maybeBrowser = await tryBrowserGet(browsers, "extension");
     if (maybeBrowser !== void 0) {
       return createCoordinatedBrowser(maybeBrowser, coordination);
     }
@@ -6869,25 +6863,6 @@ async function tryBrowserGet(browsers, name) {
   }
   try {
     const browser = await get.call(browsers, name);
-    return normalizeBrowser(browser);
-  } catch {
-    return void 0;
-  }
-}
-async function tryBrowserGetPreferredListed(browsers) {
-  const list = browsers.list;
-  const get = browsers.get;
-  if (typeof list !== "function" || typeof get !== "function") {
-    return void 0;
-  }
-  try {
-    const available = await list.call(browsers);
-    const preferred = available.find((browser2) => browser2.type === "extension") ?? available.find((browser2) => typeof browser2.name === "string" && /chrome/i.test(browser2.name)) ?? available[0];
-    const id2 = preferred?.id;
-    if (typeof id2 !== "string") {
-      return void 0;
-    }
-    const browser = await get.call(browsers, id2);
     return normalizeBrowser(browser);
   } catch {
     return void 0;

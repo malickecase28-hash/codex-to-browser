@@ -44,7 +44,7 @@ class LiveBackendSmokeTests(unittest.TestCase):
                     "--mode",
                     "browser-bridge",
                     "--backend-command",
-                    f"{sys.executable} {FAKE_BACKEND}",
+                    f'"{sys.executable}" "{FAKE_BACKEND}"',
                     "--report-dir",
                     str(report_dir),
                 ],

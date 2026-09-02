@@ -13,6 +13,11 @@ class RecordingChatGPT:
         self.calls: list[str] = []
         self.session = RecordingSession(self.calls)
 
+    def ask(self, **kwargs):
+        thread = kwargs.get("thread", {})
+        self.calls.append(f"ask:{thread.get('type', 'default')}:{kwargs['prompt']}")
+        return ok({"responseText": "created"})
+
     def ask_in_thread(self, **kwargs):
         thread = kwargs["thread"]
         self.calls.append(f"ask_in_thread:{thread.get('query') or thread.get('url') or thread.get('type')}:{kwargs['prompt']}")
@@ -104,6 +109,31 @@ class ContinueThreadEntrypointTests(unittest.TestCase):
                 "format": "normalized_text",
             },
         )
+
+    def test_parses_new_thread_mode_with_a_prompt(self) -> None:
+        self.assertEqual(
+            parse_continue_thread_args(["--new", "--prompt", "Create X, Y, and Z."], {}),
+            {
+                "new_thread": True,
+                "prompt": "Create X, Y, and Z.",
+                "format": "markdown",
+            },
+        )
+
+    def test_asks_in_a_new_thread_when_new_thread_mode_is_supplied(self) -> None:
+        chatgpt = RecordingChatGPT()
+
+        result = run_continue_thread(
+            chatgpt,
+            {
+                "new_thread": True,
+                "prompt": "Create X, Y, and Z.",
+                "format": "markdown",
+            },
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(chatgpt.calls, ["ask:new:Create X, Y, and Z."])
 
     def test_parses_existing_conversation_ids_with_explicit_open_if_missing_fallback(self) -> None:
         self.assertEqual(

@@ -11,9 +11,12 @@ This skill is for visible, user-directed ChatGPT workflows only. It is not an Op
 
 ## Required Posture
 
-1. Prefer the plugin-bundled SDK facade from `createChatGPT({ agent })`.
+1. Prefer the plugin-bundled SDK facade from `createChatGPTFromEnvironment()`.
 2. Use ChatGPT web through a compatible Codex/browser bridge. Do not use private ChatGPT network calls.
-3. Treat `globalThis.agent` as host-provided. If it is missing, bootstrap the Chrome plugin runtime when available; otherwise report a bridge blocker.
+3. Treat Codex's connected Browser extension (`extension`) as the plugin
+   transport. It may be hosted by the user's Edge or Chrome session. Do not
+   select the in-app Browser (`iab`), Browser Harness, Chrome DevTools, CDP,
+   or remote-debugging transports from this plugin.
 4. Stop on login, captcha, rate-limit, selector-drift, upload/download permission, or ambiguous confirmation blockers.
 5. Ask for explicit user confirmation before public, destructive, third-party, paid, account-level, or externally visible actions.
 6. Redact run reports by default. Raw prompt/response content is opt-in only.
@@ -40,21 +43,43 @@ const loaderUrl = new URL(
   "file:///absolute/path/to/plugins/codex-chatgpt-control/skills/codex-chatgpt-control/SKILL.md"
 );
 const { importChatGPTControl } = await import(`${loaderUrl.href}?t=${Date.now()}`);
-const { createChatGPT } = await importChatGPTControl();
-
-const chatgpt = createChatGPT({
-  agent: globalThis.agent,
-  reporting: { enabled: true, includeContent: false }
-});
+const { createChatGPTFromEnvironment } = await importChatGPTControl();
+const chatgpt = await createChatGPTFromEnvironment();
 ```
 
 When using this installed plugin, do not import from an older manually installed skill runtime. Use the plugin-bundled runtime so the installed plugin and SDK stay in sync.
 
 ## Bridge Bootstrap
 
-Ordinary shells should not have `globalThis.agent`. A `browser_bridge_unavailable` blocker from an ordinary shell is an expected safe result for browser-required calls.
+The plugin owns the ChatGPT browser workflow. Use the connected `@Browser`
+extension as its transport. If the current agent lacks a bridge-hosted Browser
+runtime, bootstrap the Browser skill in its supported host and retry the plugin
+there. Do not run the SDK in an ordinary shell and then improvise a direct
+Chrome-control fallback. Only an explicitly configured terminal provider is a
+user-selected alternative; never silently select one or launch remote
+debugging:
 
-For a true live Chrome bridge run from Codex, initialize the Chrome plugin runtime before using the SDK if `globalThis.agent` is missing. See `references/bridge-bootstrap.md` when bootstrap details are needed.
+```js
+const { createChatGPTFromEnvironment } = await importChatGPTControl();
+const chatgpt = await createChatGPTFromEnvironment();
+```
+
+Only a true bridge-hosted run needs the extension bootstrap:
+
+```js
+const { setupBrowserRuntime } = await import("<the absolute browser-client.mjs path supplied by the Chrome skill>");
+const agent = await setupBrowserRuntime();
+const browser = await agent.browsers.get("extension");
+await browser.nameSession("🔗 ChatGPT workflow");
+```
+
+Use the connected `@Browser` extension workflow. Browser Harness and Chrome
+DevTools are opt-in terminal providers only. A `browser_bridge_unavailable`
+blocker is valid only after the Browser skill's extension bootstrap was
+attempted in its supported host and failed. Do not replace that blocker with a
+direct Chrome-control call.
+
+For a true live in-app Browser run from Codex, initialize the browser runtime before using the SDK if `globalThis.agent` is missing. See `references/bridge-bootstrap.md` when bootstrap details are needed.
 
 Do not diagnose user-open Chrome tab availability with `browser.tabs.list()` or `browser.tabs.selected()` alone. When the user says a ChatGPT thread is already open, use `existingTab: true`, an exact `existingTab` policy, or the SDK's existing-tab helpers.
 
@@ -145,6 +170,41 @@ const latest = await chatgpt.work.readLatest({ format: "markdown" });
 Use `chatgpt-delegate` for the focused surface-neutral delegation workflow. `chatgpt-pro-consult`, `mode`, and `modes.set/get` remain compatibility aliases for existing callers; new work should use `experience` and `configuration`.
 
 ## Common Workflows
+
+Classify each request by operation, not by exact wording:
+
+- **Retrieval:** the user asks for existing content, its subject, a summary,
+  an explanation, or a paste/export of what is already in the thread. Open the
+  target and call `messages.readLatest` only. Never submit the user's wording.
+- **Mutation:** the user asks ChatGPT to answer a new question, research,
+  analyze, create, continue, revise, investigate, or otherwise perform work.
+  Use `askInThread` on the same thread, wait for completion, then read the new
+  response. Synonyms and natural-language paraphrases have the same meaning.
+- **Compound:** perform retrieval first, then mutation only for the later
+  task. Preserve the thread identity across both operations.
+- **Ambiguous:** do not guess and do not submit. Report the ambiguity and ask
+  which operation the user intends.
+
+The presence of words such as “access,” “result,” “same plugin,” “tell me,” or
+“paste” does not decide the route. The requested outcome does. A prior
+read-only operation does not make a later task read-only.
+
+```js
+await chatgpt.openThread({ type: "url", url: "https://chatgpt.com/c/<conversation-id>" });
+const result = await chatgpt.messages.readLatest({ role: "assistant", format: "markdown" });
+```
+
+For a follow-up task in that same thread, after the request has been classified
+as a mutation:
+
+```js
+await chatgpt.askInThread({
+  thread: { type: "current" },
+  prompt: "Conduct research on bats and report the findings.",
+  wait: true,
+  read: { format: "markdown" }
+});
+```
 
 Ask in a new or selected thread:
 
