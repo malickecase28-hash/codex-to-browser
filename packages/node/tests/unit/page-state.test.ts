@@ -19,6 +19,20 @@ describe("readPageState", () => {
     expect(state.blocker?.kind).toBe("login_required");
   });
 
+  it("allows terminal pages enough time for daemon-backed state evaluation", async () => {
+    const state = await readPageState({
+      operationTimeoutMs: 2_000,
+      url: () => "https://chatgpt.com/c/test",
+      title: async () => "ChatGPT",
+      evaluate: async <T>() => {
+        await new Promise(resolve => setTimeout(resolve, 1_100));
+        return "New chat Search chats Projects" as T;
+      }
+    } as PageLike & { operationTimeoutMs: number });
+
+    expect(state.signedIn).toBe(true);
+  });
+
   it("does not let the logged-out shell's generic navigation markers mask the login wall", async () => {
     const state = await readPageState(textPage(
       "New chat Search chats Chat with ChatGPT Log in Log in Sign up for free"

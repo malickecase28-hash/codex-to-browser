@@ -29,6 +29,45 @@ const result = await chatgpt.runner.run(reviewer, {
 });
 ```
 
+## Terminal browser transports
+
+Terminal runs can use a persistent Browser Harness daemon or Chrome DevTools
+CLI instead of `globalThis.agent`. Browser Harness is the default provider:
+
+```powershell
+uv tool install --python 3.12 --upgrade --force browser-harness
+$env:CODEX_BROWSER_PROVIDER = "browser-harness"
+npm run smoke:terminal-browser
+```
+
+The smoke command bootstraps an existing visible ChatGPT tab and reads the
+latest assistant response; it does not send a message. For an already-running
+Chrome, enable remote debugging at `chrome://inspect/#remote-debugging` first.
+Use `CODEX_BROWSER_NAME` to select a Browser Harness browser name.
+
+Chrome DevTools is an interchangeable provider:
+
+```powershell
+npm install -g chrome-devtools-mcp@latest
+chrome-devtools start --autoConnect
+$env:CODEX_BROWSER_PROVIDER = "chrome-devtools"
+npm run smoke:terminal-browser
+```
+
+Applications can select either provider explicitly with
+`createTerminalBrowserTransport(...)`, or let
+`createTerminalBrowserFromEnv()` read `CODEX_BROWSER_PROVIDER`. The terminal
+providers use only visible browser controls; terminal finalization does not close user-owned tabs.
+
+For direct construction:
+
+```ts
+import { createBrowserHarnessBrowser, createChatGPT } from "codex-chatgpt-control";
+
+const chatgpt = createChatGPT({ browser: createBrowserHarnessBrowser() });
+await chatgpt.session.bootstrap({ preferExistingTab: true });
+```
+
 Remember logical conversation names without changing the default behavior of
 `chatgpt.ask()`:
 
@@ -196,4 +235,8 @@ npm run contract:validate
 npm run docs:drift
 npm run parity:fixtures
 npm run parity:suite
+npm run smoke:terminal-browser
 ```
+
+The terminal smoke is an opt-in environment check and requires the selected
+daemon plus a visible signed-in browser session; deterministic tests do not.

@@ -628,7 +628,7 @@ function buildPage(state: WrapperState): PageLike {
   const wrapper: Record<string, unknown> = {};
   rawValues.set(wrapper as ObjectLike, rawPage);
 
-  for (const property of ["id", "tabId"] as const) {
+  for (const property of ["id", "tabId", "operationTimeoutMs"] as const) {
     const value = readDataMember<unknown>(rawPage, property, `page.${property}`);
     if (value !== undefined) wrapper[property] = value;
   }

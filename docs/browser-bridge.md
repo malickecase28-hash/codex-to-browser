@@ -9,7 +9,9 @@ status: draft
 
 Browser-required operations need a compatible bridge that exposes a visible ChatGPT tab to the SDK runtime.
 
-Ordinary shell runs are still useful. They validate the backend protocol and should produce structured `browser_bridge_unavailable` blockers for commands that require a real browser.
+Ordinary shell runs validate the backend protocol and produce structured
+`browser_bridge_unavailable` blockers for browser-required commands unless a
+terminal transport is explicitly supplied.
 
 When using a Codex-hosted browser bridge, initialize the bridge in the host runtime, then pass that agent object to `createChatGPT({ agent })`. Keep bridge-hosted backend processes alive while Python clients call through relays; if the host call exits, browser operations can lose their execution context.
 
@@ -29,6 +31,56 @@ Real ChatGPT control additionally needs:
 - explicit user approval for prompts, files, downloads, and account-affecting actions
 
 `globalThis.agent` is host-provided. The SDK does not create or fake a browser bridge from an ordinary shell.
+
+## Terminal transports
+
+The Node package also accepts a terminal-owned `BrowserLike` transport. This
+avoids the Codex Desktop bridge while retaining the visible-session boundary:
+
+```ts
+import { createChatGPT, createTerminalBrowserFromEnv } from "codex-chatgpt-control";
+
+const chatgpt = createChatGPT({ browser: createTerminalBrowserFromEnv() });
+await chatgpt.session.bootstrap({ preferExistingTab: true });
+```
+
+Set `CODEX_BROWSER_PROVIDER=browser-harness` (the default) or
+`CODEX_BROWSER_PROVIDER=chrome-devtools`. Browser Harness uses its persistent
+daemon and supports visible tab listing, navigation, JavaScript, keyboard
+input, and file upload. Chrome DevTools supports the same core page controls;
+its file upload adapter remains deliberately blocked until UID resolution is
+implemented.
+
+Install and verify Browser Harness:
+
+```bash
+uv tool install --python 3.12 --upgrade --force browser-harness
+browser-harness <<'PY'
+import json
+print(json.dumps(list_tabs(), indent=2))
+PY
+```
+
+For Chrome 144+, enable remote debugging at
+`chrome://inspect/#remote-debugging` before attaching to an existing Chrome
+profile. The no-send `npm run smoke:terminal-browser` command performs the
+first bootstrap/read check.
+
+Install and verify the alternate Chrome DevTools provider:
+
+```bash
+npm install -g chrome-devtools-mcp@latest
+chrome-devtools list_pages --output-format=json
+```
+
+With Chrome remote debugging enabled, an existing Chrome profile can be
+attached through the persistent daemon:
+
+```bash
+chrome-devtools stop
+chrome-devtools start --autoConnect
+chrome-devtools list_pages
+```
 
 ## Host-Local Attachment Paths
 

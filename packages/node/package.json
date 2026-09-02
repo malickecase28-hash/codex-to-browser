@@ -45,6 +45,7 @@
     "smoke:search": "tsx src/scripts/smoke-search-open-read.ts",
     "smoke:attach": "tsx src/scripts/smoke-attach-file.ts",
     "smoke:live": "tsx src/scripts/live-smoke.ts",
+    "smoke:terminal-browser": "tsx src/scripts/terminal-browser-smoke.ts",
     "smoke:release:build": "npm run bundle:release-canary"
   },
   "exports": {

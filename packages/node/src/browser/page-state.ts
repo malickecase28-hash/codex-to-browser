@@ -68,11 +68,12 @@ export async function readPageState(page: PageLike): Promise<PageState> {
 }
 
 export async function readVisibleText(page: PageLike): Promise<string> {
+  const operationTimeoutMs = page.operationTimeoutMs ?? 1000;
   if (typeof page.evaluate === "function") {
     try {
       return await withTimeout(
         page.evaluate(() => document.body?.innerText ?? ""),
-        1000,
+        operationTimeoutMs,
         "Timed out while reading visible page text."
       );
     } catch {
@@ -102,6 +103,7 @@ type PageSurfaceSnapshot = {
 };
 
 async function readPageSurfaceSnapshot(page: PageLike): Promise<PageSurfaceSnapshot> {
+  const operationTimeoutMs = page.operationTimeoutMs ?? 1000;
   if (typeof page.evaluate === "function") {
     try {
       const snapshot = await withTimeout(page.evaluate(() => {
@@ -116,27 +118,20 @@ async function readPageSurfaceSnapshot(page: PageLike): Promise<PageSurfaceSnaps
           "[class*='toast' i]",
           "[class*='banner' i]"
         ].join(", ");
-        const visible = (element: HTMLElement) => {
-          if (element.hidden || element.closest("[hidden], [inert], [aria-hidden='true']") !== null) return false;
-          const style = window.getComputedStyle(element);
-          if (style.display === "none"
-            || style.visibility === "hidden"
-            || style.opacity === "0"
-            || style.pointerEvents === "none") return false;
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 || rect.height > 0;
-        };
         const blockerText = Array.from(document.querySelectorAll(systemSelector))
-          .filter((element): element is HTMLElement => visible(element as HTMLElement))
+          .filter(element => (element as HTMLElement).hidden === false
+            && element.closest("[hidden], [inert], [aria-hidden='true']") === null)
           .filter(element => element.closest(messageSelector) === null)
           .map(element => `${element.textContent ?? ""} ${element.getAttribute("aria-label") ?? ""}`)
           .join(" ");
         return {
           visibleText: document.body?.innerText ?? "",
           blockerText,
-          hasConversationMessages: Array.from(document.querySelectorAll<HTMLElement>(messageSelector)).some(visible)
+          hasConversationMessages: Array.from(document.querySelectorAll<HTMLElement>(messageSelector))
+            .some(element => element.hidden === false
+              && element.closest("[hidden], [inert], [aria-hidden='true']") === null)
         };
-      }), 1000, "Timed out while reading the visible ChatGPT page surface.");
+      }), operationTimeoutMs, "Timed out while reading the visible ChatGPT page surface.");
       if (typeof snapshot === "string") {
         return {
           visibleText: snapshot,

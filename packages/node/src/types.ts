@@ -1041,6 +1041,8 @@ export type WaitForEventOptions = {
 export type PageLike = {
   id?: string;
   tabId?: string;
+  /** Optional page-adapter timeout for slower daemon-backed evaluations. */
+  operationTimeoutMs?: number;
   url?: () => string | Promise<string>;
   goto?: (url: string, options?: unknown) => Promise<unknown>;
   title?: () => Promise<string>;
