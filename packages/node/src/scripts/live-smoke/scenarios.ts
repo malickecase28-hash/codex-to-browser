@@ -42,7 +42,7 @@ import type {
 import type { ChatGPTResponse } from "../../runner/types.js";
 import type { BrowserUserTabInfo } from "../../types.js";
 import { contextEnvFlag, contextEnvText } from "./harness.js";
-import type { LiveSmokeContext, LiveSmokeScenario, LiveSmokeScenarioResult } from "./types.js";
+import type { LiveSmokeBrowser, LiveSmokeContext, LiveSmokeScenario, LiveSmokeScenarioResult } from "./types.js";
 
 type ScenarioBody = (context: LiveSmokeContext, meta: ScenarioMeta) => Promise<LiveSmokeScenarioResult>;
 
@@ -847,6 +847,111 @@ export const optionalScenarios: LiveSmokeScenario[] = [
       ]);
     }
   }),
+  scenario(
+    "affinity-duplicate-stale-owner-recovery",
+    false,
+    context => contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY")
+      && contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY_ALLOW_MUTATIONS")
+      && contextEnvText(context, "CHATGPT_E2E_AFFINITY_RECOVERY_OWNER_TAB_ID") !== undefined,
+    async (context, meta) => {
+      if (!contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY_ALLOW_MUTATIONS")) {
+        return skipped(meta, "blocked: explicit tab mutation authorization is required");
+      }
+      const ownerTabId = contextEnvText(context, "CHATGPT_E2E_AFFINITY_RECOVERY_OWNER_TAB_ID");
+      if (ownerTabId === undefined) return skipped(meta, "blocked: exact owner tab fixture is required");
+      const conversationId = context.knownConversationId;
+      const conversationUrl = context.knownThreadUrl;
+      if (conversationId === undefined && conversationUrl === undefined) {
+        return skipped(meta, "blocked: missing conversation identity input");
+      }
+      const user = context.browser?.user;
+      const tabsApi = context.browser?.tabs;
+      const openTabs = user?.openTabs;
+      const createTab = tabsApi?.new ?? tabsApi?.create;
+      const getTab = tabsApi?.get;
+      if (user === undefined || tabsApi === undefined || typeof openTabs !== "function" || typeof createTab !== "function" || typeof getTab !== "function") {
+        return skipped(meta, "blocked: exact tab mutation APIs are unavailable");
+      }
+
+      let baseline: BrowserUserTabInfo[];
+      try {
+        baseline = await openTabs.call(user);
+      } catch {
+        return skipped(meta, "blocked: exact tab inventory failed");
+      }
+      const ownerMatches = baseline.filter(tab => tab.id === ownerTabId
+        && conversationMatches(tab.url, conversationId, conversationUrl));
+      const conversationMatchesBefore = baseline.filter(tab => conversationMatches(tab.url, conversationId, conversationUrl));
+      if (ownerMatches.length !== 1 || conversationMatchesBefore.length !== 1) {
+        return skipped(meta, "blocked: exact owner identity is unavailable or ambiguous");
+      }
+      const owner = ownerMatches[0]!;
+      const targetUrl = conversationUrl ?? owner.url;
+      if (targetUrl === undefined || !conversationMatches(targetUrl, conversationId, conversationUrl)) {
+        return skipped(meta, "blocked: exact conversation URL is unavailable");
+      }
+
+      const stateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-recovery-state-"));
+      const affinityStateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-recovery-root-"));
+      const key = "live-smoke-affinity-recovery";
+      let duplicateTabId: string | undefined;
+      try {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const manager = createConversationManager(chatgpt, { stateRoot, affinityStateRoot });
+        await manager.remember({
+          key,
+          surface: "chat",
+          ...(conversationId === undefined ? {} : { conversationId }),
+          ...(targetUrl === undefined ? {} : { url: targetUrl })
+        });
+        const initial = await manager.readLatest({ key });
+        const initialAffinity = await manager.affinity.get(key);
+        if (!initial.ok || initial.context.tabId !== ownerTabId || initialAffinity?.tabId !== ownerTabId) {
+          return skipped(meta, "blocked: exact owner affinity was not proven");
+        }
+
+        await createTab.call(tabsApi, targetUrl);
+        const afterCreate = await openTabs.call(user);
+        const newConversationTabs = afterCreate.filter(tab => !baseline.some(before => before.id === tab.id)
+          && conversationMatches(tab.url, conversationId, conversationUrl));
+        if (newConversationTabs.length !== 1) {
+          return skipped(meta, "blocked: duplicate tab identity is unavailable or ambiguous");
+        }
+        duplicateTabId = newConversationTabs[0]!.id;
+
+        const duplicateCheck = await createConversationManager(chatgpt, { stateRoot, affinityStateRoot }).readLatest({ key });
+        const duplicateAffinity = await manager.affinity.get(key);
+        if (!duplicateCheck.ok || duplicateCheck.context.tabId !== ownerTabId || duplicateAffinity?.tabId !== ownerTabId) {
+          return skipped(meta, "blocked: duplicate recovery did not preserve owner A");
+        }
+        if (!await closeExactTab(getTab, tabsApi, openTabs, user, duplicateTabId)) {
+          return skipped(meta, "blocked: exact duplicate tab closure failed");
+        }
+        duplicateTabId = undefined;
+
+        if (!await closeExactTab(getTab, tabsApi, openTabs, user, ownerTabId)) {
+          return skipped(meta, "blocked: exact owner tab closure failed");
+        }
+        const staleCheck = await createConversationManager(chatgpt, { stateRoot, affinityStateRoot }).readLatest({ key });
+        const persistedOwner = await manager.affinity.get(key);
+        const staleBlocked = !staleCheck.ok && staleCheck.status === "blocked";
+        const preserved = persistedOwner?.tabId === ownerTabId;
+        return staleBlocked && preserved
+          ? pass(meta, staleCheck, { duplicatePreservedOwner: true, staleOwnerBlocked: true, persistedOwner: true })
+          : skipped(meta, "blocked: stale-owner recovery was not fail-closed", { staleBlocked, preserved });
+      } catch {
+        return skipped(meta, "blocked: affinity recovery proof failed");
+      } finally {
+        if (duplicateTabId !== undefined) {
+          await closeExactTab(getTab, tabsApi, openTabs, user, duplicateTabId).catch(() => false);
+        }
+        await Promise.all([
+          rm(stateRoot, { recursive: true, force: true }),
+          rm(affinityStateRoot, { recursive: true, force: true })
+        ]);
+      }
+    }
+  ),
   scenario("configuration-mutate-restore", false, context => contextEnvFlag(context, "CHATGPT_E2E_CONFIGURATION_MUTATION"), async (context, meta) => {
     const chatgpt = createChatGPT(clientOptionsFor(context));
     const details: Record<string, unknown> = {};
@@ -1203,6 +1308,20 @@ function conversationMatches(value: string | undefined, conversationId: string |
 
 function isConversationUrl(url: URL): boolean {
   return ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname) && url.pathname.startsWith("/c/");
+}
+
+async function closeExactTab(
+  getTab: NonNullable<NonNullable<LiveSmokeBrowser["tabs"]>["get"]>,
+  tabs: NonNullable<LiveSmokeBrowser["tabs"]>,
+  openTabs: NonNullable<NonNullable<LiveSmokeBrowser["user"]>["openTabs"]>,
+  user: NonNullable<LiveSmokeBrowser["user"]>,
+  tabId: string
+): Promise<boolean> {
+  const page = await Promise.resolve(getTab.call(tabs, tabId)).catch(() => undefined);
+  if (page === undefined || typeof page.close !== "function") return false;
+  await page.close();
+  const remaining = await Promise.resolve(openTabs.call(user)).catch(() => undefined);
+  return remaining !== undefined && !remaining.some(tab => tab.id === tabId);
 }
 
 function finish(

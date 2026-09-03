@@ -28,3 +28,38 @@ describe("initial-affinity-persistence live smoke scenario", () => {
     expect(result.details).toEqual({ reason: "blocked: exact tab inventory unavailable" });
   });
 });
+
+describe("affinity duplicate/stale-owner recovery live smoke scenario", () => {
+  it("is disabled unless tab mutations are explicitly authorized", async () => {
+    const scenario = optionalScenarios.find(item => item.name === "affinity-duplicate-stale-owner-recovery");
+    expect(scenario).toBeDefined();
+    const context: LiveSmokeContext = {
+      agent: {},
+      env: { CHATGPT_E2E_AFFINITY_RECOVERY: "1" },
+      knownConversationId: "redacted-conversation",
+      reportDir: "unused"
+    };
+
+    expect(scenario!.enabled(context)).toBe(false);
+    const result = await scenario!.run(context);
+
+    expect(result.status).toBe("skip");
+    expect(result.details).toEqual({ reason: "blocked: explicit tab mutation authorization is required" });
+  });
+
+  it("skips when the authorized exact owner tab fixture is missing", async () => {
+    const scenario = optionalScenarios.find(item => item.name === "affinity-duplicate-stale-owner-recovery")!;
+    const result = await scenario.run({
+      agent: {},
+      env: {
+        CHATGPT_E2E_AFFINITY_RECOVERY: "1",
+        CHATGPT_E2E_AFFINITY_RECOVERY_ALLOW_MUTATIONS: "1"
+      },
+      knownConversationId: "redacted-conversation",
+      reportDir: "unused"
+    });
+
+    expect(result.status).toBe("skip");
+    expect(result.details).toEqual({ reason: "blocked: exact owner tab fixture is required" });
+  });
+});
