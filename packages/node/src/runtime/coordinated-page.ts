@@ -187,6 +187,8 @@ export function normalizePage(pageOrTab: unknown): PageLike {
   const embeddedContent = isProviderRecord(embedded) ? providerValue(embedded, "content") : undefined;
   if ((topUrl === undefined || typeof topUrl === "function")
     && (topTitle === undefined || typeof topTitle === "function")
+    && (providerValue(maybe, "evaluate") === undefined || typeof providerValue(maybe, "evaluate") === "function")
+    && (providerValue(maybe, "content") === undefined || typeof providerValue(maybe, "content") === "function")
     && (embeddedEvaluate === undefined || typeof providerValue(maybe, "evaluate") === "function")
     && (embeddedContent === undefined || typeof providerValue(maybe, "content") === "function")) {
     return pageOrTab as PageLike;
@@ -206,11 +208,13 @@ export function normalizePage(pageOrTab: unknown): PageLike {
 
   for (const method of [
     "goto", "locator", "getByRole", "getByPlaceholder", "getByText",
-    "waitForTimeout", "waitForEvent", "evaluate", "content", "close"
+    "waitForTimeout", "waitForEvent", "evaluate", "close"
   ] as const) {
     const callable = providerCallable(primary, method) ?? providerCallable(maybe, method);
     if (callable !== undefined) normalized[method] = (...args: unknown[]) => callable(...args);
   }
+  const contentCallable = providerCallable(primary, "content");
+  if (contentCallable !== undefined) normalized.content = (...args: unknown[]) => contentCallable(...args);
 
   const primaryUrl = providerValue(primary, "url");
   const rawUrl = providerValue(maybe, "url");

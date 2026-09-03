@@ -90,19 +90,23 @@ describe("coordinated browser runtime facade", () => {
     expect(getterReads).toBe(0);
   });
 
-  it("normalizes metadata-only Tabs even when their embedded evaluator is stalled", () => {
+  it("normalizes a live-shaped Tab with a non-callable top-level content member", async () => {
     let evaluatorCalls = 0;
-    const rawTab = {
-      id: "stalled-tab",
-      url: "https://chatgpt.com/c/stalled-tab",
-      title: "ChatGPT",
-      playwright: {
-        evaluate: async () => {
-          evaluatorCalls += 1;
-          return new Promise(() => {});
-        }
+    const tabPrototype = {
+      url: () => "https://chatgpt.com/c/stalled-tab",
+      title: async () => "ChatGPT"
+    };
+    const playwrightPrototype = {
+      evaluate: async () => {
+        evaluatorCalls += 1;
+        return "evaluated";
       }
     };
+    const rawTab = Object.assign(Object.create(tabPrototype), {
+      id: "stalled-tab",
+      content: { stale: true },
+      playwright: Object.create(playwrightPrototype)
+    });
 
     const normalized = normalizePage(rawTab);
 
@@ -110,7 +114,9 @@ describe("coordinated browser runtime facade", () => {
     expect(normalized.url).toBeTypeOf("function");
     expect(normalized.title).toBeTypeOf("function");
     expect(normalized.evaluate).toBeTypeOf("function");
-    expect(evaluatorCalls).toBe(0);
+    expect(normalized.content).toBeUndefined();
+    await expect(normalized.evaluate?.(() => "ignored")).resolves.toBe("evaluated");
+    expect(evaluatorCalls).toBe(1);
   });
 
   it("rejects accessor-backed tab methods without invoking getters", () => {
