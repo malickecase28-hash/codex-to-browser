@@ -47,6 +47,7 @@ const MAX_CACHED_PAGE_AFFINITIES = 256;
 
 type ObjectLike = object | ((...args: never[]) => unknown);
 type AnyFunction = (...args: any[]) => any;
+type ProviderCallable = (...args: unknown[]) => unknown;
 
 export class CoordinatedPageError extends Error {
   readonly code = "coordinated_page_invalid";
@@ -93,6 +94,21 @@ export function coordinatedEventRegistrationBarrier(value: unknown): Promise<voi
 
 function isObjectLike(value: unknown): value is ObjectLike {
   return (typeof value === "object" && value !== null) || typeof value === "function";
+}
+
+function isProviderRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return isObjectLike(value);
+}
+
+function providerValue(value: Record<PropertyKey, unknown>, key: PropertyKey): unknown {
+  return readDataMember<unknown>(value, key, `provider.${labelForKey(key)}`);
+}
+
+function providerCallable(value: Record<PropertyKey, unknown>, key: PropertyKey): ProviderCallable | undefined {
+  const candidate = providerValue(value, key);
+  if (candidate === undefined) return undefined;
+  if (typeof candidate !== "function") return invalid(`provider.${labelForKey(key)} is not callable`);
+  return (...args: unknown[]) => Reflect.apply(candidate, value, args);
 }
 
 function labelForKey(key: PropertyKey): string {
@@ -157,6 +173,82 @@ function optionalCallable(value: ObjectLike, key: PropertyKey, label: string): A
   if (member === undefined) return undefined;
   if (typeof member !== "function") return invalid(`${label} is not callable`);
   return member as AnyFunction;
+}
+
+/** Normalize an extension Tab/provider descriptor into the callable PageLike contract. */
+export function normalizePage(pageOrTab: unknown): PageLike {
+  if (isPageWrapper(pageOrTab)) return pageOrTab;
+  if (!isProviderRecord(pageOrTab)) return pageOrTab as PageLike;
+  const maybe = pageOrTab;
+  const embedded = providerValue(maybe, "playwright") ?? providerValue(maybe, "page");
+  const topUrl = providerValue(maybe, "url");
+  const topTitle = providerValue(maybe, "title");
+  const embeddedEvaluate = isProviderRecord(embedded) ? providerValue(embedded, "evaluate") : undefined;
+  const embeddedContent = isProviderRecord(embedded) ? providerValue(embedded, "content") : undefined;
+  if ((topUrl === undefined || typeof topUrl === "function")
+    && (topTitle === undefined || typeof topTitle === "function")
+    && (embeddedEvaluate === undefined || typeof providerValue(maybe, "evaluate") === "function")
+    && (embeddedContent === undefined || typeof providerValue(maybe, "content") === "function")) {
+    return pageOrTab as PageLike;
+  }
+  const primary = isProviderRecord(embedded) ? embedded : maybe;
+  const normalized: Record<string, unknown> = {};
+
+  for (const property of ["id", "tabId"] as const) {
+    const value = providerValue(maybe, property) ?? providerValue(primary, property);
+    if (typeof value === "string") normalized[property] = value;
+  }
+  for (const property of ["keyboard", "mouse", "cua", "capabilities"] as const) {
+    const value = providerValue(primary, property) ?? providerValue(maybe, property);
+    if (isProviderRecord(value)) normalized[property] = value;
+  }
+  if (isProviderRecord(embedded)) normalized.playwright = embedded;
+
+  for (const method of [
+    "goto", "locator", "getByRole", "getByPlaceholder", "getByText",
+    "waitForTimeout", "waitForEvent", "evaluate", "content", "close"
+  ] as const) {
+    const callable = providerCallable(primary, method) ?? providerCallable(maybe, method);
+    if (callable !== undefined) normalized[method] = (...args: unknown[]) => callable(...args);
+  }
+
+  const primaryUrl = providerValue(primary, "url");
+  const rawUrl = providerValue(maybe, "url");
+  if ((primaryUrl !== undefined && typeof primaryUrl !== "string" && typeof primaryUrl !== "function")
+    || (rawUrl !== undefined && typeof rawUrl !== "string" && typeof rawUrl !== "function")) {
+    return invalid("provider.url is not callable");
+  }
+  if (typeof primaryUrl === "function") normalized.url = (...args: unknown[]) => Reflect.apply(primaryUrl, primary, args);
+  else if (typeof rawUrl === "function") normalized.url = (...args: unknown[]) => Reflect.apply(rawUrl, maybe, args);
+  const stringUrl = rawUrl;
+  if (normalized.url === undefined && typeof stringUrl === "string") {
+    normalized.url = () => stringUrl;
+  }
+  const primaryTitle = providerValue(primary, "title");
+  const rawTitle = providerValue(maybe, "title");
+  if ((primaryTitle !== undefined && typeof primaryTitle !== "string" && typeof primaryTitle !== "function")
+    || (rawTitle !== undefined && typeof rawTitle !== "string" && typeof rawTitle !== "function")) {
+    return invalid("provider.title is not callable");
+  }
+  if (typeof primaryTitle === "function") normalized.title = (...args: unknown[]) => Reflect.apply(primaryTitle, primary, args);
+  else if (typeof rawTitle === "function") normalized.title = (...args: unknown[]) => Reflect.apply(rawTitle, maybe, args);
+  const stringTitle = rawTitle;
+  if (normalized.title === undefined && typeof stringTitle === "string") {
+    normalized.title = async () => stringTitle;
+  }
+  return normalized as PageLike;
+}
+
+function isPageWrapper(value: unknown): value is PageLike {
+  if (!isObjectLike(value)) return false;
+  return unwrapCoordinatedPage(value as PageLike) !== value;
+}
+
+/** Safe compatibility check for pages that already own callable metadata. */
+export function hasCallablePageMetadata(value: unknown): boolean {
+  if (!isProviderRecord(value)) return false;
+  return typeof readDataMember<unknown>(value, "url", "page.url") === "function"
+    && typeof readDataMember<unknown>(value, "title", "page.title") === "function";
 }
 
 function requiredRecord(value: unknown, label: string): ObjectLike {

@@ -7,7 +7,7 @@ import {
   createCoordinatedPageForBrowser,
   type CoordinatedBrowserOptions
 } from "../runtime/coordinated-browser.js";
-import { unwrapCoordinatedPage } from "../runtime/coordinated-page.js";
+import { normalizePage, unwrapCoordinatedPage } from "../runtime/coordinated-page.js";
 
 const MAX_EXISTING_TAB_DIAGNOSTIC_CANDIDATES = 10;
 const MAX_EXISTING_TAB_DIAGNOSTIC_FIELD_LENGTH = 240;
@@ -731,43 +731,6 @@ async function hydrateTab(browser: BrowserLike, pageOrTab: unknown): Promise<Pag
   return normalizePage(pageOrTab);
 }
 
-function normalizePage(pageOrTab: unknown): PageLike {
-  if (isPageWrapper(pageOrTab)) return pageOrTab;
-  if (!isProviderRecord(pageOrTab)) return pageOrTab as PageLike;
-  const maybe = pageOrTab;
-  const embedded = providerValue(maybe, "playwright") ?? providerValue(maybe, "page");
-  const primary = isProviderRecord(embedded) ? embedded : maybe;
-  const normalized: Record<string, unknown> = {};
-
-  for (const property of ["id", "tabId"] as const) {
-    const value = providerValue(maybe, property) ?? providerValue(primary, property);
-    if (typeof value === "string") normalized[property] = value;
-  }
-  for (const property of ["keyboard", "mouse", "cua", "capabilities"] as const) {
-    const value = providerValue(primary, property) ?? providerValue(maybe, property);
-    if (isProviderRecord(value)) normalized[property] = value;
-  }
-  if (isProviderRecord(embedded)) normalized.playwright = embedded;
-
-  for (const method of [
-    "url", "goto", "title", "locator", "getByRole", "getByPlaceholder",
-    "getByText", "waitForTimeout", "waitForEvent", "evaluate", "content", "close"
-  ] as const) {
-    const callable = providerCallable(primary, method) ?? providerCallable(maybe, method);
-    if (callable !== undefined) normalized[method] = (...args: unknown[]) => callable(...args);
-  }
-
-  const stringUrl = providerValue(maybe, "url");
-  if (normalized.url === undefined && typeof stringUrl === "string") {
-    normalized.url = () => stringUrl;
-  }
-  const stringTitle = providerValue(maybe, "title");
-  if (normalized.title === undefined && typeof stringTitle === "string") {
-    normalized.title = async () => stringTitle;
-  }
-  return normalized as PageLike;
-}
-
 type ProviderCallable = (...args: unknown[]) => unknown;
 
 function isProviderRecord(value: unknown): value is Record<PropertyKey, unknown> {
@@ -786,11 +749,6 @@ function providerCallable(value: Record<PropertyKey, unknown>, key: PropertyKey)
   const candidate = providerValue(value, key);
   if (typeof candidate !== "function") return undefined;
   return (...args: unknown[]) => Reflect.apply(candidate, value, args);
-}
-
-function isPageWrapper(value: unknown): value is PageLike {
-  if (value === null || (typeof value !== "object" && typeof value !== "function")) return false;
-  return unwrapCoordinatedPage(value as PageLike) !== value;
 }
 
 export function tabIdFromPage(page: PageLike): string | undefined {

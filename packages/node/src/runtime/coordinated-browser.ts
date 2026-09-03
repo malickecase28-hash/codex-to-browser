@@ -9,6 +9,8 @@ import {
 } from "./tab-coordinator.js";
 import {
   createCoordinatedPage,
+  hasCallablePageMetadata,
+  normalizePage,
   unwrapCoordinatedPage
 } from "./coordinated-page.js";
 
@@ -216,7 +218,7 @@ function route<T>(state: BrowserState, priority: CoordinatorPriority, label: str
 
 function pageFor(state: BrowserState, value: unknown): PageLike {
   if (!isObjectLike(value)) return invalid("browser provider returned an invalid page object");
-  const rawPage = unwrapCoordinatedPage(value as PageLike);
+  const rawPage = unwrapCoordinatedPage(hasCallablePageMetadata(value) ? value as PageLike : normalizePage(value));
   return createCoordinatedPage(rawPage, {
     coordinator: state.options.coordinator,
     resource: { kind: "browser", key: state.browserResource },
@@ -391,7 +393,7 @@ export function createCoordinatedPageForBrowser(
   const normalized = normalizeOptions(options);
   const rawBrowser = browser === undefined ? undefined : (rawBrowsers.get(browser as ObjectLike) ?? browser);
   const resource = { kind: "browser", key: stableBrowserResource(rawBrowser) } as const;
-  return createCoordinatedPage(unwrapCoordinatedPage(page), {
+  return createCoordinatedPage(unwrapCoordinatedPage(normalizePage(page)), {
     coordinator: normalized.coordinator,
     resource,
     owner: normalized.owner

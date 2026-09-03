@@ -7,7 +7,7 @@ import {
   createCoordinatedPageForBrowser,
   unwrapCoordinatedBrowser
 } from "../../src/runtime/coordinated-browser.js";
-import { createCoordinatedPage, unwrapCoordinatedPage } from "../../src/runtime/coordinated-page.js";
+import { createCoordinatedPage, normalizePage, unwrapCoordinatedPage } from "../../src/runtime/coordinated-page.js";
 import { ProcessTabCoordinator } from "../../src/runtime/tab-coordinator.js";
 
 const waitForTurn = async (): Promise<void> => {
@@ -48,6 +48,71 @@ function boundPrivateProvider<T extends object>(provider: T): T {
 }
 
 describe("coordinated browser runtime facade", () => {
+  it("normalizes a raw extension Tab before the page coordinator inspects it", async () => {
+    const rawTab = {
+      id: "extension-tab",
+      url: "https://chatgpt.com/c/raw-extension-tab",
+      title: "ChatGPT",
+      playwright: {
+        content: async () => "<main>ChatGPT</main>",
+        evaluate: async <T>() => "evaluated" as T
+      }
+    };
+    const env = coordinateRuntimeEnv({ browser: {}, page: rawTab as unknown as PageLike }, {
+      coordinator: new ProcessTabCoordinator(),
+      owner: owner("raw-extension-tab")
+    });
+
+    expect(env.page?.url).toBeTypeOf("function");
+    expect(env.page?.title).toBeTypeOf("function");
+    expect(env.page?.content).toBeTypeOf("function");
+    expect(env.page?.evaluate).toBeTypeOf("function");
+    await expect(env.page?.url?.()).resolves.toBe("https://chatgpt.com/c/raw-extension-tab");
+    await expect(env.page?.title?.()).resolves.toBe("ChatGPT");
+    await expect(env.page?.content?.()).resolves.toBe("<main>ChatGPT</main>");
+    await expect(env.page?.evaluate?.(() => "ignored")).resolves.toBe("evaluated");
+  });
+
+  it("does not execute accessor-backed raw Tab provider fields", () => {
+    let getterReads = 0;
+    const rawTab = { id: "accessor-tab" } as Record<string, unknown>;
+    Object.defineProperty(rawTab, "playwright", {
+      get: () => {
+        getterReads += 1;
+        throw new Error("playwright getter must not run");
+      }
+    });
+
+    expect(() => coordinateRuntimeEnv({ browser: {}, page: rawTab as unknown as PageLike }, {
+      coordinator: new ProcessTabCoordinator(),
+      owner: owner("accessor-tab")
+    })).toThrow(/accessor-backed provider members are not supported/);
+    expect(getterReads).toBe(0);
+  });
+
+  it("normalizes metadata-only Tabs even when their embedded evaluator is stalled", () => {
+    let evaluatorCalls = 0;
+    const rawTab = {
+      id: "stalled-tab",
+      url: "https://chatgpt.com/c/stalled-tab",
+      title: "ChatGPT",
+      playwright: {
+        evaluate: async () => {
+          evaluatorCalls += 1;
+          return new Promise(() => {});
+        }
+      }
+    };
+
+    const normalized = normalizePage(rawTab);
+
+    expect(normalized).not.toBe(rawTab);
+    expect(normalized.url).toBeTypeOf("function");
+    expect(normalized.title).toBeTypeOf("function");
+    expect(normalized.evaluate).toBeTypeOf("function");
+    expect(evaluatorCalls).toBe(0);
+  });
+
   it("rejects accessor-backed tab methods without invoking getters", () => {
     let getterReads = 0;
     const tabs = {} as NonNullable<BrowserLike["tabs"]>;
