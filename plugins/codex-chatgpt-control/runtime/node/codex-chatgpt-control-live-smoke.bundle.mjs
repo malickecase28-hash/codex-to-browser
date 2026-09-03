@@ -4847,6 +4847,18 @@ function coordinatedEventRegistrationBarrier(value) {
 function isObjectLike(value) {
   return typeof value === "object" && value !== null || typeof value === "function";
 }
+function isProviderRecord(value) {
+  return isObjectLike(value);
+}
+function providerValue(value, key) {
+  return readDataMember(value, key, `provider.${labelForKey(key)}`);
+}
+function providerCallable(value, key) {
+  const candidate = providerValue(value, key);
+  if (candidate === void 0) return void 0;
+  if (typeof candidate !== "function") return invalid(`provider.${labelForKey(key)} is not callable`);
+  return (...args) => Reflect.apply(candidate, value, args);
+}
 function labelForKey(key) {
   try {
     return typeof key === "symbol" ? key.toString() : String(key);
@@ -4900,6 +4912,77 @@ function optionalCallable(value, key, label) {
   if (member === void 0) return void 0;
   if (typeof member !== "function") return invalid(`${label} is not callable`);
   return member;
+}
+function normalizePage(pageOrTab) {
+  if (isPageWrapper(pageOrTab)) return pageOrTab;
+  if (!isProviderRecord(pageOrTab)) return pageOrTab;
+  const maybe = pageOrTab;
+  const embedded = providerValue(maybe, "playwright") ?? providerValue(maybe, "page");
+  const topUrl = providerValue(maybe, "url");
+  const topTitle = providerValue(maybe, "title");
+  const embeddedEvaluate = isProviderRecord(embedded) ? providerValue(embedded, "evaluate") : void 0;
+  const embeddedContent = isProviderRecord(embedded) ? providerValue(embedded, "content") : void 0;
+  if ((topUrl === void 0 || typeof topUrl === "function") && (topTitle === void 0 || typeof topTitle === "function") && (providerValue(maybe, "evaluate") === void 0 || typeof providerValue(maybe, "evaluate") === "function") && (providerValue(maybe, "content") === void 0 || typeof providerValue(maybe, "content") === "function") && (embeddedEvaluate === void 0 || typeof providerValue(maybe, "evaluate") === "function") && (embeddedContent === void 0 || typeof providerValue(maybe, "content") === "function")) {
+    return pageOrTab;
+  }
+  const primary = isProviderRecord(embedded) ? embedded : maybe;
+  const normalized = {};
+  for (const property of ["id", "tabId"]) {
+    const value = providerValue(maybe, property) ?? providerValue(primary, property);
+    if (typeof value === "string") normalized[property] = value;
+  }
+  for (const property of ["keyboard", "mouse", "cua", "capabilities"]) {
+    const value = providerValue(primary, property) ?? providerValue(maybe, property);
+    if (isProviderRecord(value)) normalized[property] = value;
+  }
+  if (isProviderRecord(embedded)) normalized.playwright = embedded;
+  for (const method of [
+    "goto",
+    "locator",
+    "getByRole",
+    "getByPlaceholder",
+    "getByText",
+    "waitForTimeout",
+    "waitForEvent",
+    "evaluate",
+    "close"
+  ]) {
+    const callable = providerCallable(primary, method) ?? providerCallable(maybe, method);
+    if (callable !== void 0) normalized[method] = (...args) => callable(...args);
+  }
+  const contentCallable = providerCallable(primary, "content");
+  if (contentCallable !== void 0) normalized.content = (...args) => contentCallable(...args);
+  const primaryUrl = providerValue(primary, "url");
+  const rawUrl = providerValue(maybe, "url");
+  if (primaryUrl !== void 0 && typeof primaryUrl !== "string" && typeof primaryUrl !== "function" || rawUrl !== void 0 && typeof rawUrl !== "string" && typeof rawUrl !== "function") {
+    return invalid("provider.url is not callable");
+  }
+  if (typeof primaryUrl === "function") normalized.url = (...args) => Reflect.apply(primaryUrl, primary, args);
+  else if (typeof rawUrl === "function") normalized.url = (...args) => Reflect.apply(rawUrl, maybe, args);
+  const stringUrl = rawUrl;
+  if (normalized.url === void 0 && typeof stringUrl === "string") {
+    normalized.url = () => stringUrl;
+  }
+  const primaryTitle = providerValue(primary, "title");
+  const rawTitle = providerValue(maybe, "title");
+  if (primaryTitle !== void 0 && typeof primaryTitle !== "string" && typeof primaryTitle !== "function" || rawTitle !== void 0 && typeof rawTitle !== "string" && typeof rawTitle !== "function") {
+    return invalid("provider.title is not callable");
+  }
+  if (typeof primaryTitle === "function") normalized.title = (...args) => Reflect.apply(primaryTitle, primary, args);
+  else if (typeof rawTitle === "function") normalized.title = (...args) => Reflect.apply(rawTitle, maybe, args);
+  const stringTitle = rawTitle;
+  if (normalized.title === void 0 && typeof stringTitle === "string") {
+    normalized.title = async () => stringTitle;
+  }
+  return normalized;
+}
+function isPageWrapper(value) {
+  if (!isObjectLike(value)) return false;
+  return unwrapCoordinatedPage(value) !== value;
+}
+function hasCallablePageMetadata(value) {
+  if (!isProviderRecord(value)) return false;
+  return typeof readDataMember(value, "url", "page.url") === "function" && typeof readDataMember(value, "title", "page.title") === "function";
 }
 function requiredRecord(value, label) {
   if (!isObjectLike(value)) return invalid(`${label} must be an object`);
@@ -5513,10 +5596,37 @@ function readDataMember2(value, key, label) {
   return void 0;
 }
 function optionalCallable2(value, key, label) {
-  const member = readDataMember2(value, key, label);
-  if (member === void 0) return void 0;
-  if (typeof member !== "function") return invalid2(`${label} is not callable`);
-  return member;
+  let current = value;
+  for (let depth = 0; current !== null && depth < MAX_PROTO_DEPTH2; depth += 1) {
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(current, key);
+    } catch (error) {
+      return invalid2(`Cannot inspect ${label}: provider property access failed`, error);
+    }
+    if (descriptor !== void 0) {
+      if (!("value" in descriptor)) return invalid2(`Cannot use ${label}: accessor-backed provider members are not supported`);
+      if (descriptor.value === void 0) return void 0;
+      if (typeof descriptor.value !== "function") return invalid2(`${label} is not callable`);
+      if (current !== value) {
+        try {
+          const receiverSafe = Reflect.get(value, key, value);
+          if (typeof receiverSafe === "function") return receiverSafe;
+        } catch (error) {
+          return invalid2(`Cannot inspect ${label}: provider property access failed`, error);
+        }
+      }
+      return descriptor.value;
+    }
+    try {
+      const prototype = Object.getPrototypeOf(current);
+      current = isObjectLike2(prototype) ? prototype : null;
+    } catch (error) {
+      return invalid2(`Cannot inspect ${label}: provider prototype access failed`, error);
+    }
+  }
+  if (current !== null) return invalid2(`Cannot inspect ${label}: provider prototype depth exceeded`);
+  return void 0;
 }
 function normalizeOwner2(owner) {
   const ownerRecord = owner === void 0 ? void 0 : isObjectLike2(owner) ? owner : invalid2("coordinated browser owner metadata is invalid");
@@ -5585,7 +5695,7 @@ function route(state, priority, label, callback) {
 }
 function pageFor(state, value) {
   if (!isObjectLike2(value)) return invalid2("browser provider returned an invalid page object");
-  const rawPage = unwrapCoordinatedPage(value);
+  const rawPage = unwrapCoordinatedPage(hasCallablePageMetadata(value) ? value : normalizePage(value));
   return createCoordinatedPage(rawPage, {
     coordinator: state.options.coordinator,
     resource: { kind: "browser", key: state.browserResource },
@@ -5747,7 +5857,7 @@ function createCoordinatedPageForBrowser(page, browser, options) {
   const normalized = normalizeOptions2(options);
   const rawBrowser = browser === void 0 ? void 0 : rawBrowsers.get(browser) ?? browser;
   const resource = { kind: "browser", key: stableBrowserResource(rawBrowser) };
-  return createCoordinatedPage(unwrapCoordinatedPage(page), {
+  return createCoordinatedPage(unwrapCoordinatedPage(normalizePage(page)), {
     coordinator: normalized.coordinator,
     resource,
     owner: normalized.owner
@@ -5776,7 +5886,9 @@ var MAX_EXISTING_TAB_DIAGNOSTIC_CANDIDATES = 10;
 var MAX_EXISTING_TAB_DIAGNOSTIC_FIELD_LENGTH = 240;
 async function attachChatGPTBrowser(env, args = {}, coordination) {
   const browser = await getBrowser(env, coordination);
-  const page = await getOrCreateChatGPTPage(browser, env, args, coordination);
+  const selection = await getOrCreateChatGPTPage(browser, env, args, coordination);
+  const { page } = selection;
+  bindPageTabId(page, selection.tabId);
   await assertPageOnChatGPTOrigin(page);
   const state = await readPageState(page);
   if (!isChatGPTUrl(state.url)) throw unsafeChatGPTOriginError();
@@ -5788,10 +5900,7 @@ async function attachChatGPTBrowser(env, args = {}, coordination) {
     page,
     browserName: browser.name ?? "chrome"
   };
-  const tabId = tabIdFromPage(page);
-  if (tabId !== void 0) {
-    attached.tabId = tabId;
-  }
+  if (selection.tabId !== void 0) attached.tabId = selection.tabId;
   return attached;
 }
 async function resolveChatGPTBrowser(env, coordination) {
@@ -5831,13 +5940,14 @@ async function getOrCreateChatGPTPage(browser, env, args, coordination) {
   if (env.page !== void 0) {
     const cached = createCoordinatedPageForBrowser(normalizePage(env.page), browser, coordination);
     if (await cachedPageMatchesBootstrapArgs(cached, args, explicitExistingPolicy)) {
-      return cached;
+      const tabId = tabIdFromPage(env.page);
+      return tabId === void 0 ? { page: cached } : { page: cached, tabId };
     }
   }
   if (explicitExistingPolicy !== void 0) {
     const existing = await selectExistingTab(browser, explicitExistingPolicy);
     if (existing.page !== void 0) {
-      return existing.page;
+      return existing;
     }
     const ifMissing = explicitExistingPolicy.ifMissing ?? "block";
     if (ifMissing === "block") {
@@ -5851,7 +5961,7 @@ async function getOrCreateChatGPTPage(browser, env, args, coordination) {
     const missingUrl = ifMissing === "open" ? urlFromExistingTarget(explicitExistingPolicy.target) ?? targetUrl : targetUrl;
     const created2 = await createTab(browser, missingUrl);
     if (created2 !== void 0) {
-      return created2;
+      return pageSelection(created2);
     }
     throw new BrowserBridgeUnavailableError("Codex can access a browser object, but no tab creation API was found.");
   }
@@ -5863,7 +5973,7 @@ async function getOrCreateChatGPTPage(browser, env, args, coordination) {
   }
   const created = await createTab(browser, targetUrl);
   if (created !== void 0) {
-    return created;
+    return pageSelection(created);
   }
   throw new BrowserBridgeUnavailableError("Codex can access a browser object, but no tab creation API was found.");
 }
@@ -5908,8 +6018,8 @@ async function selectExistingTab(browser, policy) {
     const selected = await Promise.resolve(browser.tabs.selected.call(browser.tabs)).catch(() => void 0);
     if (selected !== void 0) {
       const normalized = normalizePage(selected);
-      if (await pageMatchesExistingTarget(normalized, policy)) {
-        return { page: normalized };
+      if (await pageMatchesExistingTarget(normalized, policy, pageIdValue(normalized))) {
+        return pageSelection(normalized);
       }
     }
   }
@@ -5917,8 +6027,8 @@ async function selectExistingTab(browser, policy) {
     const tab = await Promise.resolve(browser.tabs.get.call(browser.tabs, policy.target.tabId)).catch(() => void 0);
     if (tab !== void 0) {
       const normalized = normalizePage(tab);
-      if (await pageMatchesExistingTarget(normalized, policy)) {
-        return { page: normalized };
+      if (await pageMatchesExistingTarget(normalized, policy, policy.target.tabId)) {
+        return { page: normalized, tabId: policy.target.tabId };
       }
     }
   }
@@ -5927,10 +6037,11 @@ async function selectExistingTab(browser, policy) {
     const matches = [];
     for (const candidate of controlled) {
       const page = await hydrateTab(browser, candidate);
-      if (await pageMatchesExistingTarget(page, policy)) matches.push(page);
+      const tabId = pageIdValue(candidate) ?? pageIdValue(page);
+      if (await pageMatchesExistingTarget(page, policy, tabId)) matches.push({ page, ...tabId === void 0 ? {} : { tabId } });
     }
     if (matches.length === 1 || matches.length > 1 && (policy.ifMultiple ?? "block") === "first") {
-      return { page: matches[0] };
+      return matches[0];
     }
     if (matches.length > 1) {
       throw new ExistingTabSelectionError(
@@ -5967,7 +6078,7 @@ async function selectExistingUserTab(browser, policy, collectDiagnostics) {
   const selected = matches[0];
   const page = normalizePage(await claimTab.call(browser.user, selected));
   await assertPageOnChatGPTOrigin(page);
-  return diagnostics === void 0 ? { page } : { page, diagnostics };
+  return diagnostics === void 0 ? { page, tabId: selected.id } : { page, tabId: selected.id, diagnostics };
 }
 function userTabMatchesTarget(tab, policy) {
   const target = policy.target ?? { type: "selected", host: "chatgpt" };
@@ -6073,10 +6184,10 @@ function mismatchReasonForNoMatches(policy, tabs, chatgptTabs) {
       return "selected_tab_unavailable";
   }
 }
-async function pageMatchesExistingTarget(page, policy) {
+async function pageMatchesExistingTarget(page, policy, authoritativeTabId) {
   const url = await Promise.resolve(page.url?.()).catch(() => void 0);
   const title = await Promise.resolve(page.title?.()).catch(() => void 0);
-  const tab = { id: tabIdFromPage(page) ?? "" };
+  const tab = { id: authoritativeTabId ?? "" };
   if (url !== void 0) tab.url = url;
   if (title !== void 0) tab.title = title;
   return userTabMatchesTarget(tab, policy);
@@ -6090,7 +6201,7 @@ async function findExistingChatGPTTab(browser) {
         const normalized = normalizePage(current);
         try {
           if (isChatGPTUrl(await normalized.url?.())) {
-            return normalized;
+            return pageSelection(normalized);
           }
         } catch {
         }
@@ -6105,7 +6216,7 @@ async function findExistingChatGPTTab(browser) {
     for (const tab of normalized) {
       try {
         if (isChatGPTUrl(await tab.url?.())) {
-          return tab;
+          return pageSelection(tab);
         }
       } catch {
       }
@@ -6122,7 +6233,7 @@ async function findExistingChatGPTTab(browser) {
     return { page: void 0 };
   });
   if (userTab.page !== void 0) {
-    return userTab.page;
+    return userTab;
   }
   return void 0;
 }
@@ -6270,12 +6381,12 @@ function normalizeBrowser(browser) {
   }
   const rawBrowser = browser;
   const normalized = {};
-  const name = providerValue(rawBrowser, "name");
+  const name = providerValue2(rawBrowser, "name");
   if (typeof name === "string") normalized.name = name;
-  const rawUser = providerValue(rawBrowser, "user");
-  if (isProviderRecord(rawUser)) {
-    const openTabs = providerCallable(rawUser, "openTabs");
-    const claimTab = providerCallable(rawUser, "claimTab");
+  const rawUser = providerValue2(rawBrowser, "user");
+  if (isProviderRecord2(rawUser)) {
+    const openTabs = providerCallable2(rawUser, "openTabs");
+    const claimTab = providerCallable2(rawUser, "claimTab");
     normalized.user = {
       ...openTabs === void 0 ? {} : {
         openTabs: async () => await openTabs()
@@ -6285,14 +6396,14 @@ function normalizeBrowser(browser) {
       }
     };
   }
-  const rawTabs = providerValue(rawBrowser, "tabs");
-  if (isProviderRecord(rawTabs)) {
-    const create = providerCallable(rawTabs, "create");
-    const newer = providerCallable(rawTabs, "new");
-    const selected = providerCallable(rawTabs, "selected");
-    const list = providerCallable(rawTabs, "list");
-    const get = providerCallable(rawTabs, "get");
-    const finalize = providerCallable(rawTabs, "finalize");
+  const rawTabs = providerValue2(rawBrowser, "tabs");
+  if (isProviderRecord2(rawTabs)) {
+    const create = providerCallable2(rawTabs, "create");
+    const newer = providerCallable2(rawTabs, "new");
+    const selected = providerCallable2(rawTabs, "selected");
+    const list = providerCallable2(rawTabs, "list");
+    const get = providerCallable2(rawTabs, "get");
+    const finalize = providerCallable2(rawTabs, "finalize");
     normalized.tabs = {
       ...create === void 0 ? {} : {
         create: async (url) => normalizePage(await create(url))
@@ -6322,7 +6433,7 @@ function normalizeBrowser(browser) {
       }
     };
   }
-  const newPage = providerCallable(rawBrowser, "newPage");
+  const newPage = providerCallable2(rawBrowser, "newPage");
   if (newPage !== void 0) {
     normalized.newPage = async () => normalizePage(await newPage());
   }
@@ -6339,72 +6450,42 @@ async function hydrateTab(browser, pageOrTab) {
   }
   return normalizePage(pageOrTab);
 }
-function normalizePage(pageOrTab) {
-  if (isPageWrapper(pageOrTab)) return pageOrTab;
-  if (!isProviderRecord(pageOrTab)) return pageOrTab;
-  const maybe = pageOrTab;
-  const embedded = providerValue(maybe, "playwright") ?? providerValue(maybe, "page");
-  const primary = isProviderRecord(embedded) ? embedded : maybe;
-  const normalized = {};
-  for (const property of ["id", "tabId"]) {
-    const value = providerValue(maybe, property) ?? providerValue(primary, property);
-    if (typeof value === "string") normalized[property] = value;
-  }
-  for (const property of ["keyboard", "mouse", "cua", "capabilities"]) {
-    const value = providerValue(primary, property) ?? providerValue(maybe, property);
-    if (isProviderRecord(value)) normalized[property] = value;
-  }
-  if (isProviderRecord(embedded)) normalized.playwright = embedded;
-  for (const method of [
-    "url",
-    "goto",
-    "title",
-    "locator",
-    "getByRole",
-    "getByPlaceholder",
-    "getByText",
-    "waitForTimeout",
-    "waitForEvent",
-    "evaluate",
-    "content",
-    "close"
-  ]) {
-    const callable = providerCallable(primary, method) ?? providerCallable(maybe, method);
-    if (callable !== void 0) normalized[method] = (...args) => callable(...args);
-  }
-  const stringUrl = providerValue(maybe, "url");
-  if (normalized.url === void 0 && typeof stringUrl === "string") {
-    normalized.url = () => stringUrl;
-  }
-  const stringTitle = providerValue(maybe, "title");
-  if (normalized.title === void 0 && typeof stringTitle === "string") {
-    normalized.title = async () => stringTitle;
-  }
-  return normalized;
-}
-function isProviderRecord(value) {
+function isProviderRecord2(value) {
   return typeof value === "object" && value !== null || typeof value === "function";
 }
-function providerValue(value, key) {
+function providerValue2(value, key) {
   try {
     return Reflect.get(value, key, value);
   } catch {
     return void 0;
   }
 }
-function providerCallable(value, key) {
-  const candidate = providerValue(value, key);
+function providerCallable2(value, key) {
+  const candidate = providerValue2(value, key);
   if (typeof candidate !== "function") return void 0;
   return (...args) => Reflect.apply(candidate, value, args);
 }
-function isPageWrapper(value) {
-  if (value === null || typeof value !== "object" && typeof value !== "function") return false;
-  return unwrapCoordinatedPage(value) !== value;
-}
 function tabIdFromPage(page) {
-  const maybe = page;
-  const id2 = maybe.id ?? maybe.tabId;
-  return typeof id2 === "string" ? id2 : void 0;
+  return pageTabIds.get(page) ?? pageTabIds.get(unwrapCoordinatedPage(page));
+}
+function pageSelection(page) {
+  const tabId = pageIdValue(page);
+  return tabId === void 0 ? { page } : { page, tabId };
+}
+function pageIdValue(value) {
+  if (typeof value !== "object" && typeof value !== "function" || value === null) return void 0;
+  for (const key of ["id", "tabId"]) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor !== void 0 && "value" in descriptor && typeof descriptor.value === "string") return descriptor.value;
+  }
+  return void 0;
+}
+var pageTabIds = /* @__PURE__ */ new WeakMap();
+function bindPageTabId(page, tabId) {
+  if (tabId === void 0) return;
+  pageTabIds.set(page, tabId);
+  const raw = unwrapCoordinatedPage(page);
+  if (typeof raw === "object" && raw !== null) pageTabIds.set(raw, tabId);
 }
 
 // src/safety/report-redaction.ts
@@ -6619,10 +6700,11 @@ async function snapshotBrowserTabIds(browser) {
     const pages = await list.call(tabs);
     const ids = /* @__PURE__ */ new Set();
     for (const page of pages) {
-      const id2 = tabIdFromPage(page);
+      const id2 = safeInventoryTabId(page);
       if (id2 === void 0) {
         return { ok: false, reason: "browser.tabs.list returned a tab without an exact id" };
       }
+      bindPageTabId(page, id2);
       ids.add(id2);
     }
     return { ok: true, ids };
@@ -6651,19 +6733,18 @@ async function closeNewExactTabs(browser, baseline) {
     const pages = await list.call(tabs);
     const newTabIds = [];
     for (const page of pages) {
-      const id2 = tabIdFromPage(page);
+      const id2 = safeInventoryTabId(page);
       if (id2 === void 0) {
         throw new Error("browser.tabs.list returned a tab without an exact id");
       }
+      bindPageTabId(page, id2);
       if (!baseline.ids.has(id2) && !newTabIds.includes(id2)) {
         newTabIds.push(id2);
       }
     }
     for (const id2 of newTabIds) {
       const page = await get.call(tabs, id2);
-      if (tabIdFromPage(page) !== id2) {
-        throw new Error(`browser.tabs.get did not preserve exact cleanup affinity for tab ${id2}`);
-      }
+      bindPageTabId(page, id2);
       if (typeof page.close !== "function") {
         throw new Error(`browser tab ${id2} does not expose close()`);
       }
@@ -6685,6 +6766,11 @@ async function closeNewExactTabs(browser, baseline) {
     };
   }
 }
+function safeInventoryTabId(value) {
+  if (typeof value !== "object" && typeof value !== "function" || value === null) return void 0;
+  const descriptor = Object.getOwnPropertyDescriptor(value, "id");
+  return descriptor !== void 0 && "value" in descriptor && typeof descriptor.value === "string" && descriptor.value.length > 0 ? descriptor.value : void 0;
+}
 async function withTimeout2(promise, timeoutMs, message) {
   let timeout;
   try {
@@ -6702,22 +6788,22 @@ async function withTimeout2(promise, timeoutMs, message) {
 }
 
 // src/scripts/live-smoke/scenarios.ts
-import { mkdtemp, readFile as readFile3, stat as stat7, writeFile as writeFile4 } from "node:fs/promises";
+import { mkdtemp, readFile as readFile5, rm, stat as stat7, writeFile as writeFile6 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join as join7 } from "node:path";
+import { join as join10 } from "node:path";
 
 // src/browser/clipboard.ts
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 var execFileAsync = promisify(execFile);
-function clipboardReadCommandsForPlatform(platform2, env = {}) {
-  if (platform2 === "darwin") {
+function clipboardReadCommandsForPlatform(platform4, env = {}) {
+  if (platform4 === "darwin") {
     return [{ command: "pbpaste", args: [] }];
   }
-  if (platform2 === "win32") {
+  if (platform4 === "win32") {
     return [{ command: "powershell.exe", args: ["-NoProfile", "-Command", "Get-Clipboard -Raw"] }];
   }
-  if (platform2 === "linux") {
+  if (platform4 === "linux") {
     const waylandCommand = { command: "wl-paste", args: ["--no-newline"] };
     const x11Commands = [
       { command: "xclip", args: ["-selection", "clipboard", "-o"] },
@@ -8288,12 +8374,33 @@ async function verifyTabAffinity(env) {
     return void 0;
   }
   const actualTabId = tabIdFromPage(unwrapCoordinatedPage(env.page));
-  if (actualTabId === env.expectedTabId) {
+  if (actualTabId === void 0) {
+    return affinityResult(env, "tab_affinity_unverifiable", actualTabId);
+  }
+  if (actualTabId !== env.expectedTabId) {
+    return affinityResult(env, "tab_affinity_lost", actualTabId);
+  }
+  const openTabs = env.browser?.user?.openTabs;
+  if (typeof openTabs !== "function") {
     return void 0;
   }
-  const code = actualTabId === void 0 ? "tab_affinity_unverifiable" : "tab_affinity_lost";
-  const message = actualTabId === void 0 ? `ChatGPT command cannot verify it is still attached to expected tab ${env.expectedTabId}.` : `ChatGPT command would run on tab ${actualTabId}, but the workflow expected tab ${env.expectedTabId}.`;
-  return {
+  let tabs;
+  try {
+    tabs = await Promise.resolve(openTabs.call(env.browser.user));
+  } catch {
+    return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+  }
+  if (!Array.isArray(tabs)) {
+    return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+  }
+  if (!tabs.some((tab) => tab.id === env.expectedTabId)) {
+    return affinityResult(env, "tab_affinity_lost", actualTabId);
+  }
+  return void 0;
+}
+function affinityResult(env, code, actualTabId) {
+  const message = code === "tab_affinity_unverifiable" ? `ChatGPT command cannot verify it is still attached to expected tab ${env.expectedTabId}.` : `ChatGPT command would run on tab ${actualTabId ?? env.expectedTabId}, but the workflow expected tab ${env.expectedTabId}.`;
+  return contextFromPage(env.page, tabContext(env, actualTabId)).then((context) => ({
     ok: false,
     status: "blocked",
     warnings: [],
@@ -8310,8 +8417,8 @@ async function verifyTabAffinity(env) {
       ],
       resumable: false
     },
-    context: await contextFromPage(env.page, tabContext(env, actualTabId))
-  };
+    context
+  }));
 }
 function tabContext(env, actualTabId = tabIdFromPage(unwrapCoordinatedPage(env.page))) {
   const tabId = actualTabId ?? env.expectedTabId;
@@ -13563,19 +13670,19 @@ import { platform as readHostPlatform } from "node:os";
 function currentHostPathPlatform() {
   return readHostPlatform();
 }
-function isHostAbsolutePath(value, platform2 = currentHostPathPlatform()) {
+function isHostAbsolutePath(value, platform4 = currentHostPathPlatform()) {
   if (value.length === 0) return false;
-  if (platform2 === "win32") return isFullyQualifiedWindowsPath(value);
+  if (platform4 === "win32") return isFullyQualifiedWindowsPath(value);
   return path.posix.isAbsolute(value);
 }
-function resolveForHostPath(value, platform2 = currentHostPathPlatform()) {
-  if (!isHostAbsolutePath(value, platform2)) {
+function resolveForHostPath(value, platform4 = currentHostPathPlatform()) {
+  if (!isHostAbsolutePath(value, platform4)) {
     throw new Error(`File attachment path must be absolute for the backend host: ${value}`);
   }
-  return platform2 === "win32" ? path.win32.resolve(value) : path.posix.resolve(value);
+  return platform4 === "win32" ? path.win32.resolve(value) : path.posix.resolve(value);
 }
-function basenameForHostPath(value, platform2 = currentHostPathPlatform()) {
-  return platform2 === "win32" ? path.win32.basename(value) : path.posix.basename(value);
+function basenameForHostPath(value, platform4 = currentHostPathPlatform()) {
+  return platform4 === "win32" ? path.win32.basename(value) : path.posix.basename(value);
 }
 function isFullyQualifiedWindowsPath(value) {
   return /^[A-Za-z]:[\\/]/.test(value) || /^\\\\[^\\]+\\[^\\]+[\\/]/.test(value);
@@ -17499,8 +17606,568 @@ function cloneDescriptor(descriptor) {
   };
 }
 
+// src/conversations/registry.ts
+import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
+import { mkdir as mkdir5, readFile as readFile3, readdir, rename, unlink as unlink2, writeFile as writeFile4 } from "node:fs/promises";
+import { homedir, platform } from "node:os";
+import { join as join5 } from "node:path";
+var writeQueues = /* @__PURE__ */ new Map();
+var ConversationRegistry = class {
+  stateRoot;
+  now;
+  constructor(options = {}) {
+    this.stateRoot = options.stateRoot ?? defaultConversationStateRoot();
+    this.now = options.now ?? (() => /* @__PURE__ */ new Date());
+  }
+  async get(key) {
+    const normalizedKey = normalizeKey(key);
+    const path3 = this.recordPath(normalizedKey);
+    try {
+      const parsed = JSON.parse(await readFile3(path3, "utf8"));
+      if (!isConversationRecord(parsed)) throw new Error(`Invalid conversation registry record: ${path3}`);
+      if (parsed.key !== normalizedKey) throw new Error(`Conversation registry key mismatch: ${path3}`);
+      return parsed;
+    } catch (error) {
+      if (isNodeError4(error, "ENOENT")) return void 0;
+      throw error;
+    }
+  }
+  async find(keyOrAlias) {
+    const candidate = normalizeKey(keyOrAlias);
+    const direct = await this.get(candidate);
+    if (direct !== void 0) return direct;
+    const wanted = candidate.toLocaleLowerCase();
+    for (const record of await this.list()) {
+      if (record.aliases.some((alias) => alias.toLocaleLowerCase() === wanted)) return record;
+    }
+    return void 0;
+  }
+  async remember(args) {
+    const key = normalizeKey(args.key);
+    return this.withMutationLock(async () => {
+      const existing = await this.get(key);
+      const now = this.now().toISOString();
+      const aliases = existing?.aliases.slice() ?? [];
+      for (const alias of args.aliases ?? []) {
+        const normalizedAlias = alias.trim();
+        if (normalizedAlias.length > 0 && !aliases.includes(normalizedAlias)) aliases.push(normalizedAlias);
+      }
+      const conversationId = args.replaceIdentity ? args.conversationId : args.conversationId ?? existing?.conversationId;
+      const url = args.replaceIdentity ? args.url : args.url ?? existing?.url;
+      const title = args.title ?? existing?.title;
+      if (args.conversationId !== void 0 && args.conversationId.trim().length === 0) throw new Error("conversationId must not be empty.");
+      if (args.url !== void 0 && args.url.trim().length === 0) throw new Error("URL must not be empty.");
+      const suppliedUrlId = args.url === void 0 ? void 0 : conversationIdFromUrl(args.url);
+      const existingUrlId = existing?.url === void 0 ? void 0 : conversationIdFromUrl(existing.url);
+      if (args.conversationId !== void 0 && suppliedUrlId !== void 0 && suppliedUrlId !== args.conversationId) {
+        throw new Error(`Conversation "${key}" URL does not match its conversationId.`);
+      }
+      if (!args.replaceIdentity && args.url !== void 0 && existing?.conversationId !== void 0 && suppliedUrlId !== void 0 && suppliedUrlId !== existing.conversationId) {
+        throw new Error(`Conversation "${key}" URL does not match its remembered conversationId.`);
+      }
+      if (!args.replaceIdentity && args.conversationId !== void 0 && existingUrlId !== void 0 && existingUrlId !== args.conversationId) {
+        throw new Error(`Conversation "${key}" conversationId does not match its remembered URL.`);
+      }
+      const identities = new Set([key, ...aliases].map((identity) => identity.toLocaleLowerCase()));
+      for (const other of await this.list()) {
+        if (other.key === key) continue;
+        if (identities.has(other.key.toLocaleLowerCase()) || other.aliases.some((alias) => identities.has(alias.toLocaleLowerCase()))) {
+          throw new Error(`Conversation identifier for "${key}" already identifies "${other.key}".`);
+        }
+      }
+      const record = {
+        schemaVersion: 1,
+        key,
+        surface: args.surface ?? existing?.surface ?? "chat",
+        aliases,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        lastUsedAt: args.touch === false ? existing?.lastUsedAt ?? now : now
+      };
+      if (conversationId !== void 0) record.conversationId = conversationId;
+      if (url !== void 0) record.url = url;
+      if (title !== void 0) record.title = title;
+      if (record.conversationId === void 0 && record.url === void 0) {
+        throw new Error(`Conversation "${key}" needs a conversationId or URL before it can be remembered.`);
+      }
+      await this.writeRecordFile(record, this.recordPath(key));
+      return record;
+    });
+  }
+  async touch(key) {
+    const existing = await this.get(key);
+    return existing === void 0 ? void 0 : this.remember({ key: existing.key });
+  }
+  async list() {
+    let names;
+    try {
+      names = await readdir(this.stateRoot);
+    } catch (error) {
+      if (isNodeError4(error, "ENOENT")) return [];
+      throw error;
+    }
+    const records = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      try {
+        const parsed = JSON.parse(await readFile3(join5(this.stateRoot, name), "utf8"));
+        if (!isConversationRecord(parsed)) throw new Error(`Invalid conversation registry record: ${join5(this.stateRoot, name)}`);
+        records.push(parsed);
+      } catch (error) {
+        if (!isNodeError4(error, "ENOENT")) throw error;
+      }
+    }
+    records.sort((left, right) => right.lastUsedAt.localeCompare(left.lastUsedAt));
+    return records;
+  }
+  async forget(key) {
+    const normalizedKey = normalizeKey(key);
+    return this.withMutationLock(async () => {
+      try {
+        await unlink2(this.recordPath(normalizedKey));
+        return true;
+      } catch (error) {
+        if (isNodeError4(error, "ENOENT")) return false;
+        throw error;
+      }
+    });
+  }
+  recordPath(key) {
+    const digest4 = createHash4("sha256").update(key, "utf8").digest("hex");
+    return join5(this.stateRoot, `${digest4}.json`);
+  }
+  async withMutationLock(action) {
+    const target = this.stateRoot;
+    const previous = writeQueues.get(target) ?? Promise.resolve();
+    const queued = previous.catch(() => void 0).then(action);
+    writeQueues.set(target, queued);
+    try {
+      return await queued;
+    } finally {
+      if (writeQueues.get(target) === queued) writeQueues.delete(target);
+    }
+  }
+  async writeRecordFile(record, target) {
+    await mkdir5(this.stateRoot, { recursive: true, mode: 448 });
+    const temporary = join5(this.stateRoot, `${randomUUID3()}.tmp`);
+    try {
+      await writeFile4(temporary, `${JSON.stringify(record, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await rename(temporary, target);
+          break;
+        } catch (error) {
+          if (attempt >= 2 || !(isNodeError4(error, "EPERM") || isNodeError4(error, "EBUSY"))) throw error;
+          await new Promise((resolve7) => setTimeout(resolve7, 10));
+        }
+      }
+    } finally {
+      await unlink2(temporary).catch(() => void 0);
+    }
+  }
+};
+function defaultConversationStateRoot() {
+  if (platform() === "darwin") return join5(homedir(), "Library", "Application Support", "codex-chatgpt-control", "conversations-v1");
+  if (platform() === "win32") {
+    const localAppData = process.env.LOCALAPPDATA;
+    return join5(localAppData?.trim() || join5(homedir(), "AppData", "Local"), "codex-chatgpt-control", "conversations-v1");
+  }
+  const xdgStateHome = process.env.XDG_STATE_HOME;
+  return join5(xdgStateHome?.trim() || join5(homedir(), ".local", "state"), "codex-chatgpt-control", "conversations-v1");
+}
+function normalizeKey(key) {
+  const normalized = key.trim();
+  if (normalized.length === 0) throw new Error("Conversation key must not be empty.");
+  if (normalized.length > 200) throw new Error("Conversation key must be 200 characters or fewer.");
+  return normalized;
+}
+function conversationIdFromUrl(value) {
+  try {
+    const pathname = new URL(value).pathname;
+    if (!pathname.startsWith("/c/")) return void 0;
+    const id2 = pathname.slice(3).split("/")[0];
+    return id2 === "" ? void 0 : id2;
+  } catch {
+    return void 0;
+  }
+}
+function isConversationRecord(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value;
+  if (record.schemaVersion !== 1 || typeof record.key !== "string" || record.key.length === 0) return false;
+  if (record.surface !== "chat" && record.surface !== "work") return false;
+  if (!Array.isArray(record.aliases) || !record.aliases.every((alias) => typeof alias === "string")) return false;
+  if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string" || typeof record.lastUsedAt !== "string") return false;
+  if (record.conversationId !== void 0 && (typeof record.conversationId !== "string" || record.conversationId.trim().length === 0)) return false;
+  if (record.url !== void 0 && (typeof record.url !== "string" || record.url.trim().length === 0)) return false;
+  if (record.title !== void 0 && typeof record.title !== "string") return false;
+  return record.conversationId !== void 0 || record.url !== void 0;
+}
+function isNodeError4(error, code) {
+  return nodeErrorCode(error) === code;
+}
+
+// src/conversations/manager.ts
+import { join as join7 } from "node:path";
+
+// src/conversations/browser-affinity.ts
+import { createHash as createHash5, randomUUID as randomUUID4 } from "node:crypto";
+import { chmod, mkdir as mkdir6, readFile as readFile4, readdir as readdir2, rename as rename2, unlink as unlink3, writeFile as writeFile5 } from "node:fs/promises";
+import { homedir as homedir2, platform as platform2 } from "node:os";
+import { dirname as dirname2, join as join6 } from "node:path";
+var writeQueues2 = /* @__PURE__ */ new Map();
+var BrowserAffinityRegistry = class {
+  stateRoot;
+  now;
+  constructor(options = {}) {
+    this.stateRoot = options.stateRoot ?? defaultBrowserAffinityStateRoot();
+    this.now = options.now ?? (() => /* @__PURE__ */ new Date());
+  }
+  async get(key) {
+    const normalizedKey = normalizeKey2(key);
+    try {
+      const parsed = JSON.parse(await readFile4(this.recordPath(normalizedKey), "utf8"));
+      if (!isBrowserAffinityRecord(parsed) || parsed.key !== normalizedKey) throw new Error("Invalid browser affinity record.");
+      return parsed;
+    } catch (error) {
+      if (isNodeError5(error, "ENOENT")) return void 0;
+      throw error;
+    }
+  }
+  async remember(args) {
+    const key = normalizeKey2(args.key);
+    if (!args.tabId.trim()) throw new Error("Browser affinity tabId must not be empty.");
+    if (args.conversationId !== void 0 && !args.conversationId.trim()) throw new Error("Browser affinity conversationId must not be empty.");
+    if (args.url !== void 0 && !args.url.trim()) throw new Error("Browser affinity URL must not be empty.");
+    return this.withMutationLock(async () => {
+      const existing = await this.get(key);
+      const now = this.now().toISOString();
+      const record = {
+        schemaVersion: 1,
+        key,
+        tabId: args.tabId,
+        surface: args.surface,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now
+      };
+      if (args.conversationId !== void 0) record.conversationId = args.conversationId;
+      if (args.url !== void 0) record.url = args.url;
+      await this.writeRecordFile(record, this.recordPath(key));
+      return record;
+    });
+  }
+  async list() {
+    let names;
+    try {
+      names = await readdir2(this.stateRoot);
+    } catch (error) {
+      if (isNodeError5(error, "ENOENT")) return [];
+      throw error;
+    }
+    const records = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const path3 = join6(this.stateRoot, name);
+      const parsed = JSON.parse(await readFile4(path3, "utf8"));
+      if (!isBrowserAffinityRecord(parsed)) throw new Error(`Invalid browser affinity record: ${path3}`);
+      records.push(parsed);
+    }
+    return records;
+  }
+  async forget(key) {
+    return this.withMutationLock(async () => {
+      try {
+        await unlink3(this.recordPath(normalizeKey2(key)));
+        return true;
+      } catch (error) {
+        if (isNodeError5(error, "ENOENT")) return false;
+        throw error;
+      }
+    });
+  }
+  recordPath(key) {
+    return join6(this.stateRoot, `${createHash5("sha256").update(key, "utf8").digest("hex")}.json`);
+  }
+  async withMutationLock(action) {
+    const previous = writeQueues2.get(this.stateRoot) ?? Promise.resolve();
+    const queued = previous.catch(() => void 0).then(action);
+    writeQueues2.set(this.stateRoot, queued);
+    try {
+      return await queued;
+    } finally {
+      if (writeQueues2.get(this.stateRoot) === queued) writeQueues2.delete(this.stateRoot);
+    }
+  }
+  async writeRecordFile(record, target) {
+    await mkdir6(this.stateRoot, { recursive: true, mode: 448 });
+    await chmod(this.stateRoot, 448);
+    const temporary = join6(this.stateRoot, `${randomUUID4()}.tmp`);
+    try {
+      await writeFile5(temporary, `${JSON.stringify(record, null, 2)}
+`, { encoding: "utf8", mode: 384 });
+      await chmod(temporary, 384);
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await rename2(temporary, target);
+          break;
+        } catch (error) {
+          if (attempt >= 2 || !(isNodeError5(error, "EPERM") || isNodeError5(error, "EBUSY"))) throw error;
+          await new Promise((resolve7) => setTimeout(resolve7, 10));
+        }
+      }
+    } finally {
+      await unlink3(temporary).catch(() => void 0);
+    }
+  }
+};
+function defaultBrowserAffinityStateRoot() {
+  if (platform2() === "darwin") return join6(homedir2(), "Library", "Application Support", "codex-chatgpt-control", "browser-affinity-v1");
+  if (platform2() === "win32") return join6(process.env.LOCALAPPDATA?.trim() || join6(homedir2(), "AppData", "Local"), "codex-chatgpt-control", "browser-affinity-v1");
+  return join6(process.env.XDG_STATE_HOME?.trim() || join6(homedir2(), ".local", "state"), "codex-chatgpt-control", "browser-affinity-v1");
+}
+function normalizeKey2(key) {
+  const value = key.trim();
+  if (!value || value.length > 200) throw new Error("Browser affinity key is invalid.");
+  return value;
+}
+function isBrowserAffinityRecord(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value;
+  const keys = Object.keys(record).sort().join(",");
+  const expected = ["conversationId", "createdAt", "key", "schemaVersion", "surface", "tabId", "updatedAt", "url"].filter((key) => record[key] !== void 0).sort().join(",");
+  if (keys !== expected || record.schemaVersion !== 1 || typeof record.key !== "string" || typeof record.tabId !== "string" || !record.tabId || record.surface !== "chat" && record.surface !== "work") return false;
+  if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") return false;
+  return (record.conversationId === void 0 || typeof record.conversationId === "string") && (record.url === void 0 || typeof record.url === "string") && (record.conversationId !== void 0 || record.url !== void 0);
+}
+function isNodeError5(error, code) {
+  return nodeErrorCode(error) === code;
+}
+
+// src/conversations/manager.ts
+var ConversationNotFoundError = class extends Error {
+  key;
+  constructor(key) {
+    super(`No remembered ChatGPT conversation exists for "${key}".`);
+    this.name = "ConversationNotFoundError";
+    this.key = key;
+  }
+};
+var ConversationManager = class {
+  constructor(client, options = {}) {
+    this.client = client;
+    this.registry = new ConversationRegistry(options);
+    this.affinity = new BrowserAffinityRegistry({
+      stateRoot: options.affinityStateRoot ?? (options.stateRoot === void 0 ? defaultBrowserAffinityStateRoot() : join7(this.registry.stateRoot, "browser-affinity-v1")),
+      ...options.now === void 0 ? {} : { now: options.now }
+    });
+  }
+  client;
+  registry;
+  affinity;
+  remember(args) {
+    return this.registry.remember(args);
+  }
+  get(key) {
+    return this.registry.get(key);
+  }
+  find(keyOrAlias) {
+    return this.registry.find(keyOrAlias);
+  }
+  list() {
+    return this.registry.list();
+  }
+  forget(key) {
+    return this.forgetBoth(key);
+  }
+  async forgetBoth(key) {
+    const forgotten = await this.registry.forget(key);
+    await this.affinity.forget(key);
+    return forgotten;
+  }
+  async resolve(use) {
+    const policy = use.policy ?? "reuse";
+    if (policy === "new") return { key: use.key, source: "new", thread: { type: "new" } };
+    if (policy === "current") return { key: use.key, source: "current", thread: { type: "current" } };
+    const record = await this.registry.find(use.key);
+    if (record?.conversationId !== void 0) {
+      return { key: record.key, source: "registry", thread: { type: "conversationId", conversationId: record.conversationId }, record };
+    }
+    if (record?.url !== void 0) return { key: record.key, source: "registry", thread: { type: "url", url: record.url }, record };
+    const ifMissing = use.ifMissing ?? "search";
+    if (ifMissing === "create") return { key: use.key, source: "new", thread: { type: "new" } };
+    if (ifMissing === "search") {
+      const thread = { type: "search", query: use.searchQuery ?? use.key };
+      if (use.select !== void 0) thread.select = use.select;
+      if (use.limit !== void 0) thread.limit = use.limit;
+      return { key: use.key, source: "history-search", thread };
+    }
+    throw new ConversationNotFoundError(use.key);
+  }
+  async open(use) {
+    const resolution = await this.resolve(use);
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
+    const result3 = this.applyAffinity(await this.client.openThread(resolution.thread), preflight);
+    if (result3.ok) await this.persistObserved({ ...use, key: resolution.key }, result3, void 0, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async readLatest(use, args) {
+    const resolution = await this.resolve(use);
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
+    const verifiedOpened = this.applyAffinity(await this.client.openThread(resolution.thread), preflight);
+    if (!verifiedOpened.ok) return verifiedOpened;
+    await this.persistObserved({ ...use, key: resolution.key }, verifiedOpened, void 0, resolution.source === "new" || resolution.source === "current");
+    const result3 = this.applyAffinity(await this.client.readLatest(args), preflight);
+    if (result3.ok) await this.persistObserved({ ...use, key: resolution.key }, result3, void 0, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async ask(args) {
+    const resolution = await this.resolve(args.conversation);
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
+    const { conversation: _conversation, ...input } = args;
+    const result3 = this.applyAffinity(await this.client.ask({ ...input, thread: resolution.thread, ...await this.existingTab(resolution) }), preflight);
+    if (!result3.ok) return result3;
+    if (result3.ok) await this.persistObserved({ ...args.conversation, key: resolution.key }, result3, input.experience, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async runMessages(args) {
+    const resolution = await this.resolve(args.conversation);
+    const preflight = await this.preflightAffinity(resolution);
+    if (preflight.state === "blocked") return preflight.result;
+    const { conversation: _conversation, ...input } = args;
+    const result3 = this.applyAffinity(await this.client.runMessages({ ...input, thread: resolution.thread, ...await this.existingTab(resolution) }), preflight);
+    if (!result3.ok) return result3;
+    if (result3.ok) await this.persistObserved({ ...args.conversation, key: resolution.key }, result3, input.experience, resolution.source === "new" || resolution.source === "current");
+    return result3;
+  }
+  async rememberObserved(use, result3, experience, replaceIdentity = false) {
+    const { conversationId, url, title } = result3.context;
+    const usableUrl = url !== void 0 && isConversationUrl(url) ? url : void 0;
+    if (conversationId === void 0 && usableUrl === void 0) return;
+    const args = { key: use.key };
+    if (conversationId !== void 0) args.conversationId = conversationId;
+    if (usableUrl !== void 0) args.url = usableUrl;
+    if (title !== void 0) args.title = title;
+    if (use.surface !== void 0) args.surface = use.surface;
+    else if (experience === "chat" || experience === "work") args.surface = experience;
+    if (replaceIdentity) args.replaceIdentity = true;
+    await this.registry.remember(args);
+  }
+  async persistObserved(use, result3, experience, replaceIdentity = false) {
+    try {
+      await this.rememberObserved(use, result3, experience, replaceIdentity);
+      await this.rememberAffinityObserved(use, result3, experience);
+    } catch {
+      result3.warnings.push("Conversation metadata could not be persisted.");
+    }
+  }
+  async existingTab(resolution) {
+    const record = await this.affinity.get(resolution.key);
+    return record === void 0 ? {} : { existingTab: { target: { type: "tabId", tabId: record.tabId }, ifMissing: "block", ifMultiple: "block", requireChatGPT: true } };
+  }
+  async preflightAffinity(resolution) {
+    const affinity = await this.affinity.get(resolution.key);
+    if (affinity === void 0) return { state: "none" };
+    const result3 = await this.client.session.bootstrap({
+      existingTab: {
+        target: { type: "tabId", tabId: affinity.tabId },
+        ifMissing: "block",
+        ifMultiple: "block",
+        requireChatGPT: true
+      },
+      preferExistingTab: true
+    });
+    if (!result3.ok) return { state: "blocked", result: result3 };
+    const expectedIdentity = resolution.record?.conversationId ?? conversationIdFromUrl2(resolution.record?.url) ?? affinity.conversationId ?? conversationIdFromUrl2(affinity.url);
+    const actualIdentity = result3.context.conversationId ?? conversationIdFromUrl2(result3.context.url);
+    if (result3.context.tabId !== affinity.tabId || !isChatGPTConversationUrl(result3.context.url) || expectedIdentity !== void 0 && actualIdentity !== expectedIdentity) {
+      return { state: "blocked", result: affinityBlocker(result3) };
+    }
+    return { state: "verified", tabId: affinity.tabId, semantic: { ...actualIdentity === void 0 ? {} : { conversationId: actualIdentity }, ...result3.context.url === void 0 ? {} : { url: result3.context.url } } };
+  }
+  applyAffinity(result3, preflight) {
+    if (preflight.state !== "verified") return result3;
+    const actual = result3.context;
+    if (actual.tabId !== void 0 && actual.tabId !== preflight.tabId) return affinityBlocker(result3);
+    const actualIdentity = actual.conversationId ?? conversationIdFromUrl2(actual.url);
+    if (preflight.semantic.conversationId !== void 0 && actualIdentity !== preflight.semantic.conversationId || preflight.semantic.url !== void 0 && (actual.url === void 0 || !conversationUrlMatches(actual.url, preflight.semantic.url))) return affinityBlocker(result3);
+    return actual.tabId === void 0 ? { ...result3, context: { ...actual, tabId: preflight.tabId } } : result3;
+  }
+  async rememberAffinityObserved(use, result3, experience) {
+    const { tabId, conversationId, url } = result3.context;
+    if (tabId === void 0 || conversationId === void 0 && url === void 0) return;
+    await this.affinity.remember({
+      key: use.key,
+      tabId,
+      surface: use.surface ?? experience ?? "chat",
+      ...conversationId === void 0 ? {} : { conversationId },
+      ...url === void 0 ? {} : { url }
+    });
+  }
+};
+function isChatGPTConversationUrl(value) {
+  try {
+    const url = new URL(value ?? "");
+    return ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname) && url.pathname.startsWith("/c/");
+  } catch {
+    return false;
+  }
+}
+function conversationUrlMatches(actual, expected) {
+  try {
+    return new URL(actual).pathname === new URL(expected).pathname;
+  } catch {
+    return false;
+  }
+}
+function conversationIdFromUrl2(value) {
+  try {
+    const url = new URL(value ?? "");
+    if (!["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname)) return void 0;
+    const id2 = url.pathname.split("/")[2];
+    return id2 === void 0 || id2.length === 0 ? void 0 : decodeURIComponent(id2);
+  } catch {
+    return void 0;
+  }
+}
+function affinityBlocker(result3) {
+  return {
+    ok: false,
+    status: "blocked",
+    warnings: result3.warnings,
+    blocker: {
+      kind: "selector_drift",
+      code: "tab_affinity_lost",
+      message: "ChatGPT browser affinity verification failed before the requested action.",
+      remediation: [
+        {
+          label: "Reclaim the intended tab",
+          instruction: "Run session.bootstrap again with an exact existingTab target, or pass the correct page/tab to createChatGPT before retrying.",
+          userActionRequired: false
+        }
+      ],
+      resumable: false
+    },
+    context: result3.context
+  };
+}
+function createConversationManager(client, options = {}) {
+  return new ConversationManager(client, options);
+}
+function isConversationUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname) && url.pathname.startsWith("/c/");
+  } catch {
+    return false;
+  }
+}
+
 // src/client.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID7 } from "node:crypto";
 import { AsyncLocalStorage as AsyncLocalStorage2 } from "node:async_hooks";
 
 // src/runner/agent.ts
@@ -18213,7 +18880,7 @@ function runItemEventName(item) {
 // src/operations/file-identity.ts
 import { constants as fsConstants } from "node:fs";
 import { basename as basename3, resolve as resolve3 } from "node:path";
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 import { lstat, open } from "node:fs/promises";
 var DEFAULT_HASH_CHUNK_BYTES = 64 * 1024;
 var OperationFileIdentityError = class extends Error {
@@ -18276,7 +18943,7 @@ async function hashRegularFile(sourcePath, options) {
     if (!before.isFile() || before.dev !== pathMetadata.dev || before.ino !== pathMetadata.ino) {
       throw new OperationFileIdentityError("operation_file_changed", "The operation input file changed while it was being opened.");
     }
-    const digest4 = createHash4("sha256");
+    const digest4 = createHash6("sha256");
     const stream = handle.createReadStream({
       autoClose: false,
       highWaterMark: chunkBytes,
@@ -21763,16 +22430,16 @@ import { constants as fsConstants2 } from "node:fs";
 import {
   lstat as lstat2,
   link as link2,
-  mkdir as mkdir5,
+  mkdir as mkdir7,
   open as open2,
   opendir,
   realpath,
-  rename,
-  unlink as unlink2
+  rename as rename3,
+  unlink as unlink4
 } from "node:fs/promises";
-import { homedir, hostname, platform } from "node:os";
-import { dirname as dirname2, isAbsolute, join as join5, resolve as resolve4, sep } from "node:path";
-import { randomBytes, randomUUID as randomUUID3 } from "node:crypto";
+import { homedir as homedir3, hostname, platform as platform3 } from "node:os";
+import { dirname as dirname3, isAbsolute, join as join8, resolve as resolve4, sep } from "node:path";
+import { randomBytes, randomUUID as randomUUID5 } from "node:crypto";
 
 // src/runtime/value-boundaries.ts
 function isByteArrayView(value) {
@@ -22605,11 +23272,11 @@ var OperationJournal = class _OperationJournal {
     }
     await ensureSecureDirectory(requestedRoot);
     const canonicalRoot = await realpath(requestedRoot);
-    await ensureSecureDirectory(join5(canonicalRoot, LOG_DIRECTORY));
-    await ensureSecureDirectory(join5(canonicalRoot, LOCK_DIRECTORY));
-    await ensureSecureDirectory(join5(canonicalRoot, TERMINAL_DIRECTORY));
-    await ensureSecureDirectory(join5(canonicalRoot, SNAPSHOT_DIRECTORY));
-    await ensureSecureDirectory(join5(canonicalRoot, TOMBSTONE_DIRECTORY));
+    await ensureSecureDirectory(join8(canonicalRoot, LOG_DIRECTORY));
+    await ensureSecureDirectory(join8(canonicalRoot, LOCK_DIRECTORY));
+    await ensureSecureDirectory(join8(canonicalRoot, TERMINAL_DIRECTORY));
+    await ensureSecureDirectory(join8(canonicalRoot, SNAPSHOT_DIRECTORY));
+    await ensureSecureDirectory(join8(canonicalRoot, TOMBSTONE_DIRECTORY));
     const key = await loadOrCreateKey(canonicalRoot, entropy);
     const journal = new _OperationJournal(canonicalRoot, key, clock, entropy, options);
     await journal.ensureQuotaCounter();
@@ -23203,8 +23870,8 @@ var OperationJournal = class _OperationJournal {
       if (beforeBytes === void 0) {
         return { value: 0, byteDelta: 0, entryDelta: 0 };
       }
-      await unlink2(path3);
-      await syncDirectory(dirname2(path3));
+      await unlink4(path3);
+      await syncDirectory(dirname3(path3));
       await afterDelete?.();
       return { value: beforeBytes, byteDelta: -beforeBytes, entryDelta: -1 };
     });
@@ -23263,21 +23930,21 @@ var OperationJournal = class _OperationJournal {
   }
 };
 function defaultOperationStateRoot() {
-  if (platform() === "darwin") {
-    return join5(homedir(), "Library", "Application Support", "codex-chatgpt-control", "operations-v1");
+  if (platform3() === "darwin") {
+    return join8(homedir3(), "Library", "Application Support", "codex-chatgpt-control", "operations-v1");
   }
-  if (platform() === "win32") {
+  if (platform3() === "win32") {
     const localAppData = process.env.LOCALAPPDATA;
     if (localAppData !== void 0 && isAbsolute(localAppData)) {
-      return join5(localAppData, "codex-chatgpt-control", "operations-v1");
+      return join8(localAppData, "codex-chatgpt-control", "operations-v1");
     }
-    return join5(homedir(), "AppData", "Local", "codex-chatgpt-control", "operations-v1");
+    return join8(homedir3(), "AppData", "Local", "codex-chatgpt-control", "operations-v1");
   }
   const xdgState = process.env.XDG_STATE_HOME;
   if (xdgState !== void 0 && isAbsolute(xdgState)) {
-    return join5(xdgState, "codex-chatgpt-control", "operations-v1");
+    return join8(xdgState, "codex-chatgpt-control", "operations-v1");
   }
-  return join5(homedir(), ".local", "state", "codex-chatgpt-control", "operations-v1");
+  return join8(homedir3(), ".local", "state", "codex-chatgpt-control", "operations-v1");
 }
 function journalEventDigest(key, revision, previousEventDigest, event) {
   return hmacDigest(key, "codex-chatgpt-control/operation-event/v1", {
@@ -23453,10 +24120,10 @@ async function readAuthenticatedFile(path3, key, domain, digestField, errorCode4
   try {
     handle = await open2(path3, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) {
+    if (isNodeError6(error, "ENOENT")) {
       throw new OperationJournalError("operation_not_found", "No durable operation record exists.");
     }
-    if (isNodeError4(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation record.");
+    if (isNodeError6(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation record.");
     throw error;
   }
   let raw;
@@ -23570,8 +24237,8 @@ function withoutField(value, field) {
   return copy;
 }
 async function writeAtomicJson(path3, value, entropy, inject2, replaceExisting) {
-  const directory = dirname2(path3);
-  const temporaryPath = join5(directory, `.${path3.split(sep).at(-1) ?? "operation"}-${entropyUuid(entropy)}.tmp`);
+  const directory = dirname3(path3);
+  const temporaryPath = join8(directory, `.${path3.split(sep).at(-1) ?? "operation"}-${entropyUuid(entropy)}.tmp`);
   let handle;
   let createdTemporary = false;
   try {
@@ -23582,7 +24249,7 @@ async function writeAtomicJson(path3, value, entropy, inject2, replaceExisting) 
         POSIX_FILE_MODE
       );
     } catch (error) {
-      if (isNodeError4(error, "EEXIST")) {
+      if (isNodeError6(error, "EEXIST")) {
         throw new OperationJournalError("journal_temp_conflict", "A temporary operation state file already exists.");
       }
       throw error;
@@ -23595,25 +24262,25 @@ async function writeAtomicJson(path3, value, entropy, inject2, replaceExisting) 
     handle = void 0;
     if (replaceExisting) {
       await assertReplaceableRegularFile(path3);
-      await rename(temporaryPath, path3);
+      await rename3(temporaryPath, path3);
     } else {
       try {
         await link2(temporaryPath, path3);
       } catch (error) {
-        if (isNodeError4(error, "EEXIST")) {
+        if (isNodeError6(error, "EEXIST")) {
           throw new OperationJournalError("durable_record_conflict", "Refusing to replace an existing durable operation record.");
         }
         throw error;
       }
-      await unlink2(temporaryPath);
+      await unlink4(temporaryPath);
     }
     await syncDirectory(directory);
     await inject2(injectPointForPath(path3));
   } finally {
     await handle?.close();
     if (createdTemporary) {
-      await unlink2(temporaryPath).catch((error) => {
-        if (!isNodeError4(error, "ENOENT")) throw error;
+      await unlink4(temporaryPath).catch((error) => {
+        if (!isNodeError6(error, "ENOENT")) throw error;
       });
     }
   }
@@ -23628,7 +24295,7 @@ async function assertReplaceableRegularFile(path3) {
   try {
     metadata = await lstat2(path3);
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return;
+    if (isNodeError6(error, "ENOENT")) return;
     throw error;
   }
   if (metadata.isSymbolicLink() || !metadata.isFile()) {
@@ -23641,7 +24308,7 @@ async function pathExists(path3) {
     await lstat2(path3);
     return true;
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return false;
+    if (isNodeError6(error, "ENOENT")) return false;
     throw error;
   }
 }
@@ -23656,7 +24323,7 @@ async function optionalFileSize(path3) {
   try {
     return await fileSize(path3);
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return void 0;
+    if (isNodeError6(error, "ENOENT")) return void 0;
     throw error;
   }
 }
@@ -23727,7 +24394,7 @@ async function closeDirectory(handle) {
   try {
     await handle.close();
   } catch (error) {
-    if (isNodeError4(error, "ERR_DIR_CLOSED")) return;
+    if (isNodeError6(error, "ERR_DIR_CLOSED")) return;
     throw error;
   }
 }
@@ -23744,7 +24411,7 @@ async function appendRecord(args) {
       POSIX_FILE_MODE
     );
   } catch (error) {
-    if (args.createExclusive && isNodeError4(error, "EEXIST")) {
+    if (args.createExclusive && isNodeError6(error, "EEXIST")) {
       throw new OperationJournalError("revision_conflict", "The operation log appeared during exclusive creation.");
     }
     throw error;
@@ -23776,7 +24443,7 @@ async function appendRecord(args) {
   } finally {
     await handle.close();
   }
-  if (args.syncParent) await syncDirectory(dirname2(args.logPath));
+  if (args.syncParent) await syncDirectory(dirname3(args.logPath));
 }
 async function writeBufferAt(handle, bytes, position) {
   let offset = 0;
@@ -23798,13 +24465,13 @@ async function readLog(logPath, key, allowMissing) {
   try {
     handle = await open2(logPath, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT") && allowMissing) {
+    if (isNodeError6(error, "ENOENT") && allowMissing) {
       return { exists: false, envelopes: [], committedBytes: 0, partialTailBytes: 0 };
     }
-    if (isNodeError4(error, "ENOENT")) {
+    if (isNodeError6(error, "ENOENT")) {
       throw new OperationJournalError("operation_not_found", "No durable operation exists for this operation ID.");
     }
-    if (isNodeError4(error, "ELOOP")) {
+    if (isNodeError6(error, "ELOOP")) {
       throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation log.");
     }
     throw error;
@@ -23854,7 +24521,7 @@ async function ensureLogDurable(logPath) {
   try {
     handle = await open2(logPath, fsConstants2.O_RDWR | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ELOOP")) {
+    if (isNodeError6(error, "ELOOP")) {
       throw new OperationJournalError("unsafe_journal_entry", "Refusing to follow a symlinked operation log.");
     }
     throw error;
@@ -23865,7 +24532,7 @@ async function ensureLogDurable(logPath) {
   } finally {
     await handle.close();
   }
-  await syncDirectory(dirname2(logPath));
+  await syncDirectory(dirname3(logPath));
 }
 function assertEnvelope(value, expectedRevision) {
   if (!isRecord6(value)) throw corrupt(`Committed revision ${expectedRevision} is not an object.`);
@@ -23914,10 +24581,10 @@ async function loadOrCreateKey(stateRoot, entropy) {
   try {
     await link2(temporaryKeyPath, keyPath);
   } catch (error) {
-    if (!isNodeError4(error, "EEXIST")) throw error;
+    if (!isNodeError6(error, "EEXIST")) throw error;
   } finally {
-    await unlink2(temporaryKeyPath).catch((error) => {
-      if (!isNodeError4(error, "ENOENT")) throw error;
+    await unlink4(temporaryKeyPath).catch((error) => {
+      if (!isNodeError6(error, "ENOENT")) throw error;
     });
   }
   await syncDirectory(stateRoot);
@@ -23928,8 +24595,8 @@ async function readKey(keyPath) {
   try {
     handle = await open2(keyPath, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) throw new OperationJournalError("journal_key_missing", "Operation journal key is missing.");
-    if (isNodeError4(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_key", "Refusing to follow a symlinked journal key.");
+    if (isNodeError6(error, "ENOENT")) throw new OperationJournalError("journal_key_missing", "Operation journal key is missing.");
+    if (isNodeError6(error, "ELOOP")) throw new OperationJournalError("unsafe_journal_key", "Refusing to follow a symlinked journal key.");
     throw error;
   }
   try {
@@ -23947,7 +24614,7 @@ async function readKey(keyPath) {
   }
 }
 async function ensureSecureDirectory(directory) {
-  await mkdir5(directory, { recursive: true, mode: POSIX_DIRECTORY_MODE });
+  await mkdir7(directory, { recursive: true, mode: POSIX_DIRECTORY_MODE });
   const metadata = await lstat2(directory);
   if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
     throw new OperationJournalError("unsafe_state_root", "Operation state path is not a secure directory.");
@@ -23961,7 +24628,7 @@ async function assertSecureFileHandle(handle, path3) {
   return metadata;
 }
 function assertOwnerAndMode(metadata, path3, expectedMode) {
-  if (platform() === "win32") return;
+  if (platform3() === "win32") return;
   const getuid = process.getuid;
   if (typeof getuid === "function" && Number(metadata.uid) !== getuid()) {
     throw new OperationJournalError("unsafe_state_owner", "Operation state path is not owned by the current user.");
@@ -24005,7 +24672,7 @@ async function acquireLock(lockPath, timeoutMs, clock, entropy) {
       if (createdIdentity !== void 0) {
         await removeFailedExclusiveLock(lockPath, createdIdentity);
       }
-      if (!isNodeError4(error, "EEXIST")) throw error;
+      if (!isNodeError6(error, "EEXIST")) throw error;
       let owner;
       try {
         owner = await readLock(lockPath);
@@ -24049,10 +24716,10 @@ async function readLock(lockPath) {
   try {
     handle = await open2(lockPath, fsConstants2.O_RDONLY | (fsConstants2.O_NOFOLLOW ?? 0));
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) {
+    if (isNodeError6(error, "ENOENT")) {
       throw new OperationJournalError("journal_lock_changed", "Operation journal lock changed while being inspected.");
     }
-    if (isNodeError4(error, "ELOOP")) {
+    if (isNodeError6(error, "ELOOP")) {
       throw new OperationJournalError("journal_lock_corrupt", "Refusing to follow a symlinked operation lock.");
     }
     throw error;
@@ -24094,16 +24761,16 @@ async function quarantineAbandonedLock(lockPath, expectedToken, clock, entropy) 
       return false;
     }
     try {
-      await rename(lockPath, quarantinePath);
+      await rename3(lockPath, quarantinePath);
     } catch (error) {
-      if (isNodeError4(error, "ENOENT")) return false;
+      if (isNodeError6(error, "ENOENT")) return false;
       throw error;
     }
     const moved = await readLock(quarantinePath);
     if (moved.token !== expectedToken) {
       throw new OperationJournalError("journal_lock_changed", "Operation journal lock ownership changed during recovery.");
     }
-    await unlink2(quarantinePath);
+    await unlink4(quarantinePath);
     return true;
   } finally {
     await releaseLock(guard);
@@ -24139,7 +24806,7 @@ async function tryAcquireRecoveryGuard(lockPath, clock, entropy) {
       handle = void 0;
       await removeFailedExclusiveLock(guardPath, createdIdentity);
     }
-    if (!isNodeError4(error, "EEXIST")) throw error;
+    if (!isNodeError6(error, "EEXIST")) throw error;
     let owner;
     try {
       owner = await readLock(guardPath);
@@ -24163,7 +24830,7 @@ async function removeFailedExclusiveLock(path3, created) {
   try {
     current = await lstat2(path3);
   } catch (error) {
-    if (isNodeError4(error, "ENOENT")) return;
+    if (isNodeError6(error, "ENOENT")) return;
     throw error;
   }
   if (current.isSymbolicLink() || !current.isFile() || current.dev !== created.dev || current.ino !== created.ino) {
@@ -24172,7 +24839,7 @@ async function removeFailedExclusiveLock(path3, created) {
       "A failed exclusive lock creation no longer names the file that this process created."
     );
   }
-  await unlink2(path3);
+  await unlink4(path3);
 }
 async function releaseLock(lock) {
   let owner;
@@ -24185,14 +24852,14 @@ async function releaseLock(lock) {
   if (owner.token !== lock.token) {
     throw new OperationJournalError("journal_lock_lost", "Operation journal lock ownership changed before release.");
   }
-  await unlink2(lock.path);
+  await unlink4(lock.path);
 }
 function processExists(pid) {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return !isNodeError4(error, "ESRCH");
+    return !isNodeError6(error, "ESRCH");
   }
 }
 async function serializeInProcess(key, action) {
@@ -24214,7 +24881,7 @@ async function serializeInProcess(key, action) {
   }
 }
 async function syncDirectory(directory) {
-  if (platform() === "win32") return;
+  if (platform3() === "win32") return;
   const handle = await open2(directory, fsConstants2.O_RDONLY);
   try {
     await handle.sync();
@@ -24261,7 +24928,7 @@ function isIsoTimestamp(value) {
 function isRecord6(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function isNodeError4(error, code) {
+function isNodeError6(error, code) {
   return nodeErrorCode(error) === code;
 }
 function validatePositiveInteger2(value, label) {
@@ -24292,7 +24959,7 @@ function resolveEntropy(value) {
   if (value === void 0) {
     return {
       randomBytes: (size) => randomBytes(size),
-      randomUUID: () => randomUUID3()
+      randomUUID: () => randomUUID5()
     };
   }
   try {
@@ -24372,7 +25039,7 @@ function delay(milliseconds) {
 }
 
 // src/operations/service.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 
 // src/operations/recovery.ts
 function decideOperationRecovery(state, observation) {
@@ -29345,8 +30012,8 @@ var OperationService = class {
       state: loaded.state,
       handle: this.journal.handleFromState(loaded.state),
       actionIds: {
-        sendActionId: send?.actionId ?? randomUUID4(),
-        ...files.length === 0 ? {} : { fileHandoffActionId: handoff?.actionId ?? randomUUID4() }
+        sendActionId: send?.actionId ?? randomUUID6(),
+        ...files.length === 0 ? {} : { fileHandoffActionId: handoff?.actionId ?? randomUUID6() }
       }
     };
     const submission = await runAtomicSubmission(
@@ -29754,7 +30421,7 @@ var OperationService = class {
     if (unsettled.length > 1) {
       throw new OperationServiceError("operation_state_corrupt", "Operation contains duplicate unsettled staging actions.");
     }
-    return unsettled[0]?.actionId ?? randomUUID4();
+    return unsettled[0]?.actionId ?? randomUUID6();
   }
   async persistStagingIntent(identity) {
     const current = await this.journal.load(identity.operationId, identity.requestDigest);
@@ -32011,7 +32678,7 @@ function createRuntimeEnvSession(options) {
 }
 
 // src/operations/production-configuration.ts
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash7 } from "node:crypto";
 var DIGEST_PATTERN9 = /^hmac-sha256:[0-9a-f]{64}$/u;
 var ID_PATTERN3 = /^[A-Za-z0-9._:-]{1,512}$/u;
 var MAX_CONFIGURATION_FIELDS = 8;
@@ -32948,7 +33615,7 @@ function safeDigest(evidenceDigest, domain, material) {
   }
 }
 function opaqueFingerprint(value) {
-  return createHash5("sha256").update(value, "utf8").digest("hex");
+  return createHash7("sha256").update(value, "utf8").digest("hex");
 }
 function normalizeRequest(request) {
   const source = snapshotDataRecord(request, "staging_request_mismatch");
@@ -33561,7 +34228,7 @@ async function setChooserFilesOnce(chooser, snapshot, request, options, timeoutM
   if (timeoutMs <= 0) return { status: "uncertain", quarantine: "provider" };
   const beforeMutationCancellation = handoffCancellation(request.signal, request.deadlineAt);
   if (beforeMutationCancellation !== void 0) return beforeMutationCancellation;
-  const setFiles = providerCallable2(chooser, "setFiles");
+  const setFiles = providerCallable3(chooser, "setFiles");
   if (setFiles === void 0) return { status: "uncertain", quarantine: "provider" };
   const paths = snapshot.files.map((identity) => identity.sourcePath);
   let rawResult;
@@ -33883,7 +34550,7 @@ function safeMethod(value, key) {
   }
   return void 0;
 }
-function providerCallable2(value, key) {
+function providerCallable3(value, key) {
   try {
     const candidate = Reflect.get(value, key, value);
     if (typeof candidate !== "function") return void 0;
@@ -34964,13 +35631,13 @@ function locatorFor(page, selector) {
 async function resolveCdpSend(page, timeoutMs) {
   const capabilities = readOwn(page, "capabilities");
   if (!isSafeProviderObject2(capabilities)) return void 0;
-  const get = providerCallable3(capabilities, "get");
+  const get = providerCallable4(capabilities, "get");
   if (get === void 0) return void 0;
   try {
     const pending2 = get("cdp");
     const capability2 = isNativePromise2(pending2) ? await boundedNative(pending2, timeoutMs) : pending2;
     if (!isSafeProviderObject2(capability2)) return void 0;
-    return providerCallable3(capability2, "send");
+    return providerCallable4(capability2, "send");
   } catch {
     return void 0;
   }
@@ -34982,7 +35649,7 @@ function cdpActivationAccepted(evaluation) {
   const value = wrapped ?? evaluation;
   return isPlainDataRecord(value) && readOwn(value, "ok") === true;
 }
-function providerCallable3(value, key) {
+function providerCallable4(value, key) {
   try {
     const candidate = Reflect.get(value, key, value);
     if (typeof candidate !== "function") return void 0;
@@ -35367,7 +36034,7 @@ function readPageObservation(args) {
     url.pathname = url.pathname.replace(/\/{2,}/g, "/").replace(/\/$/u, "") || "/";
     return url.toString();
   };
-  const conversationIdFromUrl = (urlValue) => {
+  const conversationIdFromUrl3 = (urlValue) => {
     const url = new URL(urlValue);
     const parts = url.pathname.split("/").filter(Boolean);
     const index = parts.findIndex((part) => part === "c" || part === "conversation");
@@ -35462,7 +36129,7 @@ function readPageObservation(args) {
     throw new Error("navigation unavailable");
   }
   const canonicalUrl = canonicalizeUrl(currentUrl);
-  const fromUrl = conversationIdFromUrl(canonicalUrl);
+  const fromUrl = conversationIdFromUrl3(canonicalUrl);
   const conversationValues = /* @__PURE__ */ new Set();
   const threadValues = /* @__PURE__ */ new Set();
   const roots = [];
@@ -38703,7 +39370,7 @@ import { resolve as resolve6 } from "node:path";
 
 // src/operations/artifact-output.ts
 import { constants as fsConstants3, unlinkSync } from "node:fs";
-import { createHash as createHash6, randomBytes as randomBytes2 } from "node:crypto";
+import { createHash as createHash8, randomBytes as randomBytes2 } from "node:crypto";
 import { isAbsolute as isAbsolute2, relative, resolve as resolve5, sep as sep2 } from "node:path";
 import { lstat as lstat3, open as open3, opendir as opendir2, realpath as realpath2 } from "node:fs/promises";
 
@@ -38742,7 +39409,7 @@ var MAX_TEMP_SCAN_ENTRIES = 65536;
 var MAX_GRAPH_DEPTH2 = 16;
 var MAX_GRAPH_NODES2 = 1024;
 var POSIX_FILE_MODE2 = 384;
-var EMPTY_SHA256 = createHash6("sha256").digest("hex");
+var EMPTY_SHA256 = createHash8("sha256").digest("hex");
 var ArtifactOutputError = class extends Error {
   constructor(code, message) {
     super(message);
@@ -39631,7 +40298,7 @@ async function createOwnedTemp(directory, prefix, hooks, runtime) {
 async function writeSource(temp, options, runtime) {
   const handle = temp.handle;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_ARTIFACT_BYTES;
-  const digest4 = createHash6("sha256");
+  const digest4 = createHash8("sha256");
   let bytes = 0;
   let chunkCount = 0;
   let iterator;
@@ -39793,7 +40460,7 @@ async function retainedTempMatches(temp, expected, runtime) {
     checkRuntime(runtime);
     const before = await temp.handle.stat({ bigint: true });
     if (!before.isFile() || before.isSymbolicLink() || before.dev !== temp.device || before.ino !== temp.inode || before.size !== BigInt(expected.bytes)) return false;
-    const digest4 = createHash6("sha256");
+    const digest4 = createHash8("sha256");
     const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.bytes)));
     let position = 0;
     while (position < expected.bytes) {
@@ -39816,7 +40483,7 @@ async function closeTempHandle(temp) {
 }
 async function copyRetainedTemp(temp, destination, expected, runtime) {
   const source = temp.handle;
-  const digest4 = createHash6("sha256");
+  const digest4 = createHash8("sha256");
   const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.bytes)));
   let position = 0;
   try {
@@ -39882,7 +40549,7 @@ async function verifyDestination(destination, finalPath, expected, runtime) {
     throw new InstallOutcome("blocked", "commit_indeterminate");
   }
   const before = await destination.stat({ bigint: true });
-  const digest4 = createHash6("sha256");
+  const digest4 = createHash8("sha256");
   const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, Math.max(1, expected.bytes)));
   let position = 0;
   while (position < expected.bytes) {
@@ -39921,7 +40588,7 @@ async function inspectExistingFinal(finalPath, expected, runtime) {
   try {
     const before = await handle.stat({ bigint: true });
     if (!before.isFile() || before.dev !== metadata.dev || before.ino !== metadata.ino) return "unavailable";
-    const digest4 = createHash6("sha256");
+    const digest4 = createHash8("sha256");
     let bytes = 0;
     const stream = handle.createReadStream({ autoClose: false, highWaterMark: 64 * 1024 });
     try {
@@ -40020,7 +40687,7 @@ async function inject(hooks, point, runtime) {
   checkRuntime(runtime);
 }
 function outputIdentityDigest(input, extension) {
-  const hash = createHash6("sha256");
+  const hash = createHash8("sha256");
   hash.update("codex-chatgpt-control/artifact-output/v1\0", "utf8");
   updateLengthPrefixed(hash, input.operationId);
   updateLengthPrefixed(hash, input.artifactIdentity);
@@ -46586,6 +47253,9 @@ async function selectExactSelectedPage(browser) {
   try {
     const candidate = await Promise.resolve(selected.call(tabs));
     if (candidate === void 0) return void 0;
+    const descriptor = Object.getOwnPropertyDescriptor(candidate, "id");
+    const candidateTabId = descriptor !== void 0 && "value" in descriptor && typeof descriptor.value === "string" ? descriptor.value : void 0;
+    bindPageTabId(candidate, candidateTabId);
     const url = await Promise.resolve(candidate.url?.()).catch(() => void 0);
     if (!isChatGPTUrl(url)) return void 0;
     page = unwrapCoordinatedPage(candidate);
@@ -46809,7 +47479,7 @@ function createChatGPT(options = {}) {
   const runtime = createRuntimeEnvSession(runtimeEnvironment);
   const operationRuntime = new AsyncLocalStorage2();
   const operationOwner = Object.freeze({
-    backendSessionId: randomUUID5()
+    backendSessionId: randomUUID7()
   });
   const limits = normalizeLimits(options.limits);
   let operationClientPromise;
@@ -49007,7 +49677,7 @@ var requiredScenarios = [
     };
     const result3 = await chatgpt.createReport(command, { destDir: context.reportDir, basename: "redacted-run-report" });
     const path3 = result3.data?.path;
-    const body = path3 === void 0 ? "" : await readFile3(path3, "utf8").catch(() => "");
+    const body = path3 === void 0 ? "" : await readFile5(path3, "utf8").catch(() => "");
     return result3.ok && body.includes("[redacted:") && !body.includes("private@example.com") && !body.includes("/example/user/private") ? pass(meta, result3, { path: path3 }) : fail2(meta, result3, { path: path3, bodyPreview: body.slice(0, 500) });
   }),
   scenario("runner-new-ask-read", true, () => true, async (context, meta) => {
@@ -49100,7 +49770,7 @@ var requiredScenarios = [
       report: { enabled: true, destDir: context.reportDir, basename: "runner-report-redacted", includeContent: false }
     });
     const path3 = result3.data?.reportPath ?? result3.reportPath;
-    const body = path3 === void 0 ? "" : await readFile3(path3, "utf8").catch(() => "");
+    const body = path3 === void 0 ? "" : await readFile5(path3, "utf8").catch(() => "");
     return result3.ok && path3 !== void 0 && body.includes("[redacted:") && !body.includes(secret) ? pass(meta, result3, { path: path3 }) : fail2(meta, result3, { path: path3, bodyPreview: body.slice(0, 500), output: result3.output_text });
   }),
   scenario("runner-mode-unavailable", true, () => true, async (context, meta) => {
@@ -49266,6 +49936,157 @@ var requiredScenarios = [
   })
 ];
 var optionalScenarios = [
+  scenario("initial-affinity-persistence", false, (context) => contextEnvFlag(context, "CHATGPT_E2E_INITIAL_AFFINITY"), async (context, meta) => {
+    const conversationId = context.knownConversationId;
+    const conversationUrl = context.knownThreadUrl;
+    if (conversationId === void 0 && conversationUrl === void 0) {
+      return skipped(meta, "blocked: missing conversation identity input");
+    }
+    const user = context.browser?.user;
+    const openTabs = user?.openTabs;
+    if (typeof openTabs !== "function") {
+      return skipped(meta, "blocked: exact tab inventory unavailable");
+    }
+    let tabs;
+    try {
+      tabs = await openTabs.call(user);
+    } catch {
+      return skipped(meta, "blocked: exact tab inventory failed");
+    }
+    const matches = tabs.filter((tab) => conversationMatches(tab.url, conversationId, conversationUrl));
+    if (matches.length !== 1) {
+      return skipped(meta, `blocked: expected one exact conversation tab, found ${matches.length}`);
+    }
+    const exactTab = matches[0];
+    const stateRoot = await mkdtemp(join10(tmpdir(), "chatgpt-affinity-state-"));
+    const affinityStateRoot = await mkdtemp(join10(tmpdir(), "chatgpt-affinity-root-"));
+    const key = "live-smoke-initial-affinity";
+    try {
+      const chatgpt = createChatGPT(clientOptionsFor(context));
+      const manager = createConversationManager(chatgpt, { stateRoot, affinityStateRoot });
+      await manager.remember({
+        key,
+        surface: "chat",
+        ...conversationId === void 0 ? {} : { conversationId },
+        ...conversationUrl === void 0 ? {} : { url: conversationUrl }
+      });
+      const result3 = await manager.readLatest({ key });
+      const affinity = await manager.affinity.get(key);
+      const after = typeof openTabs === "function" ? await openTabs.call(user) : [];
+      const exactTabVerified = result3.ok && result3.context.tabId === exactTab.id;
+      const unchangedTabCount = after.length === tabs.length;
+      const persisted = affinity?.tabId === exactTab.id && (conversationId === void 0 || affinity.conversationId === conversationId) && (conversationUrl === void 0 || conversationMatches(affinity.url, conversationId, conversationUrl));
+      const details = {
+        exactTabVerified,
+        persisted,
+        unchangedTabCount,
+        tabCountBefore: tabs.length,
+        tabCountAfter: after.length
+      };
+      return exactTabVerified && persisted && unchangedTabCount ? pass(meta, result3, details) : skipped(meta, "blocked: exact-tab ownership or persistence was not proven", details);
+    } catch {
+      return skipped(meta, "blocked: initial affinity proof failed");
+    } finally {
+      await Promise.all([
+        rm(stateRoot, { recursive: true, force: true }),
+        rm(affinityStateRoot, { recursive: true, force: true })
+      ]);
+    }
+  }),
+  scenario(
+    "affinity-duplicate-stale-owner-recovery",
+    false,
+    (context) => contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY") && contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY_ALLOW_MUTATIONS") && contextEnvText(context, "CHATGPT_E2E_AFFINITY_RECOVERY_OWNER_TAB_ID") !== void 0,
+    async (context, meta) => {
+      if (!contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY_ALLOW_MUTATIONS")) {
+        return skipped(meta, "blocked: explicit tab mutation authorization is required");
+      }
+      const ownerTabId = contextEnvText(context, "CHATGPT_E2E_AFFINITY_RECOVERY_OWNER_TAB_ID");
+      if (ownerTabId === void 0) return skipped(meta, "blocked: exact owner tab fixture is required");
+      const conversationId = context.knownConversationId;
+      const conversationUrl = context.knownThreadUrl;
+      if (conversationId === void 0 && conversationUrl === void 0) {
+        return skipped(meta, "blocked: missing conversation identity input");
+      }
+      const user = context.browser?.user;
+      const tabsApi = context.browser?.tabs;
+      const openTabs = user?.openTabs;
+      const createTab2 = tabsApi?.new ?? tabsApi?.create;
+      const getTab = tabsApi?.get;
+      if (user === void 0 || tabsApi === void 0 || typeof openTabs !== "function" || typeof createTab2 !== "function" || typeof getTab !== "function") {
+        return skipped(meta, "blocked: exact tab mutation APIs are unavailable");
+      }
+      let baseline;
+      try {
+        baseline = await openTabs.call(user);
+      } catch {
+        return skipped(meta, "blocked: exact tab inventory failed");
+      }
+      const ownerMatches = baseline.filter((tab) => tab.id === ownerTabId && conversationMatches(tab.url, conversationId, conversationUrl));
+      const conversationMatchesBefore = baseline.filter((tab) => conversationMatches(tab.url, conversationId, conversationUrl));
+      if (ownerMatches.length !== 1 || conversationMatchesBefore.length !== 1) {
+        return skipped(meta, "blocked: exact owner identity is unavailable or ambiguous");
+      }
+      const owner = ownerMatches[0];
+      const targetUrl = conversationUrl ?? owner.url;
+      if (targetUrl === void 0 || !conversationMatches(targetUrl, conversationId, conversationUrl)) {
+        return skipped(meta, "blocked: exact conversation URL is unavailable");
+      }
+      const stateRoot = await mkdtemp(join10(tmpdir(), "chatgpt-affinity-recovery-state-"));
+      const affinityStateRoot = await mkdtemp(join10(tmpdir(), "chatgpt-affinity-recovery-root-"));
+      const key = "live-smoke-affinity-recovery";
+      let duplicateTabId;
+      try {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const manager = createConversationManager(chatgpt, { stateRoot, affinityStateRoot });
+        await manager.remember({
+          key,
+          surface: "chat",
+          ...conversationId === void 0 ? {} : { conversationId },
+          ...targetUrl === void 0 ? {} : { url: targetUrl }
+        });
+        const initial = await manager.readLatest({ key });
+        const initialAffinity = await manager.affinity.get(key);
+        if (!initial.ok || initial.context.tabId !== ownerTabId || initialAffinity?.tabId !== ownerTabId) {
+          return skipped(meta, "blocked: exact owner affinity was not proven");
+        }
+        await createTab2.call(tabsApi, targetUrl);
+        const afterCreate = await openTabs.call(user);
+        const newConversationTabs = afterCreate.filter((tab) => !baseline.some((before) => before.id === tab.id) && conversationMatches(tab.url, conversationId, conversationUrl));
+        if (newConversationTabs.length !== 1) {
+          return skipped(meta, "blocked: duplicate tab identity is unavailable or ambiguous");
+        }
+        duplicateTabId = newConversationTabs[0].id;
+        const duplicateCheck = await createConversationManager(chatgpt, { stateRoot, affinityStateRoot }).readLatest({ key });
+        const duplicateAffinity = await manager.affinity.get(key);
+        if (!duplicateCheck.ok || duplicateCheck.context.tabId !== ownerTabId || duplicateAffinity?.tabId !== ownerTabId) {
+          return skipped(meta, "blocked: duplicate recovery did not preserve owner A");
+        }
+        if (!await closeExactTab(getTab, tabsApi, openTabs, user, duplicateTabId)) {
+          return skipped(meta, "blocked: exact duplicate tab closure failed");
+        }
+        duplicateTabId = void 0;
+        if (!await closeExactTab(getTab, tabsApi, openTabs, user, ownerTabId)) {
+          return skipped(meta, "blocked: exact owner tab closure failed");
+        }
+        const staleCheck = await createConversationManager(chatgpt, { stateRoot, affinityStateRoot }).readLatest({ key });
+        const persistedOwner = await manager.affinity.get(key);
+        const staleBlocked = !staleCheck.ok && staleCheck.status === "blocked";
+        const preserved = persistedOwner?.tabId === ownerTabId;
+        return staleBlocked && preserved ? pass(meta, staleCheck, { duplicatePreservedOwner: true, staleOwnerBlocked: true, persistedOwner: true }) : skipped(meta, "blocked: stale-owner recovery was not fail-closed", { staleBlocked, preserved });
+      } catch {
+        return skipped(meta, "blocked: affinity recovery proof failed");
+      } finally {
+        if (duplicateTabId !== void 0) {
+          await closeExactTab(getTab, tabsApi, openTabs, user, duplicateTabId).catch(() => false);
+        }
+        await Promise.all([
+          rm(stateRoot, { recursive: true, force: true }),
+          rm(affinityStateRoot, { recursive: true, force: true })
+        ]);
+      }
+    }
+  ),
   scenario("configuration-mutate-restore", false, (context) => contextEnvFlag(context, "CHATGPT_E2E_CONFIGURATION_MUTATION"), async (context, meta) => {
     const chatgpt = createChatGPT(clientOptionsFor(context));
     const details = {};
@@ -49443,7 +50264,7 @@ var optionalScenarios = [
     const download = typeof result3.data === "object" && result3.data !== null ? result3.data : void 0;
     const path3 = download?.path;
     const bytes = path3 === void 0 ? 0 : (await stat7(path3).catch(() => void 0))?.size ?? 0;
-    const content = path3 === void 0 ? "" : await readFile3(path3, "utf8").catch(() => "");
+    const content = path3 === void 0 ? "" : await readFile5(path3, "utf8").catch(() => "");
     const rows = content.replace(/^\uFEFF/, "").trim().split(/\r?\n/).map((row) => row.trim());
     const exactFile = download?.suggestedFilename === "chatgpt-live-smoke.csv";
     const exactContent = rows[0] === "name,value" && rows[1] === "smoke,1" && rows.length === 2;
@@ -49554,6 +50375,39 @@ function pass(meta, command, details) {
 }
 function fail2(meta, command, details) {
   return finish(meta, "fail", command, details);
+}
+function skipped(meta, reason, details) {
+  return {
+    name: meta.name,
+    status: "skip",
+    required: meta.required,
+    startedAt: meta.startedAt,
+    endedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    durationMs: Date.now() - meta.startedMs,
+    details: { reason, ...details ?? {} }
+  };
+}
+function conversationMatches(value, conversationId, conversationUrl) {
+  if (value === void 0) return false;
+  try {
+    const actual = new URL(value);
+    if (!isConversationUrl2(actual)) return false;
+    if (conversationId !== void 0 && actual.pathname !== `/c/${encodeURIComponent(conversationId)}`) return false;
+    if (conversationUrl !== void 0) return actual.pathname === new URL(conversationUrl).pathname;
+    return conversationId !== void 0;
+  } catch {
+    return false;
+  }
+}
+function isConversationUrl2(url) {
+  return ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname) && url.pathname.startsWith("/c/");
+}
+async function closeExactTab(getTab, tabs, openTabs, user, tabId) {
+  const page = await Promise.resolve(getTab.call(tabs, tabId)).catch(() => void 0);
+  if (page === void 0 || typeof page.close !== "function") return false;
+  await page.close();
+  const remaining = await Promise.resolve(openTabs.call(user)).catch(() => void 0);
+  return remaining !== void 0 && !remaining.some((tab) => tab.id === tabId);
 }
 function finish(meta, status, command, details) {
   const result3 = {
@@ -49712,9 +50566,9 @@ function hashPreview(text) {
   return Math.abs(hash).toString(16);
 }
 async function tempFile(name, body) {
-  const dir = await mkdtemp(join7(tmpdir(), "chatgpt-live-smoke-"));
-  const file = join7(dir, name);
-  await writeFile4(file, body, "utf8");
+  const dir = await mkdtemp(join10(tmpdir(), "chatgpt-live-smoke-"));
+  const file = join10(dir, name);
+  await writeFile6(file, body, "utf8");
   return file;
 }
 export {

@@ -5891,6 +5891,18 @@ function coordinatedEventRegistrationBarrier(value) {
 function isObjectLike(value) {
   return typeof value === "object" && value !== null || typeof value === "function";
 }
+function isProviderRecord(value) {
+  return isObjectLike(value);
+}
+function providerValue(value, key) {
+  return readDataMember(value, key, `provider.${labelForKey(key)}`);
+}
+function providerCallable(value, key) {
+  const candidate = providerValue(value, key);
+  if (candidate === void 0) return void 0;
+  if (typeof candidate !== "function") return invalid(`provider.${labelForKey(key)} is not callable`);
+  return (...args) => Reflect.apply(candidate, value, args);
+}
 function labelForKey(key) {
   try {
     return typeof key === "symbol" ? key.toString() : String(key);
@@ -5944,6 +5956,77 @@ function optionalCallable(value, key, label) {
   if (member === void 0) return void 0;
   if (typeof member !== "function") return invalid(`${label} is not callable`);
   return member;
+}
+function normalizePage(pageOrTab) {
+  if (isPageWrapper(pageOrTab)) return pageOrTab;
+  if (!isProviderRecord(pageOrTab)) return pageOrTab;
+  const maybe = pageOrTab;
+  const embedded = providerValue(maybe, "playwright") ?? providerValue(maybe, "page");
+  const topUrl = providerValue(maybe, "url");
+  const topTitle = providerValue(maybe, "title");
+  const embeddedEvaluate = isProviderRecord(embedded) ? providerValue(embedded, "evaluate") : void 0;
+  const embeddedContent = isProviderRecord(embedded) ? providerValue(embedded, "content") : void 0;
+  if ((topUrl === void 0 || typeof topUrl === "function") && (topTitle === void 0 || typeof topTitle === "function") && (providerValue(maybe, "evaluate") === void 0 || typeof providerValue(maybe, "evaluate") === "function") && (providerValue(maybe, "content") === void 0 || typeof providerValue(maybe, "content") === "function") && (embeddedEvaluate === void 0 || typeof providerValue(maybe, "evaluate") === "function") && (embeddedContent === void 0 || typeof providerValue(maybe, "content") === "function")) {
+    return pageOrTab;
+  }
+  const primary = isProviderRecord(embedded) ? embedded : maybe;
+  const normalized = {};
+  for (const property of ["id", "tabId"]) {
+    const value = providerValue(maybe, property) ?? providerValue(primary, property);
+    if (typeof value === "string") normalized[property] = value;
+  }
+  for (const property of ["keyboard", "mouse", "cua", "capabilities"]) {
+    const value = providerValue(primary, property) ?? providerValue(maybe, property);
+    if (isProviderRecord(value)) normalized[property] = value;
+  }
+  if (isProviderRecord(embedded)) normalized.playwright = embedded;
+  for (const method of [
+    "goto",
+    "locator",
+    "getByRole",
+    "getByPlaceholder",
+    "getByText",
+    "waitForTimeout",
+    "waitForEvent",
+    "evaluate",
+    "close"
+  ]) {
+    const callable = providerCallable(primary, method) ?? providerCallable(maybe, method);
+    if (callable !== void 0) normalized[method] = (...args) => callable(...args);
+  }
+  const contentCallable = providerCallable(primary, "content");
+  if (contentCallable !== void 0) normalized.content = (...args) => contentCallable(...args);
+  const primaryUrl = providerValue(primary, "url");
+  const rawUrl = providerValue(maybe, "url");
+  if (primaryUrl !== void 0 && typeof primaryUrl !== "string" && typeof primaryUrl !== "function" || rawUrl !== void 0 && typeof rawUrl !== "string" && typeof rawUrl !== "function") {
+    return invalid("provider.url is not callable");
+  }
+  if (typeof primaryUrl === "function") normalized.url = (...args) => Reflect.apply(primaryUrl, primary, args);
+  else if (typeof rawUrl === "function") normalized.url = (...args) => Reflect.apply(rawUrl, maybe, args);
+  const stringUrl = rawUrl;
+  if (normalized.url === void 0 && typeof stringUrl === "string") {
+    normalized.url = () => stringUrl;
+  }
+  const primaryTitle = providerValue(primary, "title");
+  const rawTitle = providerValue(maybe, "title");
+  if (primaryTitle !== void 0 && typeof primaryTitle !== "string" && typeof primaryTitle !== "function" || rawTitle !== void 0 && typeof rawTitle !== "string" && typeof rawTitle !== "function") {
+    return invalid("provider.title is not callable");
+  }
+  if (typeof primaryTitle === "function") normalized.title = (...args) => Reflect.apply(primaryTitle, primary, args);
+  else if (typeof rawTitle === "function") normalized.title = (...args) => Reflect.apply(rawTitle, maybe, args);
+  const stringTitle = rawTitle;
+  if (normalized.title === void 0 && typeof stringTitle === "string") {
+    normalized.title = async () => stringTitle;
+  }
+  return normalized;
+}
+function isPageWrapper(value) {
+  if (!isObjectLike(value)) return false;
+  return unwrapCoordinatedPage(value) !== value;
+}
+function hasCallablePageMetadata(value) {
+  if (!isProviderRecord(value)) return false;
+  return typeof readDataMember(value, "url", "page.url") === "function" && typeof readDataMember(value, "title", "page.title") === "function";
 }
 function requiredRecord(value, label) {
   if (!isObjectLike(value)) return invalid(`${label} must be an object`);
@@ -6557,10 +6640,37 @@ function readDataMember2(value, key, label) {
   return void 0;
 }
 function optionalCallable2(value, key, label) {
-  const member = readDataMember2(value, key, label);
-  if (member === void 0) return void 0;
-  if (typeof member !== "function") return invalid2(`${label} is not callable`);
-  return member;
+  let current = value;
+  for (let depth = 0; current !== null && depth < MAX_PROTO_DEPTH2; depth += 1) {
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(current, key);
+    } catch (error) {
+      return invalid2(`Cannot inspect ${label}: provider property access failed`, error);
+    }
+    if (descriptor !== void 0) {
+      if (!("value" in descriptor)) return invalid2(`Cannot use ${label}: accessor-backed provider members are not supported`);
+      if (descriptor.value === void 0) return void 0;
+      if (typeof descriptor.value !== "function") return invalid2(`${label} is not callable`);
+      if (current !== value) {
+        try {
+          const receiverSafe = Reflect.get(value, key, value);
+          if (typeof receiverSafe === "function") return receiverSafe;
+        } catch (error) {
+          return invalid2(`Cannot inspect ${label}: provider property access failed`, error);
+        }
+      }
+      return descriptor.value;
+    }
+    try {
+      const prototype = Object.getPrototypeOf(current);
+      current = isObjectLike2(prototype) ? prototype : null;
+    } catch (error) {
+      return invalid2(`Cannot inspect ${label}: provider prototype access failed`, error);
+    }
+  }
+  if (current !== null) return invalid2(`Cannot inspect ${label}: provider prototype depth exceeded`);
+  return void 0;
 }
 function normalizeOwner2(owner) {
   const ownerRecord = owner === void 0 ? void 0 : isObjectLike2(owner) ? owner : invalid2("coordinated browser owner metadata is invalid");
@@ -6629,7 +6739,7 @@ function route(state, priority, label, callback) {
 }
 function pageFor(state, value) {
   if (!isObjectLike2(value)) return invalid2("browser provider returned an invalid page object");
-  const rawPage = unwrapCoordinatedPage(value);
+  const rawPage = unwrapCoordinatedPage(hasCallablePageMetadata(value) ? value : normalizePage(value));
   return createCoordinatedPage(rawPage, {
     coordinator: state.options.coordinator,
     resource: { kind: "browser", key: state.browserResource },
@@ -6791,7 +6901,7 @@ function createCoordinatedPageForBrowser(page, browser, options) {
   const normalized = normalizeOptions2(options);
   const rawBrowser = browser === void 0 ? void 0 : rawBrowsers.get(browser) ?? browser;
   const resource = { kind: "browser", key: stableBrowserResource(rawBrowser) };
-  return createCoordinatedPage(unwrapCoordinatedPage(page), {
+  return createCoordinatedPage(unwrapCoordinatedPage(normalizePage(page)), {
     coordinator: normalized.coordinator,
     resource,
     owner: normalized.owner
@@ -6820,7 +6930,9 @@ var MAX_EXISTING_TAB_DIAGNOSTIC_CANDIDATES = 10;
 var MAX_EXISTING_TAB_DIAGNOSTIC_FIELD_LENGTH = 240;
 async function attachChatGPTBrowser(env, args = {}, coordination) {
   const browser = await getBrowser(env, coordination);
-  const page = await getOrCreateChatGPTPage(browser, env, args, coordination);
+  const selection = await getOrCreateChatGPTPage(browser, env, args, coordination);
+  const { page } = selection;
+  bindPageTabId(page, selection.tabId);
   await assertPageOnChatGPTOrigin(page);
   const state = await readPageState(page);
   if (!isChatGPTUrl(state.url)) throw unsafeChatGPTOriginError();
@@ -6832,10 +6944,7 @@ async function attachChatGPTBrowser(env, args = {}, coordination) {
     page,
     browserName: browser.name ?? "chrome"
   };
-  const tabId = tabIdFromPage(page);
-  if (tabId !== void 0) {
-    attached.tabId = tabId;
-  }
+  if (selection.tabId !== void 0) attached.tabId = selection.tabId;
   return attached;
 }
 async function resolveChatGPTBrowser(env, coordination) {
@@ -6875,13 +6984,14 @@ async function getOrCreateChatGPTPage(browser, env, args, coordination) {
   if (env.page !== void 0) {
     const cached = createCoordinatedPageForBrowser(normalizePage(env.page), browser, coordination);
     if (await cachedPageMatchesBootstrapArgs(cached, args, explicitExistingPolicy)) {
-      return cached;
+      const tabId = tabIdFromPage(env.page);
+      return tabId === void 0 ? { page: cached } : { page: cached, tabId };
     }
   }
   if (explicitExistingPolicy !== void 0) {
     const existing = await selectExistingTab(browser, explicitExistingPolicy);
     if (existing.page !== void 0) {
-      return existing.page;
+      return existing;
     }
     const ifMissing = explicitExistingPolicy.ifMissing ?? "block";
     if (ifMissing === "block") {
@@ -6895,7 +7005,7 @@ async function getOrCreateChatGPTPage(browser, env, args, coordination) {
     const missingUrl = ifMissing === "open" ? urlFromExistingTarget(explicitExistingPolicy.target) ?? targetUrl : targetUrl;
     const created2 = await createTab(browser, missingUrl);
     if (created2 !== void 0) {
-      return created2;
+      return pageSelection(created2);
     }
     throw new BrowserBridgeUnavailableError("Codex can access a browser object, but no tab creation API was found.");
   }
@@ -6907,7 +7017,7 @@ async function getOrCreateChatGPTPage(browser, env, args, coordination) {
   }
   const created = await createTab(browser, targetUrl);
   if (created !== void 0) {
-    return created;
+    return pageSelection(created);
   }
   throw new BrowserBridgeUnavailableError("Codex can access a browser object, but no tab creation API was found.");
 }
@@ -6952,8 +7062,8 @@ async function selectExistingTab(browser, policy) {
     const selected = await Promise.resolve(browser.tabs.selected.call(browser.tabs)).catch(() => void 0);
     if (selected !== void 0) {
       const normalized = normalizePage(selected);
-      if (await pageMatchesExistingTarget(normalized, policy)) {
-        return { page: normalized };
+      if (await pageMatchesExistingTarget(normalized, policy, pageIdValue(normalized))) {
+        return pageSelection(normalized);
       }
     }
   }
@@ -6961,8 +7071,8 @@ async function selectExistingTab(browser, policy) {
     const tab = await Promise.resolve(browser.tabs.get.call(browser.tabs, policy.target.tabId)).catch(() => void 0);
     if (tab !== void 0) {
       const normalized = normalizePage(tab);
-      if (await pageMatchesExistingTarget(normalized, policy)) {
-        return { page: normalized };
+      if (await pageMatchesExistingTarget(normalized, policy, policy.target.tabId)) {
+        return { page: normalized, tabId: policy.target.tabId };
       }
     }
   }
@@ -6971,10 +7081,11 @@ async function selectExistingTab(browser, policy) {
     const matches = [];
     for (const candidate of controlled) {
       const page = await hydrateTab(browser, candidate);
-      if (await pageMatchesExistingTarget(page, policy)) matches.push(page);
+      const tabId = pageIdValue(candidate) ?? pageIdValue(page);
+      if (await pageMatchesExistingTarget(page, policy, tabId)) matches.push({ page, ...tabId === void 0 ? {} : { tabId } });
     }
     if (matches.length === 1 || matches.length > 1 && (policy.ifMultiple ?? "block") === "first") {
-      return { page: matches[0] };
+      return matches[0];
     }
     if (matches.length > 1) {
       throw new ExistingTabSelectionError(
@@ -7011,7 +7122,7 @@ async function selectExistingUserTab(browser, policy, collectDiagnostics) {
   const selected = matches[0];
   const page = normalizePage(await claimTab.call(browser.user, selected));
   await assertPageOnChatGPTOrigin(page);
-  return diagnostics === void 0 ? { page } : { page, diagnostics };
+  return diagnostics === void 0 ? { page, tabId: selected.id } : { page, tabId: selected.id, diagnostics };
 }
 function userTabMatchesTarget(tab, policy) {
   const target = policy.target ?? { type: "selected", host: "chatgpt" };
@@ -7117,10 +7228,10 @@ function mismatchReasonForNoMatches(policy, tabs, chatgptTabs) {
       return "selected_tab_unavailable";
   }
 }
-async function pageMatchesExistingTarget(page, policy) {
+async function pageMatchesExistingTarget(page, policy, authoritativeTabId) {
   const url = await Promise.resolve(page.url?.()).catch(() => void 0);
   const title = await Promise.resolve(page.title?.()).catch(() => void 0);
-  const tab = { id: tabIdFromPage(page) ?? "" };
+  const tab = { id: authoritativeTabId ?? "" };
   if (url !== void 0) tab.url = url;
   if (title !== void 0) tab.title = title;
   return userTabMatchesTarget(tab, policy);
@@ -7134,7 +7245,7 @@ async function findExistingChatGPTTab(browser) {
         const normalized = normalizePage(current);
         try {
           if (isChatGPTUrl(await normalized.url?.())) {
-            return normalized;
+            return pageSelection(normalized);
           }
         } catch {
         }
@@ -7149,7 +7260,7 @@ async function findExistingChatGPTTab(browser) {
     for (const tab of normalized) {
       try {
         if (isChatGPTUrl(await tab.url?.())) {
-          return tab;
+          return pageSelection(tab);
         }
       } catch {
       }
@@ -7166,7 +7277,7 @@ async function findExistingChatGPTTab(browser) {
     return { page: void 0 };
   });
   if (userTab.page !== void 0) {
-    return userTab.page;
+    return userTab;
   }
   return void 0;
 }
@@ -7314,12 +7425,12 @@ function normalizeBrowser(browser) {
   }
   const rawBrowser = browser;
   const normalized = {};
-  const name = providerValue(rawBrowser, "name");
+  const name = providerValue2(rawBrowser, "name");
   if (typeof name === "string") normalized.name = name;
-  const rawUser = providerValue(rawBrowser, "user");
-  if (isProviderRecord(rawUser)) {
-    const openTabs = providerCallable(rawUser, "openTabs");
-    const claimTab = providerCallable(rawUser, "claimTab");
+  const rawUser = providerValue2(rawBrowser, "user");
+  if (isProviderRecord2(rawUser)) {
+    const openTabs = providerCallable2(rawUser, "openTabs");
+    const claimTab = providerCallable2(rawUser, "claimTab");
     normalized.user = {
       ...openTabs === void 0 ? {} : {
         openTabs: async () => await openTabs()
@@ -7329,14 +7440,14 @@ function normalizeBrowser(browser) {
       }
     };
   }
-  const rawTabs = providerValue(rawBrowser, "tabs");
-  if (isProviderRecord(rawTabs)) {
-    const create = providerCallable(rawTabs, "create");
-    const newer = providerCallable(rawTabs, "new");
-    const selected = providerCallable(rawTabs, "selected");
-    const list = providerCallable(rawTabs, "list");
-    const get = providerCallable(rawTabs, "get");
-    const finalize = providerCallable(rawTabs, "finalize");
+  const rawTabs = providerValue2(rawBrowser, "tabs");
+  if (isProviderRecord2(rawTabs)) {
+    const create = providerCallable2(rawTabs, "create");
+    const newer = providerCallable2(rawTabs, "new");
+    const selected = providerCallable2(rawTabs, "selected");
+    const list = providerCallable2(rawTabs, "list");
+    const get = providerCallable2(rawTabs, "get");
+    const finalize = providerCallable2(rawTabs, "finalize");
     normalized.tabs = {
       ...create === void 0 ? {} : {
         create: async (url) => normalizePage(await create(url))
@@ -7366,7 +7477,7 @@ function normalizeBrowser(browser) {
       }
     };
   }
-  const newPage = providerCallable(rawBrowser, "newPage");
+  const newPage = providerCallable2(rawBrowser, "newPage");
   if (newPage !== void 0) {
     normalized.newPage = async () => normalizePage(await newPage());
   }
@@ -7383,72 +7494,42 @@ async function hydrateTab(browser, pageOrTab) {
   }
   return normalizePage(pageOrTab);
 }
-function normalizePage(pageOrTab) {
-  if (isPageWrapper(pageOrTab)) return pageOrTab;
-  if (!isProviderRecord(pageOrTab)) return pageOrTab;
-  const maybe = pageOrTab;
-  const embedded = providerValue(maybe, "playwright") ?? providerValue(maybe, "page");
-  const primary = isProviderRecord(embedded) ? embedded : maybe;
-  const normalized = {};
-  for (const property of ["id", "tabId"]) {
-    const value = providerValue(maybe, property) ?? providerValue(primary, property);
-    if (typeof value === "string") normalized[property] = value;
-  }
-  for (const property of ["keyboard", "mouse", "cua", "capabilities"]) {
-    const value = providerValue(primary, property) ?? providerValue(maybe, property);
-    if (isProviderRecord(value)) normalized[property] = value;
-  }
-  if (isProviderRecord(embedded)) normalized.playwright = embedded;
-  for (const method of [
-    "url",
-    "goto",
-    "title",
-    "locator",
-    "getByRole",
-    "getByPlaceholder",
-    "getByText",
-    "waitForTimeout",
-    "waitForEvent",
-    "evaluate",
-    "content",
-    "close"
-  ]) {
-    const callable = providerCallable(primary, method) ?? providerCallable(maybe, method);
-    if (callable !== void 0) normalized[method] = (...args) => callable(...args);
-  }
-  const stringUrl = providerValue(maybe, "url");
-  if (normalized.url === void 0 && typeof stringUrl === "string") {
-    normalized.url = () => stringUrl;
-  }
-  const stringTitle = providerValue(maybe, "title");
-  if (normalized.title === void 0 && typeof stringTitle === "string") {
-    normalized.title = async () => stringTitle;
-  }
-  return normalized;
-}
-function isProviderRecord(value) {
+function isProviderRecord2(value) {
   return typeof value === "object" && value !== null || typeof value === "function";
 }
-function providerValue(value, key) {
+function providerValue2(value, key) {
   try {
     return Reflect.get(value, key, value);
   } catch {
     return void 0;
   }
 }
-function providerCallable(value, key) {
-  const candidate = providerValue(value, key);
+function providerCallable2(value, key) {
+  const candidate = providerValue2(value, key);
   if (typeof candidate !== "function") return void 0;
   return (...args) => Reflect.apply(candidate, value, args);
 }
-function isPageWrapper(value) {
-  if (value === null || typeof value !== "object" && typeof value !== "function") return false;
-  return unwrapCoordinatedPage(value) !== value;
-}
 function tabIdFromPage(page) {
-  const maybe = page;
-  const id2 = maybe.id ?? maybe.tabId;
-  return typeof id2 === "string" ? id2 : void 0;
+  return pageTabIds.get(page) ?? pageTabIds.get(unwrapCoordinatedPage(page));
+}
+function pageSelection(page) {
+  const tabId = pageIdValue(page);
+  return tabId === void 0 ? { page } : { page, tabId };
+}
+function pageIdValue(value) {
+  if (typeof value !== "object" && typeof value !== "function" || value === null) return void 0;
+  for (const key of ["id", "tabId"]) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor !== void 0 && "value" in descriptor && typeof descriptor.value === "string") return descriptor.value;
+  }
+  return void 0;
+}
+var pageTabIds = /* @__PURE__ */ new WeakMap();
+function bindPageTabId(page, tabId) {
+  if (tabId === void 0) return;
+  pageTabIds.set(page, tabId);
+  const raw = unwrapCoordinatedPage(page);
+  if (typeof raw === "object" && raw !== null) pageTabIds.set(raw, tabId);
 }
 
 // src/commands/session.ts
@@ -7521,12 +7602,33 @@ async function verifyTabAffinity(env) {
     return void 0;
   }
   const actualTabId = tabIdFromPage(unwrapCoordinatedPage(env.page));
-  if (actualTabId === env.expectedTabId) {
+  if (actualTabId === void 0) {
+    return affinityResult(env, "tab_affinity_unverifiable", actualTabId);
+  }
+  if (actualTabId !== env.expectedTabId) {
+    return affinityResult(env, "tab_affinity_lost", actualTabId);
+  }
+  const openTabs = env.browser?.user?.openTabs;
+  if (typeof openTabs !== "function") {
     return void 0;
   }
-  const code = actualTabId === void 0 ? "tab_affinity_unverifiable" : "tab_affinity_lost";
-  const message = actualTabId === void 0 ? `ChatGPT command cannot verify it is still attached to expected tab ${env.expectedTabId}.` : `ChatGPT command would run on tab ${actualTabId}, but the workflow expected tab ${env.expectedTabId}.`;
-  return {
+  let tabs;
+  try {
+    tabs = await Promise.resolve(openTabs.call(env.browser.user));
+  } catch {
+    return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+  }
+  if (!Array.isArray(tabs)) {
+    return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+  }
+  if (!tabs.some((tab) => tab.id === env.expectedTabId)) {
+    return affinityResult(env, "tab_affinity_lost", actualTabId);
+  }
+  return void 0;
+}
+function affinityResult(env, code, actualTabId) {
+  const message = code === "tab_affinity_unverifiable" ? `ChatGPT command cannot verify it is still attached to expected tab ${env.expectedTabId}.` : `ChatGPT command would run on tab ${actualTabId ?? env.expectedTabId}, but the workflow expected tab ${env.expectedTabId}.`;
+  return contextFromPage(env.page, tabContext(env, actualTabId)).then((context) => ({
     ok: false,
     status: "blocked",
     warnings: [],
@@ -7543,8 +7645,8 @@ async function verifyTabAffinity(env) {
       ],
       resumable: false
     },
-    context: await contextFromPage(env.page, tabContext(env, actualTabId))
-  };
+    context
+  }));
 }
 function tabContext(env, actualTabId = tabIdFromPage(unwrapCoordinatedPage(env.page))) {
   const tabId = actualTabId ?? env.expectedTabId;
@@ -33285,7 +33387,7 @@ async function setChooserFilesOnce(chooser, snapshot2, request, options, timeout
   if (timeoutMs <= 0) return { status: "uncertain", quarantine: "provider" };
   const beforeMutationCancellation = handoffCancellation(request.signal, request.deadlineAt);
   if (beforeMutationCancellation !== void 0) return beforeMutationCancellation;
-  const setFiles = providerCallable2(chooser, "setFiles");
+  const setFiles = providerCallable3(chooser, "setFiles");
   if (setFiles === void 0) return { status: "uncertain", quarantine: "provider" };
   const paths = snapshot2.files.map((identity) => identity.sourcePath);
   let rawResult;
@@ -33607,7 +33709,7 @@ function safeMethod(value, key) {
   }
   return void 0;
 }
-function providerCallable2(value, key) {
+function providerCallable3(value, key) {
   try {
     const candidate = Reflect.get(value, key, value);
     if (typeof candidate !== "function") return void 0;
@@ -34688,13 +34790,13 @@ function locatorFor(page, selector) {
 async function resolveCdpSend(page, timeoutMs) {
   const capabilities = readOwn(page, "capabilities");
   if (!isSafeProviderObject2(capabilities)) return void 0;
-  const get = providerCallable3(capabilities, "get");
+  const get = providerCallable4(capabilities, "get");
   if (get === void 0) return void 0;
   try {
     const pending2 = get("cdp");
     const capability2 = isNativePromise2(pending2) ? await boundedNative(pending2, timeoutMs) : pending2;
     if (!isSafeProviderObject2(capability2)) return void 0;
-    return providerCallable3(capability2, "send");
+    return providerCallable4(capability2, "send");
   } catch {
     return void 0;
   }
@@ -34706,7 +34808,7 @@ function cdpActivationAccepted(evaluation) {
   const value = wrapped ?? evaluation;
   return isPlainDataRecord(value) && readOwn(value, "ok") === true;
 }
-function providerCallable3(value, key) {
+function providerCallable4(value, key) {
   try {
     const candidate = Reflect.get(value, key, value);
     if (typeof candidate !== "function") return void 0;
@@ -46310,6 +46412,9 @@ async function selectExactSelectedPage(browser) {
   try {
     const candidate = await Promise.resolve(selected.call(tabs));
     if (candidate === void 0) return void 0;
+    const descriptor = Object.getOwnPropertyDescriptor(candidate, "id");
+    const candidateTabId = descriptor !== void 0 && "value" in descriptor && typeof descriptor.value === "string" ? descriptor.value : void 0;
+    bindPageTabId(candidate, candidateTabId);
     const url = await Promise.resolve(candidate.url?.()).catch(() => void 0);
     if (!isChatGPTUrl(url)) return void 0;
     page = unwrapCoordinatedPage(candidate);
