@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createOperationResponseWatcherObservationPort,
   createResponseWatcherResumer,
   type ResponseWatcherCollectionResult,
   type ResponseWatcherObservationIdentity,
   type ResponseWatcherObservationPort
 } from "../../src/response-watcher-observation.js";
 import type { ResponseWatcherRecord } from "../../src/response-watchers.js";
+import type { CollectorResult } from "../../src/operations/collector.js";
+import type { OperationHandleV1 } from "../../src/operations/types.js";
 import * as publicSurface from "../../src/index.js";
 
 const identity: ResponseWatcherObservationIdentity = {
@@ -29,6 +32,17 @@ const watcher: ResponseWatcherRecord = {
   updatedAt: "2026-09-02T00:00:00.000Z"
 };
 
+const handle: OperationHandleV1 = {
+  schemaVersion: "chatgpt.browser_control.operation_handle.v1",
+  operationId: identity.operationId,
+  requestDigest: "hmac-sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  surface: "chat",
+  revision: 3,
+  phase: "generating",
+  mutationBoundary: "send_may_have_occurred",
+  targetBindingDigest: identity.targetBindingDigest
+};
+
 function result(
   value: Partial<ResponseWatcherObservationIdentity> & { status?: "pending" | "blocked" | "terminal" } = {}
 ): ResponseWatcherCollectionResult {
@@ -40,6 +54,58 @@ function result(
 }
 
 describe("response watcher observation", () => {
+  it("adapts the existing operation collector for one exact watcher handle", async () => {
+    const collect = vi.fn(async () => ({
+      kind: "completed",
+      operationId: identity.operationId,
+      requestDigest: handle.requestDigest,
+      targetBindingDigest: identity.targetBindingDigest,
+      attempts: 1,
+      turn: {
+        userTurnId: "user-2",
+        assistantTurnId: "assistant-2",
+        userTurnEvidenceDigest: identity.targetBindingDigest,
+        ownershipEvidenceDigest: identity.targetBindingDigest
+      },
+      response: { contentAvailable: false, rawContentAvailable: false, artifacts: [], finishReason: "stop" }
+    }) satisfies CollectorResult);
+    const port = createOperationResponseWatcherObservationPort(
+      { collect },
+      async () => handle
+    );
+
+    await expect(port.collect(watcher)).resolves.toEqual({
+      identity,
+      status: "terminal",
+      assistantTurnId: "assistant-2",
+      assistantTurnCount: 2
+    });
+    expect(collect).toHaveBeenCalledWith(handle, {
+      responseContent: "metadata",
+      wait: false,
+      maxAttempts: 1
+    });
+  });
+
+  it.each([
+    ["pending", { kind: "pending", operationId: identity.operationId, requestDigest: handle.requestDigest, targetBindingDigest: identity.targetBindingDigest, phase: "generating", mutationBoundary: "send_may_have_occurred", attempts: 1 }],
+    ["blocked", { kind: "blocked", operationId: identity.operationId, requestDigest: handle.requestDigest, targetBindingDigest: identity.targetBindingDigest, blocker: { code: "operation_timeout", operationId: identity.operationId, requestDigest: handle.requestDigest, phase: "generating", mutationBoundary: "send_may_have_occurred", attempts: 1, message: "bounded" } }]
+  ] as const)("maps an existing collector %s result without submitting", async (_status, collected) => {
+    const collect = vi.fn(async () => collected as unknown as CollectorResult);
+    const port = createOperationResponseWatcherObservationPort({ collect }, async () => handle);
+    await expect(port.collect(watcher)).resolves.toMatchObject({ identity, status: _status });
+  });
+
+  it("rejects a durable handle that does not match the watcher target", async () => {
+    const collect = vi.fn();
+    const port = createOperationResponseWatcherObservationPort(
+      { collect },
+      async () => ({ ...handle, targetBindingDigest: "hmac-sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" })
+    );
+    await expect(port.collect(watcher)).rejects.toThrow(/identity/i);
+    expect(collect).not.toHaveBeenCalled();
+  });
+
   it("exposes the resumer factory from the public index", () => {
     expect(publicSurface.createResponseWatcherResumer).toBe(createResponseWatcherResumer);
   });
