@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tabIdFromPage } from "../../browser/attach.js";
+import { bindPageTabId } from "../../browser/attach.js";
 import { redactReportValue } from "../../safety/report-redaction.js";
 import type {
   LiveSmokeBrowser,
@@ -192,10 +192,11 @@ async function snapshotBrowserTabIds(browser: LiveSmokeBrowser | undefined): Pro
     const pages = await list.call(tabs);
     const ids = new Set<string>();
     for (const page of pages) {
-      const id = tabIdFromPage(page);
+      const id = safeInventoryTabId(page);
       if (id === undefined) {
         return { ok: false, reason: "browser.tabs.list returned a tab without an exact id" };
       }
+      bindPageTabId(page, id);
       ids.add(id);
     }
     return { ok: true, ids };
@@ -229,10 +230,11 @@ async function closeNewExactTabs(
     const pages = await list.call(tabs);
     const newTabIds: string[] = [];
     for (const page of pages) {
-      const id = tabIdFromPage(page);
+      const id = safeInventoryTabId(page);
       if (id === undefined) {
         throw new Error("browser.tabs.list returned a tab without an exact id");
       }
+      bindPageTabId(page, id);
       if (!baseline.ids.has(id) && !newTabIds.includes(id)) {
         newTabIds.push(id);
       }
@@ -240,9 +242,7 @@ async function closeNewExactTabs(
 
     for (const id of newTabIds) {
       const page = await get.call(tabs, id);
-      if (tabIdFromPage(page) !== id) {
-        throw new Error(`browser.tabs.get did not preserve exact cleanup affinity for tab ${id}`);
-      }
+      bindPageTabId(page, id);
       if (typeof page.close !== "function") {
         throw new Error(`browser tab ${id} does not expose close()`);
       }
@@ -263,6 +263,14 @@ async function closeNewExactTabs(
       }
     };
   }
+}
+
+function safeInventoryTabId(value: unknown): string | undefined {
+  if ((typeof value !== "object" && typeof value !== "function") || value === null) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(value, "id");
+  return descriptor !== undefined && "value" in descriptor && typeof descriptor.value === "string" && descriptor.value.length > 0
+    ? descriptor.value
+    : undefined;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

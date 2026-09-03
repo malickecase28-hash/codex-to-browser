@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { filterScenarios, requiredFailures, runScenario, writeReport } from "../../src/scripts/live-smoke/harness.js";
+import { tabIdFromPage } from "../../src/browser/attach.js";
 import {
   chatActiveSelection,
   generatedFileAskCanProceed,
@@ -110,6 +111,96 @@ describe("live smoke harness", () => {
     expect(existingClose).not.toHaveBeenCalled();
     expect(createdClose).toHaveBeenCalledTimes(1);
     expect(observed.cleanup).toEqual({ attempted: true, ok: true, closedTabCount: 1 });
+  });
+
+  it("accepts and binds an own data id from tab inventory", async () => {
+    const page = { id: "inventory-tab", close: vi.fn(async () => undefined) };
+    const observed = await runScenario({
+      name: "bind-inventory-tab",
+      required: true,
+      enabled: () => true,
+      run: async () => {
+        expect(tabIdFromPage(page)).toBe("inventory-tab");
+        return result("bind-inventory-tab", "pass", true);
+      }
+    }, {
+      agent: {},
+      browser: { tabs: { list: async () => [page] } },
+      reportDir: "/tmp/reports"
+    });
+
+    expect(observed.status).toBe("pass");
+    expect(observed.cleanup?.ok).toBe(false);
+  });
+
+  it("does not execute an accessor id and reports unverifiable cleanup", async () => {
+    let getterReads = 0;
+    const page = {
+      get id() {
+        getterReads += 1;
+        return "accessor-tab";
+      }
+    };
+
+    const observed = await runScenario(scenario("accessor-tab"), {
+      agent: {},
+      browser: { tabs: { list: async () => [page] } },
+      reportDir: "/tmp/reports"
+    });
+
+    expect(getterReads).toBe(0);
+    expect(observed.cleanup).toMatchObject({ attempted: false, ok: false });
+    expect(observed.cleanup?.reason).toContain("without an exact id");
+  });
+
+  it("closes only new tab B when the baseline contains A", async () => {
+    const closeA = vi.fn(async () => undefined);
+    const closeB = vi.fn(async () => undefined);
+    const pages = new Map([
+      ["A", { id: "A", close: closeA }]
+    ]);
+    const observed = await runScenario({
+      ...scenario("baseline-diff"),
+      run: async () => {
+        pages.set("B", { id: "B", close: closeB });
+        return result("baseline-diff", "pass", true);
+      }
+    }, {
+      agent: {},
+      browser: { tabs: { list: async () => [...pages.values()], get: async (id: string) => pages.get(id)! } },
+      reportDir: "/tmp/reports"
+    });
+
+    expect(closeA).not.toHaveBeenCalled();
+    expect(closeB).toHaveBeenCalledTimes(1);
+    expect(observed.cleanup).toMatchObject({ attempted: true, ok: true, closedTabCount: 1 });
+  });
+
+  it("closes the requested B page even when tabs.get returns a page named MASTER", async () => {
+    const closeA = vi.fn(async () => undefined);
+    const closeB = vi.fn(async () => undefined);
+    const closeMaster = vi.fn(async () => undefined);
+    let includeB = false;
+    const observed = await runScenario({
+      ...scenario("exact-get-affinity"),
+      run: async () => {
+        includeB = true;
+        return result("exact-get-affinity", "pass", true);
+      }
+    }, {
+      agent: {},
+      browser: {
+        tabs: {
+          list: async () => includeB ? [{ id: "A", close: closeA }, { id: "B", close: closeB }] : [{ id: "A", close: closeA }],
+          get: async (id: string) => ({ id: id === "B" ? "MASTER" : id, close: id === "B" ? closeB : closeMaster })
+        }
+      },
+      reportDir: "/tmp/reports"
+    });
+
+    expect(closeB).toHaveBeenCalledTimes(1);
+    expect(closeMaster).not.toHaveBeenCalled();
+    expect(observed.cleanup).toMatchObject({ attempted: true, ok: true, closedTabCount: 1 });
   });
 
   it("registers long-response scenarios as explicit opt-in checks", () => {
