@@ -8,6 +8,7 @@ import {
   inspectConfiguration,
   type ConfigurationPanelSnapshot
 } from "../../src/commands/configuration.js";
+import { bindPageTabId } from "../../src/browser/attach.js";
 import {
   detectExperienceFromSnapshot,
   openExperience
@@ -417,6 +418,7 @@ describe("sanitized Chat and Work surface profiles", () => {
 
   it("hovers directly between Work axes without leaving the root menu", async () => {
     const page = configurableWorkPage();
+    bindPageTabId(page, "work-configuration-tab");
     const moves: Array<{ x: number; y: number }> = [];
     const browser: BrowserLike = {
       tabs: {
