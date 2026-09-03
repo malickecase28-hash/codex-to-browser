@@ -49970,6 +49970,13 @@ var optionalScenarios = [
         ...conversationId === void 0 ? {} : { conversationId },
         ...conversationUrl === void 0 ? {} : { url: conversationUrl }
       });
+      await manager.affinity.remember({
+        key,
+        tabId: exactTab.id,
+        surface: "chat",
+        ...conversationId === void 0 ? {} : { conversationId },
+        ...conversationUrl === void 0 ? {} : { url: conversationUrl }
+      });
       const result3 = await manager.readLatest({ key });
       const affinity = await manager.affinity.get(key);
       const after = typeof openTabs === "function" ? await openTabs.call(user) : [];
