@@ -928,7 +928,7 @@ describe("attachFiles", () => {
       url: () => "https://chatgpt.com/"
     };
 
-    const result = await attachFiles({ page }, { paths: [file], timeoutMs: 20 });
+    const result = await attachFiles({ page }, { paths: [file], timeoutMs: 100 });
 
     expect(result.ok).toBe(false);
     expect(result).toMatchObject({

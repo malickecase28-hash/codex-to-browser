@@ -57,3 +57,4 @@ export * from "./runtime/operation-context.js";
 export * from "./runtime/coordinated-page.js";
 export * from "./runtime/coordinated-browser.js";
 export * from "./operations/index.js";
+export * from "./response-watchers.js";

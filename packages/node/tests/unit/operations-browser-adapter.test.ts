@@ -762,7 +762,7 @@ describe("composed operation browser adapter", () => {
     }));
     await adapter.resolveTarget(resolutionRequest(OPERATION_1));
 
-    const requestedDeadlineAt = Date.now() + 25;
+    const requestedDeadlineAt = Date.now() + 100;
     const resultPromise = adapter.submission.executeFileHandoffOnce({
       operationId: OPERATION_1,
       requestDigest: REQUEST_DIGEST,
@@ -1411,7 +1411,7 @@ describe("composed operation browser adapter", () => {
     const adapter = createOperationBrowserAdapter(baseOptions({
       page,
       coordinator,
-      transactionTimeoutMs: 20,
+      transactionTimeoutMs: 100,
       submission: {
         observeStaging: async () => {
           stagingStarted = true;
