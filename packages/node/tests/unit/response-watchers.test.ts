@@ -130,6 +130,37 @@ describe("response watcher registry", () => {
     }
   });
 
+  it("resumes pending watchers concurrently without losing terminal persistence", async () => {
+    const { root, store } = await tempStore();
+    try {
+      const registry = new ResponseWatcherRegistry(store);
+      await registry.register(input());
+      await registry.register(input({
+        watcherId: "watcher-2",
+        logicalConversationKey: "project/task-b",
+        conversationId: "conversation-b",
+        tabId: "tab-b",
+        operationId: "operation-b"
+      }));
+      let started = 0;
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const resumed = registry.resumePending(async watcher => {
+        started += 1;
+        await gate;
+        return watcher.tabId === "tab-a" ? completed : { assistantTurnId: "assistant-3", assistantTurnCount: 3 };
+      });
+
+      await vi.waitFor(() => expect(started).toBe(2));
+      release();
+      await expect(resumed).resolves.toHaveLength(2);
+      await expect(registry.await("watcher-1")).resolves.toMatchObject({ state: "completed", completion: completed });
+      await expect(registry.await("watcher-2")).resolves.toMatchObject({ state: "completed", completion: { assistantTurnId: "assistant-3", assistantTurnCount: 3 } });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("persists watcher metadata without prompt, response, DOM, or path fields", async () => {
     const { root, store } = await tempStore();
     try {

@@ -123,10 +123,10 @@ export class ResponseWatcherRegistry {
 
   async resumePending(resume: ResponseWatcherResumer): Promise<readonly ResponseWatcherRecord[]> {
     const pending = (await this.store.list()).filter(record => record.state === "pending");
-    for (const watcher of pending) {
+    await Promise.all(pending.map(async watcher => {
       const completion = await resume(watcher);
       if (completion !== undefined) await this.complete(watcher.watcherId, completion);
-    }
+    }));
     return await this.store.list();
   }
 
