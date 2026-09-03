@@ -820,6 +820,13 @@ export const optionalScenarios: LiveSmokeScenario[] = [
         ...(conversationId === undefined ? {} : { conversationId }),
         ...(conversationUrl === undefined ? {} : { url: conversationUrl })
       });
+      await manager.affinity.remember({
+        key,
+        tabId: exactTab.id,
+        surface: "chat",
+        ...(conversationId === undefined ? {} : { conversationId }),
+        ...(conversationUrl === undefined ? {} : { url: conversationUrl })
+      });
       const result = await manager.readLatest({ key });
       const affinity = await manager.affinity.get(key);
       const after = typeof openTabs === "function" ? await openTabs.call(user) : [];
