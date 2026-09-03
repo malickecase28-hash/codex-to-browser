@@ -97,6 +97,8 @@ describe("coordinated browser runtime facade", () => {
       title: async () => "ChatGPT"
     };
     const playwrightPrototype = {
+      locator: (selector: string) => ({ selector }),
+      getByRole: (role: string) => ({ role }),
       evaluate: async () => {
         evaluatorCalls += 1;
         return "evaluated";
@@ -114,6 +116,8 @@ describe("coordinated browser runtime facade", () => {
     expect(normalized.url).toBeTypeOf("function");
     expect(normalized.title).toBeTypeOf("function");
     expect(normalized.evaluate).toBeTypeOf("function");
+    expect(normalized.locator).toBeTypeOf("function");
+    expect(normalized.getByRole).toBeTypeOf("function");
     expect(normalized.content).toBeUndefined();
     await expect(normalized.evaluate?.(() => "ignored")).resolves.toBe("evaluated");
     expect(evaluatorCalls).toBe(1);
