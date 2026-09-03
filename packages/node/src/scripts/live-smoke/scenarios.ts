@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -27,6 +27,7 @@ import {
   waitAndRead,
   waitForMessage
 } from "../../index.js";
+import { createConversationManager } from "../../conversations/manager.js";
 import { EMPTY_GENERATION_STATE, readAssistantGenerationState } from "../../dom/generation-state.js";
 import type {
   AskReadData,
@@ -39,6 +40,7 @@ import type {
   SequenceStepResult
 } from "../../types.js";
 import type { ChatGPTResponse } from "../../runner/types.js";
+import type { BrowserUserTabInfo } from "../../types.js";
 import { contextEnvFlag, contextEnvText } from "./harness.js";
 import type { LiveSmokeContext, LiveSmokeScenario, LiveSmokeScenarioResult } from "./types.js";
 
@@ -782,6 +784,69 @@ export const requiredScenarios: LiveSmokeScenario[] = [
 ];
 
 export const optionalScenarios: LiveSmokeScenario[] = [
+  scenario("initial-affinity-persistence", false, context => contextEnvFlag(context, "CHATGPT_E2E_INITIAL_AFFINITY"), async (context, meta) => {
+    const conversationId = context.knownConversationId;
+    const conversationUrl = context.knownThreadUrl;
+    if (conversationId === undefined && conversationUrl === undefined) {
+      return skipped(meta, "blocked: missing conversation identity input");
+    }
+    const user = context.browser?.user;
+    const openTabs = user?.openTabs;
+    if (typeof openTabs !== "function") {
+      return skipped(meta, "blocked: exact tab inventory unavailable");
+    }
+
+    let tabs: BrowserUserTabInfo[];
+    try {
+      tabs = await openTabs.call(user);
+    } catch {
+      return skipped(meta, "blocked: exact tab inventory failed");
+    }
+    const matches = tabs.filter(tab => conversationMatches(tab.url, conversationId, conversationUrl));
+    if (matches.length !== 1) {
+      return skipped(meta, `blocked: expected one exact conversation tab, found ${matches.length}`);
+    }
+    const exactTab = matches[0]!;
+
+    const stateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-state-"));
+    const affinityStateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-root-"));
+    const key = "live-smoke-initial-affinity";
+    try {
+      const chatgpt = createChatGPT(clientOptionsFor(context));
+      const manager = createConversationManager(chatgpt, { stateRoot, affinityStateRoot });
+      await manager.remember({
+        key,
+        surface: "chat",
+        ...(conversationId === undefined ? {} : { conversationId }),
+        ...(conversationUrl === undefined ? {} : { url: conversationUrl })
+      });
+      const result = await manager.readLatest({ key });
+      const affinity = await manager.affinity.get(key);
+      const after = typeof openTabs === "function" ? await openTabs.call(user) : [];
+      const exactTabVerified = result.ok && result.context.tabId === exactTab.id;
+      const unchangedTabCount = after.length === tabs.length;
+      const persisted = affinity?.tabId === exactTab.id
+        && (conversationId === undefined || affinity.conversationId === conversationId)
+        && (conversationUrl === undefined || conversationMatches(affinity.url, conversationId, conversationUrl));
+      const details = {
+        exactTabVerified,
+        persisted,
+        unchangedTabCount,
+        tabCountBefore: tabs.length,
+        tabCountAfter: after.length
+      };
+      return exactTabVerified && persisted && unchangedTabCount
+        ? pass(meta, result, details)
+        : skipped(meta, "blocked: exact-tab ownership or persistence was not proven", details);
+    } catch {
+      return skipped(meta, "blocked: initial affinity proof failed");
+    } finally {
+      await Promise.all([
+        rm(stateRoot, { recursive: true, force: true }),
+        rm(affinityStateRoot, { recursive: true, force: true })
+      ]);
+    }
+  }),
   scenario("configuration-mutate-restore", false, context => contextEnvFlag(context, "CHATGPT_E2E_CONFIGURATION_MUTATION"), async (context, meta) => {
     const chatgpt = createChatGPT(clientOptionsFor(context));
     const details: Record<string, unknown> = {};
@@ -1109,6 +1174,35 @@ function fail(
   details?: Record<string, unknown>
 ): LiveSmokeScenarioResult {
   return finish(meta, "fail", command, details);
+}
+
+function skipped(meta: ScenarioMeta, reason: string, details?: Record<string, unknown>): LiveSmokeScenarioResult {
+  return {
+    name: meta.name,
+    status: "skip",
+    required: meta.required,
+    startedAt: meta.startedAt,
+    endedAt: new Date().toISOString(),
+    durationMs: Date.now() - meta.startedMs,
+    details: { reason, ...(details ?? {}) }
+  };
+}
+
+function conversationMatches(value: string | undefined, conversationId: string | undefined, conversationUrl: string | undefined): boolean {
+  if (value === undefined) return false;
+  try {
+    const actual = new URL(value);
+    if (!isConversationUrl(actual)) return false;
+    if (conversationId !== undefined && actual.pathname !== `/c/${encodeURIComponent(conversationId)}`) return false;
+    if (conversationUrl !== undefined) return actual.pathname === new URL(conversationUrl).pathname;
+    return conversationId !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+function isConversationUrl(url: URL): boolean {
+  return ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname) && url.pathname.startsWith("/c/");
 }
 
 function finish(
