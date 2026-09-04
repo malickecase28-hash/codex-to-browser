@@ -4,11 +4,33 @@ TypeScript runtime for controlling visible ChatGPT Chat and Work through a compa
 
 Unofficial project: not affiliated with, endorsed by, or sponsored by OpenAI. This is not an OpenAI API wrapper and does not call hidden or private ChatGPT endpoints. Browser-required calls need a visible session and should fail with a clear machine-readable reason when the bridge is unavailable.
 
-## Install
+## Install the compiled fork from GitHub
+
+This repository publishes an already-compiled Node package to the `npm-dist` branch only after the full `main` parity gate succeeds. You do not need a local TypeScript, Python, or Rust compiler to install that distribution.
+
+For a private repository, authenticate Git first:
 
 ```bash
-npm install codex-chatgpt-control@next
+gh auth login
+gh auth setup-git
 ```
+
+Install into a project:
+
+```bash
+npm install "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
+```
+
+Or install the command-line tools globally:
+
+```bash
+npm install -g "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
+chatgpt-thread --help
+```
+
+The package also installs `codex-chatgpt-control-backend`. Browser-required operations still need a visible signed-in ChatGPT session and a compatible browser bridge; installation does not bypass login, captcha, rate limits, permissions, confirmations, or visible-UI safety checks.
+
+Tagged GitHub releases also attach the verified npm tarball and Python wheel/source distribution. Publishing the fork to npmjs or PyPI is optional. See `docs/github-install.md` in the source repository for the complete distribution and Codespaces workflow.
 
 ## Usage
 
