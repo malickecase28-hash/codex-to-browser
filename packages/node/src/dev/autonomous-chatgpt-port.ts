@@ -63,6 +63,7 @@ export type ChatGPTAutonomousPortOptions = Readonly<{
 }>;
 
 const CHATGPT_ORIGIN = "https://chatgpt.com";
+const PROJECT_ID_PATTERN = /^g-p-[A-Za-z0-9._:-]{1,256}$/u;
 
 export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
   readonly conversations: ConversationManager;
@@ -93,7 +94,10 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     task: DevTaskRecord;
   }>): Promise<Readonly<{ conversationKey: string }>> {
     const key = input.task.workerConversationKey ?? `${input.workflow.projectKey}:worker:${input.task.taskId}`;
-    await this.ensureLogicalConversation(input.workflow, key, "worker", input.task);
+    const existing = await this.existingConversation(key);
+    if (existing === undefined && this.provisioner === undefined) {
+      projectStartUrl(input.workflow.projectKey);
+    }
     return Object.freeze({ conversationKey: key });
   }
 
@@ -104,7 +108,11 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     operationId: string;
     watcherId: string;
   }>): Promise<DevGuidanceDispatch> {
-    const conversation = await this.ensureLogicalConversation(input.workflow, input.conversationKey, "worker", input.task);
+    const conversation = await this.resolveGuidanceConversation(
+      input.workflow,
+      input.conversationKey,
+      input.task
+    );
     await this.beginTurn({
       workflow: input.workflow,
       conversation,
@@ -153,7 +161,10 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     wait: boolean;
     timeoutMs?: number;
   }>): Promise<DevAutonomousReviewObservation> {
-    const conversation = await this.ensureLogicalConversation(input.workflow, input.conversationKey, "worker", input.task);
+    const conversation = await this.requireExistingConversation(
+      input.conversationKey,
+      "The worker conversation that produced implementation guidance is unavailable for commit review."
+    );
     await this.beginTurn({
       workflow: input.workflow,
       conversation,
@@ -184,7 +195,10 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     timeoutMs?: number;
   }>): Promise<DevAutonomousReviewObservation> {
     const key = input.workflow.plannerConversationKey;
-    const conversation = await this.ensureLogicalConversation(input.workflow, key, "planner");
+    const conversation = await this.requireExistingConversation(
+      key,
+      "The master planner conversation is unavailable for final integration review."
+    );
     await this.beginTurn({
       workflow: input.workflow,
       conversation,
@@ -206,36 +220,52 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     });
   }
 
-  private async ensureLogicalConversation(
-    workflow: DevAutonomousWorkflow,
-    key: string,
-    role: "planner" | "worker",
-    task?: DevTaskRecord
-  ): Promise<ConversationRecord> {
+  private async existingConversation(key: string): Promise<ConversationRecord | undefined> {
     const existing = await this.conversations.get(key);
-    if (existing !== undefined) {
-      const affinity = await this.conversations.affinity.get(key);
-      if (affinity === undefined) {
-        throw new DevAutonomousPortError(
-          "conversation_affinity_unavailable",
-          true,
-          "The semantic ChatGPT conversation has no exact physical-tab affinity."
-        );
-      }
-      return existing;
-    }
-    if (this.provisioner === undefined) {
+    if (existing === undefined) return undefined;
+    const affinity = await this.conversations.affinity.get(key);
+    if (affinity === undefined) {
       throw new DevAutonomousPortError(
-        "project_chat_provisioner_unavailable",
+        "conversation_affinity_unavailable",
         true,
-        "A visible ChatGPT Project conversation provisioner is required before autonomous work can start."
+        "The semantic ChatGPT conversation has no exact physical-tab affinity."
       );
     }
+    if (
+      existing.conversationId !== undefined
+      && affinity.conversationId !== undefined
+      && existing.conversationId !== affinity.conversationId
+    ) {
+      throw new DevAutonomousPortError(
+        "conversation_identity_mismatch",
+        false,
+        "Semantic conversation identity does not match its physical-tab affinity."
+      );
+    }
+    return existing;
+  }
+
+  private async requireExistingConversation(key: string, message: string): Promise<ConversationRecord> {
+    const existing = await this.existingConversation(key);
+    if (existing === undefined) {
+      throw new DevAutonomousPortError("conversation_not_established", true, message);
+    }
+    return existing;
+  }
+
+  private async resolveGuidanceConversation(
+    workflow: DevAutonomousWorkflow,
+    key: string,
+    task: DevTaskRecord
+  ): Promise<ConversationRecord | undefined> {
+    const existing = await this.existingConversation(key);
+    if (existing !== undefined) return existing;
+    if (this.provisioner === undefined) return undefined;
     const identity = await this.provisioner.ensure({
       workflow,
       logicalConversationKey: key,
-      role,
-      ...(task === undefined ? {} : { task })
+      role: "worker",
+      task
     });
     validateConversationIdentity(identity);
     const record = await this.conversations.remember({
@@ -257,27 +287,30 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
 
   private async beginTurn(input: Readonly<{
     workflow: DevAutonomousWorkflow;
-    conversation: ConversationRecord;
+    conversation?: ConversationRecord;
     logicalConversationKey: string;
     kind: DevAutonomousTurnKind;
     operationId: string;
     watcherId: string;
     prompt: string;
   }>): Promise<DevAutonomousTurnRecord> {
-    const existing = await this.turns.get(input.watcherId);
-    if (existing !== undefined) {
+    const existingTurn = await this.turns.get(input.watcherId);
+    if (existingTurn !== undefined) {
       if (
-        existing.logicalConversationKey !== input.logicalConversationKey
-        || existing.kind !== input.kind
-        || existing.handle.operationId !== input.operationId
+        existingTurn.logicalConversationKey !== input.logicalConversationKey
+        || existingTurn.kind !== input.kind
+        || existingTurn.handle.operationId !== input.operationId
       ) {
         throw new DevAutonomousPortError("turn_identity_mismatch", false, "Autonomous turn identity conflicts with durable state.");
       }
-      await this.ensureWatcher(existing);
-      return existing;
+      await this.ensureWatcher(existingTurn);
+      return existingTurn;
     }
 
-    const target = await this.targetForConversation(input.logicalConversationKey, input.conversation);
+    const creatingConversation = input.conversation === undefined;
+    const target = creatingConversation
+      ? { type: "new" as const, url: projectStartUrl(input.workflow.projectKey) }
+      : await this.targetForConversation(input.logicalConversationKey, input.conversation);
     const submitted = await this.chatgpt.operations.submit({
       schemaVersion: OPERATION_REQUEST_SCHEMA_VERSION,
       operationId: input.operationId,
@@ -291,7 +324,11 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
       }
     });
     const inspected = await this.chatgpt.operations.inspect(submitted.handle);
-    await this.bindConversationFromOperation(input.logicalConversationKey, inspected.state);
+    await this.bindConversationFromOperation(
+      input.logicalConversationKey,
+      inspected.state,
+      creatingConversation
+    );
     const turn = await this.turns.remember({
       watcherId: input.watcherId,
       kind: input.kind,
@@ -317,9 +354,7 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     const turn = await this.turns.require(watcherId);
     const cached = await this.turns.readResponse(watcherId);
     const watcher = await this.watcherStore.get(watcherId);
-    if (watcher === undefined) {
-      await this.ensureWatcher(turn);
-    }
+    if (watcher === undefined) await this.ensureWatcher(turn);
     const currentWatcher = (await this.watcherStore.get(watcherId))!;
     if (cached !== undefined) {
       if (currentWatcher.state === "pending") {
@@ -356,7 +391,8 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
         "The exact autonomous ChatGPT response is no longer available from the operation collector."
       );
     }
-    const digest = collected.response.text?.digest ?? `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
+    const digest = collected.response.text?.digest
+      ?? `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
     const stored = await this.turns.storeResponse({
       watcherId,
       digest,
@@ -370,15 +406,24 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     return stored.response;
   }
 
-  private async targetForConversation(key: string, conversation: ConversationRecord): Promise<OperationTargetRequestV1> {
+  private async targetForConversation(
+    key: string,
+    conversation: ConversationRecord
+  ): Promise<OperationTargetRequestV1> {
     const affinity = await this.conversations.affinity.get(key);
     if (affinity !== undefined) return { type: "tab_id", tabId: affinity.tabId };
-    if (conversation.conversationId !== undefined) return { type: "conversation_id", conversationId: conversation.conversationId };
+    if (conversation.conversationId !== undefined) {
+      return { type: "conversation_id", conversationId: conversation.conversationId };
+    }
     if (conversation.url !== undefined) return { type: "url", url: conversation.url };
     throw new DevAutonomousPortError("conversation_identity_unavailable", false, "Autonomous conversation identity is unavailable.");
   }
 
-  private async bindConversationFromOperation(key: string, state: OperationStateV1): Promise<void> {
+  private async bindConversationFromOperation(
+    key: string,
+    state: OperationStateV1,
+    creatingConversation: boolean
+  ): Promise<void> {
     const identity = operationConversationIdentity(state);
     const existing = await this.conversations.get(key);
     if (
@@ -388,8 +433,10 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
       throw new DevAutonomousPortError("conversation_identity_mismatch", false, "Operation conversation identity drifted from the semantic registry.");
     }
     const affinity = await this.conversations.affinity.get(key);
-    const trustedUrl = existing?.url ?? affinity?.url;
-    await this.conversations.remember({
+    const trustedUrl = existing?.url
+      ?? affinity?.url
+      ?? (creatingConversation ? conversationUrl(identity.conversationId) : undefined);
+    const record = await this.conversations.remember({
       key,
       conversationId: identity.conversationId,
       ...(trustedUrl === undefined ? {} : { url: trustedUrl }),
@@ -399,7 +446,7 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
       key,
       tabId: identity.tabId,
       conversationId: identity.conversationId,
-      ...(trustedUrl === undefined ? {} : { url: trustedUrl }),
+      ...(record.url === undefined ? {} : { url: record.url }),
       surface: "chat"
     });
   }
@@ -446,17 +493,47 @@ function watcherRegistration(
   });
 }
 
-function operationConversationIdentity(state: OperationStateV1): DevProjectConversationIdentity {
+function operationConversationIdentity(
+  state: OperationStateV1
+): Readonly<{ conversationId: string; tabId: string }> {
   const target = state.target;
   if (target === undefined) {
     throw new DevAutonomousPortError("conversation_identity_unavailable", true, "The operation target is not yet durably bound.");
   }
   const conversationId = target.targetEstablishment?.conversationId ?? target.conversationId;
-  const url = target.targetEstablishment?.canonicalThreadUrl ?? target.canonicalThreadUrl;
-  if (conversationId === undefined || url === undefined) {
+  if (conversationId === undefined || conversationId.trim().length === 0) {
     throw new DevAutonomousPortError("conversation_identity_unavailable", true, "The operation does not yet contain a stable ChatGPT conversation identity.");
   }
-  return Object.freeze({ conversationId, url, tabId: target.tabId });
+  return Object.freeze({ conversationId, tabId: target.tabId });
+}
+
+function projectStartUrl(projectKey: string): string {
+  if (PROJECT_ID_PATTERN.test(projectKey)) {
+    return new URL(`/g/${projectKey}/project`, CHATGPT_ORIGIN).toString();
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(projectKey);
+  } catch {
+    throw new DevAutonomousPortError(
+      "project_identity_unavailable",
+      false,
+      "Autonomous first-send chat creation requires an exact ChatGPT Project ID or Project URL."
+    );
+  }
+  const projectId = parsed.pathname.match(/^\/g\/(g-p-[A-Za-z0-9._:-]{1,256})\/project\/?$/u)?.[1];
+  if (parsed.origin !== CHATGPT_ORIGIN || parsed.search !== "" || parsed.hash !== "" || projectId === undefined) {
+    throw new DevAutonomousPortError(
+      "project_identity_unavailable",
+      false,
+      "Autonomous first-send chat creation requires an exact ChatGPT Project ID or Project URL."
+    );
+  }
+  return new URL(`/g/${projectId}/project`, CHATGPT_ORIGIN).toString();
+}
+
+function conversationUrl(conversationId: string): string {
+  return new URL(`/c/${conversationId}`, CHATGPT_ORIGIN).toString();
 }
 
 function validateConversationIdentity(identity: DevProjectConversationIdentity): void {
@@ -482,7 +559,9 @@ function validateConversationIdentity(identity: DevProjectConversationIdentity):
 }
 
 function guidancePrompt(workflow: DevAutonomousWorkflow, task: DevTaskRecord): string {
-  const criteria = task.acceptanceCriteria.map((criterion, index) => `${index + 1}. ${criterion}`).join("\n");
+  const criteria = task.acceptanceCriteria
+    .map((criterion, index) => `${index + 1}. ${criterion}`)
+    .join("\n");
   const dependencyText = task.dependencies.length === 0 ? "none" : task.dependencies.join(", ");
   return [
     "You are the dedicated implementation-guidance worker for one task in a visible-browser development workflow.",
