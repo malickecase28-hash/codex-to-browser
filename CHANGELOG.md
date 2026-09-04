@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0-alpha.1
+
+- Adds the visible-browser autonomous development orchestrator with durable
+  Project, planner, worker, and repository workflow state, exact conversation
+  continuity, independent tester evidence, exact-SHA review gates, and
+  fail-closed recovery across uncertain browser operations.
+- Adds first-class GitHub cloud development with Codespaces and an optional
+  Rust build/test gate, while keeping the Node runtime authoritative and Python
+  as the parity protocol client.
+- Adds compiled GitHub npm distribution, an installed `chatgpt-thread` CLI,
+  Project-scoped first-send parity, hardened cross-platform stream cancellation,
+  audited dependency updates, and release metadata for this repository fork.
+
 ## 0.5.1-alpha.3
 
 - Adds durable transactional Chat and Work operations with caller-owned IDs,
