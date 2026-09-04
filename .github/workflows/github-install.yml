@@ -1,0 +1,196 @@
+name: github-installable-package
+
+on:
+  pull_request:
+    paths:
+      - "packages/node/**"
+      - "scripts/check-node-pack.mjs"
+      - ".github/workflows/github-install.yml"
+  workflow_run:
+    workflows:
+      - codex-chatgpt-control-parity
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-installable-package-${{ github.event_name }}-${{ github.ref || github.event.workflow_run.head_sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify-package:
+    name: verify compiled npm package
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    env:
+      CHECKOUT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_SHA }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/node/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm --prefix packages/node ci
+
+      - name: Test source package
+        run: npm --prefix packages/node test
+
+      - name: Build compiled SDK and bundles
+        run: |
+          npm run node:build
+          npm run node:bundle
+
+      - name: Validate npm package contents
+        run: npm run release:check-node-pack
+
+      - name: Pack compiled npm tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/github
+          (
+            cd packages/node
+            npm pack --json --pack-destination "$GITHUB_WORKSPACE/dist/github" > "$GITHUB_WORKSPACE/dist/github/npm-pack.json"
+          )
+          tarball="$(find "$GITHUB_WORKSPACE/dist/github" -maxdepth 1 -type f -name '*.tgz' -print -quit)"
+          test -n "$tarball"
+          sha256sum "$tarball" | tee "$GITHUB_WORKSPACE/dist/github/npm-package.sha256"
+
+      - name: Install and execute packed SDK in a clean npm project
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="$(find "$GITHUB_WORKSPACE/dist/github" -maxdepth 1 -type f -name '*.tgz' -print -quit)"
+          test -n "$tarball"
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          cd "$temp_dir"
+          npm init -y >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund "$tarball"
+          node --input-type=module <<'NODE'
+          const sdk = await import("codex-chatgpt-control");
+          if (typeof sdk.createChatGPT !== "function") {
+            throw new Error("packed SDK does not export createChatGPT");
+          }
+          if (typeof sdk.createDevAutonomousApi !== "function") {
+            throw new Error("packed SDK does not export createDevAutonomousApi");
+          }
+          NODE
+          ./node_modules/.bin/chatgpt-thread --help >/dev/null
+          health="$({
+            printf '%s\n' '{"schemaVersion":"chatgpt.browser_control.backend_request.v1","requestId":"github_package_health","command":"backend.health","payload":{}}'
+          } | timeout 15 ./node_modules/.bin/codex-chatgpt-control-backend | head -n 1)"
+          HEALTH="$health" node --input-type=module <<'NODE'
+          const response = JSON.parse(process.env.HEALTH ?? "{}");
+          if (response.schemaVersion !== "chatgpt.browser_control.backend_response.v1" || response.ok !== true) {
+            throw new Error(`packed backend health check failed: ${JSON.stringify(response)}`);
+          }
+          if (response.result?.ok !== true || response.result?.status !== "ok") {
+            throw new Error(`packed backend did not report ok: ${JSON.stringify(response.result)}`);
+          }
+          NODE
+
+      - name: Upload compiled npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-chatgpt-control-npm-${{ env.CHECKOUT_SHA }}
+          path: |
+            dist/github/*.tgz
+            dist/github/*.sha256
+            dist/github/npm-pack.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-npm-dist:
+    name: publish compiled npm-dist branch
+    needs: verify-package
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      CHECKOUT_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_SHA }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: codex-chatgpt-control-npm-${{ env.CHECKOUT_SHA }}
+          path: dist/github
+
+      - name: Expand verified npm package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tarball="$(find "$GITHUB_WORKSPACE/dist/github" -maxdepth 1 -type f -name '*.tgz' -print -quit)"
+          test -n "$tarball"
+          rm -rf /tmp/codex-chatgpt-control-npm-dist
+          mkdir -p /tmp/codex-chatgpt-control-npm-dist
+          tar -xzf "$tarball" -C /tmp/codex-chatgpt-control-npm-dist --strip-components=1
+          printf '%s\n' "$CHECKOUT_SHA" > /tmp/codex-chatgpt-control-npm-dist/SOURCE_COMMIT
+
+      - name: Publish exact compiled package contents to npm-dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan npm-dist-build
+          git rm -rf . >/dev/null 2>&1 || true
+          git clean -fdx >/dev/null 2>&1 || true
+          cp -a /tmp/codex-chatgpt-control-npm-dist/. .
+          git add -A
+          git commit -m "dist: compiled npm package for ${CHECKOUT_SHA}"
+          git push --force origin HEAD:npm-dist
+
+      - name: Verify direct GitHub npm installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          cd "$temp_dir"
+          npm init -y >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund "git+https://github.com/${GITHUB_REPOSITORY}.git#npm-dist"
+          node --input-type=module <<'NODE'
+          const sdk = await import("codex-chatgpt-control");
+          if (typeof sdk.createChatGPT !== "function" || typeof sdk.createDevAutonomousApi !== "function") {
+            throw new Error("npm-dist install did not expose the compiled SDK surface");
+          }
+          NODE
+          ./node_modules/.bin/chatgpt-thread --help >/dev/null
+
+      - name: Write install command to job summary
+        shell: bash
+        run: |
+          {
+            echo '## GitHub npm install'
+            echo
+            echo '```bash'
+            echo 'npm install "git+https://github.com/${{ github.repository }}.git#npm-dist"'
+            echo '```'
+            echo
+            echo 'For a private repository, configure Git credentials for GitHub first, for example with `gh auth setup-git`.'
+          } >> "$GITHUB_STEP_SUMMARY"
