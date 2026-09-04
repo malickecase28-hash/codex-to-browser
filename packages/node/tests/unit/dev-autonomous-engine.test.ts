@@ -108,7 +108,7 @@ describe("autonomous orchestration engine", () => {
     await engine.create(plan());
 
     const guidanceStarted = await engine.advance("workflow-engine");
-    expect(guidanceStarted.progressedTaskIds.sort()).toEqual(["a", "b"]);
+    expect([...guidanceStarted.progressedTaskIds].sort()).toEqual(["a", "b"]);
     expect(guidanceStarted.workflow.tasks.every(task => task.phase === "guidance_pending")).toBe(true);
 
     await engine.advance("workflow-engine");
