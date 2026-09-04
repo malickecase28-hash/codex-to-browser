@@ -37,7 +37,7 @@ export type OperationJsonValue =
   | { [key: string]: OperationJsonValue };
 
 export type OperationTargetRequestV1 =
-  | { type: "new" }
+  | { type: "new"; url?: string }
   | { type: "selected_tab" }
   | { type: "tab_id"; tabId: string }
   | { type: "conversation_id"; conversationId: string }
