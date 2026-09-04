@@ -287,7 +287,7 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
 
   private async beginTurn(input: Readonly<{
     workflow: DevAutonomousWorkflow;
-    conversation?: ConversationRecord;
+    conversation: ConversationRecord | undefined;
     logicalConversationKey: string;
     kind: DevAutonomousTurnKind;
     operationId: string;
