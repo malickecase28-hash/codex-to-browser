@@ -387,17 +387,19 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     ) {
       throw new DevAutonomousPortError("conversation_identity_mismatch", false, "Operation conversation identity drifted from the semantic registry.");
     }
+    const affinity = await this.conversations.affinity.get(key);
+    const trustedUrl = existing?.url ?? affinity?.url;
     await this.conversations.remember({
       key,
       conversationId: identity.conversationId,
-      url: identity.url,
+      ...(trustedUrl === undefined ? {} : { url: trustedUrl }),
       surface: "chat"
     });
     await this.conversations.affinity.remember({
       key,
       tabId: identity.tabId,
       conversationId: identity.conversationId,
-      url: identity.url,
+      ...(trustedUrl === undefined ? {} : { url: trustedUrl }),
       surface: "chat"
     });
   }
