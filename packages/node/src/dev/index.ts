@@ -6,4 +6,6 @@ export * from "./autonomous-workflow.js";
 export * from "./autonomous-store.js";
 export * from "./autonomous-turn-store.js";
 export * from "./autonomous-engine.js";
+export * from "./autonomous-chatgpt-port.js";
+export * from "./autonomous-api.js";
 export * from "./plugin-bridge.js";
