@@ -83,30 +83,30 @@ export type DevTaskRecord = Readonly<{
   summary: string;
   dependencies: readonly string[];
   acceptanceCriteria: readonly string[];
-  plannedBranch?: string;
+  plannedBranch?: string | undefined;
   phase: DevTaskPhase;
   attempt: number;
-  workerConversationKey?: string;
-  guidance?: DevGuidanceEvidence;
-  guidanceDispatch?: DevGuidanceDispatch;
-  implementation?: DevImplementationCandidate;
-  tester?: DevTesterEvidence;
-  push?: DevPushEvidence;
-  workerReview?: DevWorkerReviewEvidence;
-  blockerCode?: string;
-  blockedFrom?: Exclude<DevTaskPhase, "blocked">;
+  workerConversationKey?: string | undefined;
+  guidance?: DevGuidanceEvidence | undefined;
+  guidanceDispatch?: DevGuidanceDispatch | undefined;
+  implementation?: DevImplementationCandidate | undefined;
+  tester?: DevTesterEvidence | undefined;
+  push?: DevPushEvidence | undefined;
+  workerReview?: DevWorkerReviewEvidence | undefined;
+  blockerCode?: string | undefined;
+  blockedFrom?: Exclude<DevTaskPhase, "blocked"> | undefined;
 }>;
 
 export type DevIntegrationRecord = Readonly<{
-  implementation?: DevImplementationCandidate;
-  tester?: DevTesterEvidence;
-  push?: DevPushEvidence;
+  implementation?: DevImplementationCandidate | undefined;
+  tester?: DevTesterEvidence | undefined;
+  push?: DevPushEvidence | undefined;
   plannerReview?: Readonly<{
     plannerConversationKey: string;
     reviewedSha: string;
     status: "accepted" | "revision_required";
     reviewDigest: string;
-  }>;
+  }> | undefined;
 }>;
 
 export type DevAutonomousWorkflow = Readonly<{
