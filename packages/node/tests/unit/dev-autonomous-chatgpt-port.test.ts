@@ -8,7 +8,8 @@ import {
   OPERATION_OWNERSHIP_BASELINE_SCHEMA_VERSION,
   OPERATION_SCHEMA_VERSION,
   type OperationHandleV1,
-  type OperationStateV1
+  type OperationStateV1,
+  type OperationSubmitRequestV1
 } from "../../src/operations/types.js";
 import {
   ChatGPTAutonomousPort,
@@ -134,7 +135,7 @@ function workflow() {
 }
 
 function fakeClient() {
-  const submit = vi.fn(async () => ({ handle: handle(), submission: {} }));
+  const submit = vi.fn(async (_request: OperationSubmitRequestV1) => ({ handle: handle(), submission: {} }));
   const inspect = vi.fn(async () => ({ handle: handle(), state: state() }));
   const collect = vi.fn(async () => ({
     kind: "completed",
