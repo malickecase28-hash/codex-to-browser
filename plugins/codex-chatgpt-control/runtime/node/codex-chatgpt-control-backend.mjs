@@ -45684,15 +45684,13 @@ function createChatGPTOperationAdapterFactory(options) {
       exposeStaging: true,
       exposeControl: true,
       ...hasTransferDestination(request) ? { exposeArtifacts: true } : {},
-      capture: async (captureRequest) => {
-        return await captureChatGPTRequest({
-          ...normalized,
-          request,
-          files,
-          captureRequest,
-          recoveryTarget: void 0
-        });
-      }
+      capture: async (captureRequest) => await captureChatGPTRequest({
+        ...normalized,
+        request,
+        files,
+        captureRequest,
+        recoveryTarget: void 0
+      })
     };
     return createRuntimeOperationBrowserAdapter(adapterOptions);
   };
@@ -45763,9 +45761,7 @@ function normalizeFactoryOptions(value) {
     readDataProperty2(value, "capabilities")
   );
   const primitives = readDataProperty2(value, "primitives");
-  if (primitives !== void 0 && typeof primitives !== "function") {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (primitives !== void 0 && typeof primitives !== "function") throw new ChatGPTRuntimeFactoryError();
   return Object.freeze({
     env,
     owner,
@@ -45782,12 +45778,8 @@ function snapshotOwner(value) {
   assertOwnDataKeys2(value, ["backendSessionId", "ownerId", "operationId"]);
   const backendSessionId = readDataProperty2(value, "backendSessionId");
   const ownerId = readDataProperty2(value, "ownerId");
-  if (typeof backendSessionId !== "string" || !ID_PATTERN10.test(backendSessionId)) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
-  if (ownerId !== void 0 && (typeof ownerId !== "string" || !ID_PATTERN10.test(ownerId))) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (typeof backendSessionId !== "string" || !ID_PATTERN10.test(backendSessionId)) throw new ChatGPTRuntimeFactoryError();
+  if (ownerId !== void 0 && (typeof ownerId !== "string" || !ID_PATTERN10.test(ownerId))) throw new ChatGPTRuntimeFactoryError();
   return Object.freeze({
     backendSessionId,
     ...ownerId === void 0 ? {} : { ownerId }
@@ -45810,9 +45802,7 @@ function snapshotRuntimeEnv(value) {
   if (agent !== void 0) snapshot2.agent = agent;
   if (browser !== void 0) snapshot2.browser = unwrapCoordinatedBrowser(browser);
   if (page !== void 0) snapshot2.page = unwrapCoordinatedPage(page);
-  if (clipboard !== void 0 && clipboard !== null && typeof clipboard === "object") {
-    snapshot2.clipboard = clipboard;
-  }
+  if (clipboard !== void 0 && clipboard !== null && typeof clipboard === "object") snapshot2.clipboard = clipboard;
   if (now !== void 0) snapshot2.now = now;
   if (expectedTabId !== void 0) snapshot2.expectedTabId = expectedTabId;
   return Object.freeze(snapshot2);
@@ -45890,7 +45880,15 @@ function snapshotTargetRequest(value) {
   if (value === null || typeof value !== "object") throw new ChatGPTRuntimeFactoryError();
   const type = readDataProperty2(value, "type");
   switch (type) {
-    case "new":
+    case "new": {
+      assertOwnDataKeys2(value, ["type", "url"]);
+      const url = readDataProperty2(value, "url");
+      if (url === void 0) return Object.freeze({ type });
+      if (typeof url !== "string") throw new ChatGPTRuntimeFactoryError();
+      const canonical = canonicalChatGPTUrl(url);
+      if (canonical === void 0) throw new ChatGPTRuntimeFactoryError();
+      return Object.freeze({ type, url: canonical });
+    }
     case "selected_tab":
       assertOwnDataKeys2(value, ["type"]);
       return Object.freeze({ type });
@@ -45952,9 +45950,7 @@ async function captureChatGPTRequest(options) {
     const selected = await selectExactSelectedPage(bootstrapEnv.browser);
     if (selected === void 0) throw new ChatGPTRuntimeFactoryError();
     selectedTabId = tabIdFromPage(selected);
-    if (selectedTabId === void 0 || !ID_PATTERN10.test(selectedTabId)) {
-      throw new ChatGPTRuntimeFactoryError();
-    }
+    if (selectedTabId === void 0 || !ID_PATTERN10.test(selectedTabId)) throw new ChatGPTRuntimeFactoryError();
     bootstrapEnv.page = selected;
   }
   const env = Object.freeze(bootstrapEnv);
@@ -45970,15 +45966,9 @@ async function captureChatGPTRequest(options) {
   const tabId = tabIdFromPage(attached.page);
   if (tabId === void 0 || !ID_PATTERN10.test(tabId)) throw new ChatGPTRuntimeFactoryError();
   if (attached.tabId !== void 0 && attached.tabId !== tabId) throw new ChatGPTRuntimeFactoryError();
-  if (targetRequest.type === "tab_id" && tabId !== targetRequest.tabId) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
-  if (targetRequest.type === "selected_tab" && (selectedTabId === void 0 || tabId !== selectedTabId)) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
-  if (options.recoveryTarget !== void 0) {
-    assertRecoveredBrowserIdentity(options.recoveryTarget, browserId, tabId);
-  }
+  if (targetRequest.type === "tab_id" && tabId !== targetRequest.tabId) throw new ChatGPTRuntimeFactoryError();
+  if (targetRequest.type === "selected_tab" && (selectedTabId === void 0 || tabId !== selectedTabId)) throw new ChatGPTRuntimeFactoryError();
+  if (options.recoveryTarget !== void 0) assertRecoveredBrowserIdentity(options.recoveryTarget, browserId, tabId);
   await options.coordinator.withBrowserAcquisition(
     browserResource,
     {
@@ -46000,9 +45990,7 @@ async function captureChatGPTRequest(options) {
     return Object.freeze({ evidence: observed.snapshot.target });
   };
   const resolveTargetEvidence = async (request2) => {
-    if (!sameTargetRequest2(request2.target, targetRequest)) {
-      throw new ChatGPTRuntimeFactoryError();
-    }
+    if (!sameTargetRequest2(request2.target, targetRequest)) throw new ChatGPTRuntimeFactoryError();
     return await options.coordinator.withBrowserAcquisition(
       browserResource,
       {
@@ -46014,12 +46002,7 @@ async function captureChatGPTRequest(options) {
       },
       async () => {
         await validateExactNavigation(rawPage, request2.target);
-        const observationTarget = observationTargetForRequest(
-          request2,
-          browserId,
-          tabId,
-          targetRequest
-        );
+        const observationTarget = observationTargetForRequest(request2, browserId, tabId, targetRequest);
         const observed = await observePage(rawPage, request2.operationId, observationTarget, options.evidenceDigest);
         const anchor = observed.newTargetAnchor;
         return Object.freeze({
@@ -46046,13 +46029,8 @@ async function captureChatGPTRequest(options) {
   const attachments = request === void 0 || options.files.length === 0 ? void 0 : createChatGPTAttachmentProvider({
     evidenceDigest: options.evidenceDigest,
     files: options.files,
-    identityDigest: (ordinal, manifest) => options.evidenceDigest(
-      "file-manifest",
-      { ordinal, ...manifest }
-    ),
-    revalidateFile: (identity) => revalidateOperationFile(identity, {
-      signal: options.captureRequest.signal
-    }),
+    identityDigest: (ordinal, manifest) => options.evidenceDigest("file-manifest", { ordinal, ...manifest }),
+    revalidateFile: (identity) => revalidateOperationFile(identity, { signal: options.captureRequest.signal }),
     signal: options.captureRequest.signal
   });
   const production = createProductionOperationPrimitives({
@@ -46142,19 +46120,35 @@ function workSteerControlPrimitive(primitive2, existing) {
       "prepare"
     ),
     executeSteerPrepared: async (request, page) => mapWorkSteerResult(
-      await primitive2.executePrepared({ page, prepared: productionPreparedFromControl(request.prepared), signal: request.signal, deadlineAt: request.deadlineAt }),
+      await primitive2.executePrepared({
+        page,
+        prepared: productionPreparedFromControl(request.prepared),
+        signal: request.signal,
+        deadlineAt: request.deadlineAt
+      }),
       request,
       "execute_prepared",
       request.prepared
     ),
     verifySteer: async (request, page) => mapWorkSteerResult(
-      await primitive2.verify({ page, prepared: productionPreparedFromControl(request.prepared), signal: request.signal, deadlineAt: request.deadlineAt }),
+      await primitive2.verify({
+        page,
+        prepared: productionPreparedFromControl(request.prepared),
+        signal: request.signal,
+        deadlineAt: request.deadlineAt
+      }),
       request,
       "verify",
       request.prepared
     ),
     recoverSteer: async (request, page) => mapWorkSteerResult(
-      await primitive2.recover({ page, prepared: productionPreparedFromControl(request.prepared), baseline: request.baseline, signal: request.signal, deadlineAt: request.deadlineAt }),
+      await primitive2.recover({
+        page,
+        prepared: productionPreparedFromControl(request.prepared),
+        baseline: request.baseline,
+        signal: request.signal,
+        deadlineAt: request.deadlineAt
+      }),
       request,
       "recovery",
       request.prepared
@@ -46182,13 +46176,13 @@ function mapWorkSteerResult(result3, request, phase, prepared) {
   const base = {
     schemaVersion: "chatgpt.browser_control.operation_control_coordinator.v1",
     phase,
-    parentOperationId: "prepared" in request ? identity.parentOperationId : identity.parentOperationId,
-    parentRequestDigest: "prepared" in request ? identity.parentRequestDigest : identity.parentRequestDigest,
-    parentTargetBindingDigest: "prepared" in request ? identity.parentTargetBindingDigest : identity.parentTargetBindingDigest,
-    controlActionId: "prepared" in request ? identity.controlActionId : identity.controlActionId,
+    parentOperationId: identity.parentOperationId,
+    parentRequestDigest: identity.parentRequestDigest,
+    parentTargetBindingDigest: identity.parentTargetBindingDigest,
+    controlActionId: identity.controlActionId,
     action: "steer",
-    requestDigest: "prepared" in request ? identity.requestDigest : identity.requestDigest,
-    expectedAssistantTurnId: "prepared" in request ? identity.expectedAssistantTurnId : identity.expectedAssistantTurnId,
+    requestDigest: identity.requestDigest,
+    expectedAssistantTurnId: identity.expectedAssistantTurnId,
     ...prepared === void 0 ? {} : {
       assistantBranchId: prepared.assistantBranchId,
       assistantParentTurnId: prepared.assistantParentTurnId,
@@ -46323,9 +46317,7 @@ function composePrimitives(production, configuration, options, context) {
     ...configured === void 0 ? {} : { staging: configured }
   });
   const augment = options.primitives?.(context);
-  if (augment !== void 0) {
-    result3 = mergePrimitivePorts(result3, augment);
-  }
+  if (augment !== void 0) result3 = mergePrimitivePorts(result3, augment);
   return result3;
 }
 function mergePrimitivePorts(base, augment) {
@@ -46350,7 +46342,7 @@ function mergePrimitivePorts(base, augment) {
 function bootstrapArgsForTarget(target) {
   switch (target.type) {
     case "new":
-      return Object.freeze({ url: CHATGPT_HOME, preferExistingTab: false });
+      return Object.freeze({ url: target.url ?? CHATGPT_HOME, preferExistingTab: false });
     case "selected_tab":
       return Object.freeze({
         existingTab: {
@@ -46393,14 +46385,10 @@ function bootstrapArgsForTarget(target) {
 }
 function bootstrapEnvironment(env, target, recoveryTarget) {
   const copy = { ...env };
-  if (target.type === "new" || target.type === "selected_tab") {
-    delete copy.page;
-  }
+  if (target.type === "new" || target.type === "selected_tab") delete copy.page;
   if (recoveryTarget !== void 0) {
     copy.expectedTabId = recoveryTarget.tabId;
-    if (copy.page !== void 0 && tabIdFromPage(copy.page) !== recoveryTarget.tabId) {
-      delete copy.page;
-    }
+    if (copy.page !== void 0 && tabIdFromPage(copy.page) !== recoveryTarget.tabId) delete copy.page;
   }
   return copy;
 }
@@ -46421,20 +46409,20 @@ async function selectExactSelectedPage(browser) {
   } catch {
     return void 0;
   }
-  if (page === void 0) return void 0;
   return page;
 }
 async function validateExactNavigation(page, target) {
-  if (target.type !== "conversation_id" && target.type !== "url") return;
+  const expectedNewUrl = target.type === "new" ? target.url : void 0;
+  if (target.type !== "conversation_id" && target.type !== "url" && expectedNewUrl === void 0) return;
   const actual = await Promise.resolve(page.url?.()).catch(() => void 0);
   const actualCanonical = canonicalChatGPTUrl(actual);
   if (actualCanonical === void 0) throw new ChatGPTRuntimeFactoryError();
-  if (target.type === "url") {
-    const expected = canonicalChatGPTUrl(target.url);
+  if (target.type === "url" || expectedNewUrl !== void 0) {
+    const expected = canonicalChatGPTUrl(target.type === "url" ? target.url : expectedNewUrl);
     if (expected === void 0 || actualCanonical !== expected) throw new ChatGPTRuntimeFactoryError();
     return;
   }
-  if (parseConversationId(actualCanonical) !== target.conversationId) {
+  if (target.type === "conversation_id" && parseConversationId(actualCanonical) !== target.conversationId) {
     throw new ChatGPTRuntimeFactoryError();
   }
 }
@@ -46500,9 +46488,7 @@ function isAbsolutePath4(value) {
 }
 function hasTransferDestination(request) {
   const capture = request?.capture;
-  if (capture === void 0 || capture.artifacts !== "transfer" || typeof capture.outputDirectory !== "string") {
-    return false;
-  }
+  if (capture === void 0 || capture.artifacts !== "transfer" || typeof capture.outputDirectory !== "string") return false;
   return capture.outputDirectory.length > 0 && capture.outputDirectory.length <= 4096 && isAbsolutePath4(capture.outputDirectory) && !/[\u0000-\u001f\u007f]/u.test(capture.outputDirectory);
 }
 function isOperationSurface2(value) {
@@ -46512,6 +46498,7 @@ function sameTargetRequest2(left, right) {
   if (left.type !== right.type) return false;
   switch (left.type) {
     case "new":
+      return right.type === "new" && left.url === right.url;
     case "selected_tab":
       return true;
     case "tab_id":
@@ -46552,9 +46539,7 @@ function snapshotCapabilities(value) {
       concurrentTabs: false
     });
   }
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new ChatGPTRuntimeFactoryError();
   const keys = [
     "stableProviderId",
     "stableBrowserId",
@@ -46570,9 +46555,7 @@ function snapshotCapabilities(value) {
     authoritativeTabClaim: readDataProperty2(value, "authoritativeTabClaim") ?? false,
     concurrentTabs: readDataProperty2(value, "concurrentTabs") ?? false
   };
-  if (Object.values(result3).some((item) => typeof item !== "boolean")) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (Object.values(result3).some((item) => typeof item !== "boolean")) throw new ChatGPTRuntimeFactoryError();
   return Object.freeze(result3);
 }
 function assertOwnDataKeys2(value, allowed) {
@@ -46601,9 +46584,7 @@ function cloneSafeData(value, seen = /* @__PURE__ */ new Set(), depth = 0) {
   if (depth > 16 || seen.has(value)) throw new ChatGPTRuntimeFactoryError();
   seen.add(value);
   try {
-    if (Reflect.ownKeys(value).some((key) => typeof key !== "string")) {
-      throw new ChatGPTRuntimeFactoryError();
-    }
+    if (Reflect.ownKeys(value).some((key) => typeof key !== "string")) throw new ChatGPTRuntimeFactoryError();
     if (Array.isArray(value)) {
       const result4 = value.map((item) => cloneSafeData(item, seen, depth + 1));
       seen.delete(value);
