@@ -118,11 +118,42 @@ function state(): OperationStateV1 {
   } as unknown as OperationStateV1;
 }
 
-function workflow() {
+function newlyEstablishedState(): OperationStateV1 {
+  const value = state() as unknown as Record<string, unknown>;
+  const target = { ...((value.target as Record<string, unknown>) ?? {}) };
+  delete target.conversationId;
+  delete target.canonicalThreadUrl;
+  target.targetLifecycle = "new_established";
+  target.newTargetAnchorDigest = `hmac-sha256:${"7".repeat(64)}`;
+  target.blankTaskEvidenceDigest = `hmac-sha256:${"8".repeat(64)}`;
+  target.targetEstablishment = {
+    targetBindingDigest: TARGET_DIGEST,
+    anchorDigest: target.newTargetAnchorDigest,
+    causalSendActionId: "send-action-1",
+    conversationId: "conversation-1",
+    canonicalThreadUrl: `https://opaque.invalid/thread/${"9".repeat(64)}`,
+    userTurnId: "user-first",
+    userTurnEvidenceDigest: `hmac-sha256:${"a".repeat(64)}`,
+    postSendDeltaDigest: `hmac-sha256:${"b".repeat(64)}`,
+    evidenceDigest: `hmac-sha256:${"c".repeat(64)}`,
+    observedAt: "2026-09-04T00:00:00.900Z"
+  };
+  const ownershipBaseline = { ...((value.ownershipBaseline as Record<string, unknown>) ?? {}) };
+  const baseline = { ...((ownershipBaseline.baseline as Record<string, unknown>) ?? {}) };
+  baseline.assistantTurns = [];
+  ownershipBaseline.baseline = baseline;
+  return {
+    ...value,
+    target,
+    ownershipBaseline
+  } as unknown as OperationStateV1;
+}
+
+function workflow(projectKey = "project-1") {
   return createAutonomousWorkflow({
     workflowId: "workflow-1",
-    projectKey: "project-1",
-    plannerConversationKey: "project-1:planner",
+    projectKey,
+    plannerConversationKey: `${projectKey}:planner`,
     tasks: [
       {
         taskId: "task-a",
@@ -134,9 +165,9 @@ function workflow() {
   });
 }
 
-function fakeClient() {
+function fakeClient(operationState: OperationStateV1 = state()) {
   const submit = vi.fn(async (_request: OperationSubmitRequestV1) => ({ handle: handle(), submission: {} }));
-  const inspect = vi.fn(async () => ({ handle: handle(), state: state() }));
+  const inspect = vi.fn(async () => ({ handle: handle(), state: operationState }));
   const collect = vi.fn(async () => ({
     kind: "completed",
     operationId: OPERATION_ID,
@@ -214,6 +245,51 @@ describe("transactional autonomous ChatGPT port", () => {
     });
     const remembered = await port.conversations.get(worker.conversationKey);
     expect(remembered?.url).toBe("https://chatgpt.com/c/conversation-1");
+  });
+
+  it("uses the first real guidance prompt to establish a missing worker chat from the exact Project route", async () => {
+    const stateRoot = await root();
+    const { client, submit } = fakeClient(newlyEstablishedState());
+    const port = new ChatGPTAutonomousPort(client, { stateRoot });
+    const flow = workflow("g-p-project1");
+    const task = flow.tasks[0]!;
+    const worker = await port.ensureWorkerConversation({ workflow: flow, task });
+
+    expect(await port.conversations.get(worker.conversationKey)).toBeUndefined();
+
+    await port.beginGuidance({
+      workflow: flow,
+      task,
+      conversationKey: worker.conversationKey,
+      operationId: OPERATION_ID,
+      watcherId: "watcher-new"
+    });
+
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit.mock.calls[0]?.[0]).toMatchObject({
+      operationId: OPERATION_ID,
+      target: {
+        type: "new",
+        url: "https://chatgpt.com/g/g-p-project1/project"
+      }
+    });
+    const remembered = await port.conversations.get(worker.conversationKey);
+    expect(remembered).toMatchObject({
+      conversationId: "conversation-1",
+      url: "https://chatgpt.com/c/conversation-1"
+    });
+    expect(await port.conversations.affinity.get(worker.conversationKey)).toMatchObject({
+      tabId: "tab-project-1",
+      conversationId: "conversation-1",
+      url: "https://chatgpt.com/c/conversation-1"
+    });
+    expect(await port.watcherStore.get("watcher-new")).toMatchObject({
+      conversationId: "conversation-1",
+      tabId: "tab-project-1",
+      baselineAssistantTurnIds: [],
+      baselineAssistantTurnCount: 0,
+      state: "pending"
+    });
   });
 
   it("caches exact collected guidance and reuses it after port reconstruction without recollecting", async () => {
