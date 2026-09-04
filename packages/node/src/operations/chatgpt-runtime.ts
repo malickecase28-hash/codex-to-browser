@@ -94,15 +94,6 @@ import type {
   OperationTargetRequestV1
 } from "./types.js";
 
-/**
- * Configuration for the default ChatGPT browser runtime.
- *
- * The environment is copied once when this factory is created.  Browser
- * attachment itself remains inside the per-request capture callback, which
- * OperationClient invokes only after the journal has created the operation
- * record.  A caller may supply provider-specific primitives later without
- * changing target binding or recovery semantics.
- */
 export type ChatGPTRuntimeFactoryOptions = Readonly<{
   env: RuntimeEnv;
   owner: CoordinatorOwner;
@@ -110,13 +101,7 @@ export type ChatGPTRuntimeFactoryOptions = Readonly<{
   coordinator?: ProcessTabCoordinator;
   transactionTimeoutMs?: number;
   surfaceTimeoutMs?: number;
-  /**
-   * Provider-advertised, integration-tested concurrency capabilities. Missing
-   * fields are false. The default ChatGPT bridge deliberately does not claim
-   * different-tab overlap until its embedding supplies this evidence.
-   */
   capabilities?: Partial<OperationRuntimeCapabilities>;
-  /** Optional request-local augmentation for provider primitives under active integration. */
   primitives?: (
     context: ChatGPTPrimitiveFactoryContext
   ) => Partial<OperationRuntimeBrowserPrimitives> | undefined;
@@ -134,11 +119,6 @@ export type ChatGPTPrimitiveFactoryContext = Readonly<{
   target?: OperationTargetBindingV1;
 }>;
 
-/**
- * Create a fresh, prompt-bearing control adapter. The prompt is accepted only
- * for this invocation and is never cached or forwarded through durable phase
- * records. The factory binds the authenticated parent target by tab ID.
- */
 export function createChatGPTOperationControlAdapterFactory(
   options: ChatGPTRuntimeFactoryOptions
 ): OperationControlAdapterFactory {
@@ -181,7 +161,6 @@ export function createChatGPTOperationControlAdapterFactory(
   };
 }
 
-/** Alias for callers that use the shorter control-factory name. */
 export const createChatGPTControlAdapterFactory = createChatGPTOperationControlAdapterFactory;
 
 export class ChatGPTRuntimeFactoryError extends Error {
@@ -197,13 +176,6 @@ const DEFAULT_SURFACE_TIMEOUT_MS = 30_000;
 const MAX_SURFACE_TIMEOUT_MS = 120_000;
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,512}$/u;
 
-/**
- * Create the normal request-scoped adapter factory for `ChatGPTClient`.
- *
- * The returned factory performs no browser work until its capture callback is
- * reached by `resolveTarget`.  It is therefore safe to construct while a
- * client is being initialized or while the browser bridge is unavailable.
- */
 export function createChatGPTOperationAdapterFactory(
   options: ChatGPTRuntimeFactoryOptions
 ): OperationAdapterFactory {
@@ -224,29 +196,20 @@ export function createChatGPTOperationAdapterFactory(
       exposeStaging: true,
       exposeControl: true,
       ...(hasTransferDestination(request) ? { exposeArtifacts: true } : {}),
-      capture: async captureRequest => {
-        // `captureRequest` is reached only after OperationService has created
-        // the operation record.  Never move this call into factory creation.
-        return await captureChatGPTRequest({
-          ...normalized,
-          request,
-          files,
-          captureRequest,
-          recoveryTarget: undefined
-        });
-      }
+      capture: async captureRequest => await captureChatGPTRequest({
+        ...normalized,
+        request,
+        files,
+        captureRequest,
+        recoveryTarget: undefined
+      })
     };
     return createRuntimeOperationBrowserAdapter(adapterOptions);
   };
 }
 
-/** Alias for integrations that use the "runtime" naming first. */
 export const createChatGPTOperationRuntimeFactory = createChatGPTOperationAdapterFactory;
 
-/**
- * Create the restart-safe handle factory.  Recovery always attaches by the
- * durable tab id; it never falls back to the selected tab or a replacement.
- */
 export function createChatGPTOperationHandleAdapterFactory(
   options: ChatGPTRuntimeFactoryOptions
 ): OperationHandleAdapterFactory {
@@ -283,7 +246,6 @@ export function createChatGPTOperationHandleAdapterFactory(
   };
 }
 
-/** Alias retained for callers that call the restart path a recovery factory. */
 export const createChatGPTOperationRecoveryFactory = createChatGPTOperationHandleAdapterFactory;
 
 type NormalizedFactoryOptions = Readonly<{
@@ -354,9 +316,7 @@ function normalizeFactoryOptions(value: ChatGPTRuntimeFactoryOptions): Normalize
     readDataProperty<Partial<OperationRuntimeCapabilities>>(value, "capabilities")
   );
   const primitives = readDataProperty<ChatGPTRuntimeFactoryOptions["primitives"]>(value, "primitives");
-  if (primitives !== undefined && typeof primitives !== "function") {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (primitives !== undefined && typeof primitives !== "function") throw new ChatGPTRuntimeFactoryError();
   return Object.freeze({
     env,
     owner,
@@ -374,12 +334,8 @@ function snapshotOwner(value: CoordinatorOwner): CoordinatorOwner {
   assertOwnDataKeys(value, ["backendSessionId", "ownerId", "operationId"]);
   const backendSessionId = readDataProperty(value, "backendSessionId");
   const ownerId = readDataProperty(value, "ownerId");
-  if (typeof backendSessionId !== "string" || !ID_PATTERN.test(backendSessionId)) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
-  if (ownerId !== undefined && (typeof ownerId !== "string" || !ID_PATTERN.test(ownerId))) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (typeof backendSessionId !== "string" || !ID_PATTERN.test(backendSessionId)) throw new ChatGPTRuntimeFactoryError();
+  if (ownerId !== undefined && (typeof ownerId !== "string" || !ID_PATTERN.test(ownerId))) throw new ChatGPTRuntimeFactoryError();
   return Object.freeze({
     backendSessionId,
     ...(ownerId === undefined ? {} : { ownerId })
@@ -403,9 +359,7 @@ function snapshotRuntimeEnv(value: RuntimeEnv): RuntimeEnv {
   if (agent !== undefined) snapshot.agent = agent;
   if (browser !== undefined) snapshot.browser = unwrapCoordinatedBrowser(browser);
   if (page !== undefined) snapshot.page = unwrapCoordinatedPage(page);
-  if (clipboard !== undefined && clipboard !== null && typeof clipboard === "object") {
-    snapshot.clipboard = clipboard as ClipboardLike;
-  }
+  if (clipboard !== undefined && clipboard !== null && typeof clipboard === "object") snapshot.clipboard = clipboard as ClipboardLike;
   if (now !== undefined) snapshot.now = now;
   if (expectedTabId !== undefined) snapshot.expectedTabId = expectedTabId;
   return Object.freeze(snapshot);
@@ -502,7 +456,15 @@ function snapshotTargetRequest(value: OperationTargetRequestV1): OperationTarget
   if (value === null || typeof value !== "object") throw new ChatGPTRuntimeFactoryError();
   const type = readDataProperty(value, "type");
   switch (type) {
-    case "new":
+    case "new": {
+      assertOwnDataKeys(value, ["type", "url"]);
+      const url = readDataProperty(value, "url");
+      if (url === undefined) return Object.freeze({ type });
+      if (typeof url !== "string") throw new ChatGPTRuntimeFactoryError();
+      const canonical = canonicalChatGPTUrl(url);
+      if (canonical === undefined) throw new ChatGPTRuntimeFactoryError();
+      return Object.freeze({ type, url: canonical });
+    }
     case "selected_tab":
       assertOwnDataKeys(value, ["type"]);
       return Object.freeze({ type });
@@ -568,15 +530,10 @@ async function captureChatGPTRequest(options: CaptureRequestOptions): Promise<Op
   }
   let selectedTabId: string | undefined;
   if (targetRequest.type === "selected_tab") {
-    // The browser wrapper performs this one read through the same process
-    // coordinator. Supplying the resulting exact page prevents the broader
-    // user-open-tab fallback from turning "selected" into "first ChatGPT tab".
     const selected = await selectExactSelectedPage(bootstrapEnv.browser);
     if (selected === undefined) throw new ChatGPTRuntimeFactoryError();
     selectedTabId = tabIdFromPage(selected);
-    if (selectedTabId === undefined || !ID_PATTERN.test(selectedTabId)) {
-      throw new ChatGPTRuntimeFactoryError();
-    }
+    if (selectedTabId === undefined || !ID_PATTERN.test(selectedTabId)) throw new ChatGPTRuntimeFactoryError();
     bootstrapEnv.page = selected;
   }
   const env = Object.freeze(bootstrapEnv);
@@ -592,15 +549,9 @@ async function captureChatGPTRequest(options: CaptureRequestOptions): Promise<Op
   const tabId = tabIdFromPage(attached.page);
   if (tabId === undefined || !ID_PATTERN.test(tabId)) throw new ChatGPTRuntimeFactoryError();
   if (attached.tabId !== undefined && attached.tabId !== tabId) throw new ChatGPTRuntimeFactoryError();
-  if (targetRequest.type === "tab_id" && tabId !== targetRequest.tabId) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
-  if (targetRequest.type === "selected_tab" && (selectedTabId === undefined || tabId !== selectedTabId)) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
-  if (options.recoveryTarget !== undefined) {
-    assertRecoveredBrowserIdentity(options.recoveryTarget, browserId, tabId);
-  }
+  if (targetRequest.type === "tab_id" && tabId !== targetRequest.tabId) throw new ChatGPTRuntimeFactoryError();
+  if (targetRequest.type === "selected_tab" && (selectedTabId === undefined || tabId !== selectedTabId)) throw new ChatGPTRuntimeFactoryError();
+  if (options.recoveryTarget !== undefined) assertRecoveredBrowserIdentity(options.recoveryTarget, browserId, tabId);
 
   await options.coordinator.withBrowserAcquisition(
     browserResource,
@@ -627,9 +578,7 @@ async function captureChatGPTRequest(options: CaptureRequestOptions): Promise<Op
   const resolveTargetEvidence = async (
     request: OperationBrowserTargetProbeRequest
   ): Promise<OperationBrowserTargetProbe> => {
-    if (!sameTargetRequest(request.target, targetRequest)) {
-      throw new ChatGPTRuntimeFactoryError();
-    }
+    if (!sameTargetRequest(request.target, targetRequest)) throw new ChatGPTRuntimeFactoryError();
     return await options.coordinator.withBrowserAcquisition(
       browserResource,
       {
@@ -641,12 +590,7 @@ async function captureChatGPTRequest(options: CaptureRequestOptions): Promise<Op
       },
       async () => {
         await validateExactNavigation(rawPage, request.target);
-        const observationTarget = observationTargetForRequest(
-          request,
-          browserId,
-          tabId,
-          targetRequest
-        );
+        const observationTarget = observationTargetForRequest(request, browserId, tabId, targetRequest);
         const observed = await observePage(rawPage, request.operationId, observationTarget, options.evidenceDigest);
         const anchor = observed.newTargetAnchor;
         return Object.freeze({
@@ -676,20 +620,13 @@ async function captureChatGPTRequest(options: CaptureRequestOptions): Promise<Op
     : createChatGPTAttachmentProvider({
         evidenceDigest: options.evidenceDigest,
         files: options.files,
-        identityDigest: (ordinal, manifest) => options.evidenceDigest(
-          "file-manifest",
-          { ordinal, ...manifest }
-        ),
-        revalidateFile: identity => revalidateOperationFile(identity, {
-          signal: options.captureRequest.signal
-        }),
+        identityDigest: (ordinal, manifest) => options.evidenceDigest("file-manifest", { ordinal, ...manifest }),
+        revalidateFile: identity => revalidateOperationFile(identity, { signal: options.captureRequest.signal }),
         signal: options.captureRequest.signal
       });
   const production = createProductionOperationPrimitives({
     ...productionOptions,
-    ...(attachments === undefined
-      ? {}
-      : { observeAttachments: attachments.observeAttachments })
+    ...(attachments === undefined ? {} : { observeAttachments: attachments.observeAttachments })
   });
   const providerPrimitives = attachments === undefined
     ? production
@@ -707,9 +644,7 @@ async function captureChatGPTRequest(options: CaptureRequestOptions): Promise<Op
         ...(options.transactionTimeoutMs === undefined ? {} : { timeoutMs: options.transactionTimeoutMs })
       })
     : undefined;
-  const artifactPrimitive = artifactSource === undefined
-    ? undefined
-    : productionArtifactPrimitive(artifactSource);
+  const artifactPrimitive = artifactSource === undefined ? undefined : productionArtifactPrimitive(artifactSource);
   let capturedPrimitives = artifactPrimitive === undefined
     ? providerPrimitives
     : mergePrimitivePorts(providerPrimitives, { artifacts: artifactPrimitive });
@@ -791,19 +726,35 @@ function workSteerControlPrimitive(
       "prepare"
     ),
     executeSteerPrepared: async (request, page) => mapWorkSteerResult(
-      await primitive.executePrepared({ page, prepared: productionPreparedFromControl(request.prepared), signal: request.signal, deadlineAt: request.deadlineAt }),
+      await primitive.executePrepared({
+        page,
+        prepared: productionPreparedFromControl(request.prepared),
+        signal: request.signal,
+        deadlineAt: request.deadlineAt
+      }),
       request,
       "execute_prepared",
       request.prepared
     ),
     verifySteer: async (request, page) => mapWorkSteerResult(
-      await primitive.verify({ page, prepared: productionPreparedFromControl(request.prepared), signal: request.signal, deadlineAt: request.deadlineAt }),
+      await primitive.verify({
+        page,
+        prepared: productionPreparedFromControl(request.prepared),
+        signal: request.signal,
+        deadlineAt: request.deadlineAt
+      }),
       request,
       "verify",
       request.prepared
     ),
     recoverSteer: async (request, page) => mapWorkSteerResult(
-      await primitive.recover({ page, prepared: productionPreparedFromControl(request.prepared), baseline: request.baseline, signal: request.signal, deadlineAt: request.deadlineAt }),
+      await primitive.recover({
+        page,
+        prepared: productionPreparedFromControl(request.prepared),
+        baseline: request.baseline,
+        signal: request.signal,
+        deadlineAt: request.deadlineAt
+      }),
       request,
       "recovery",
       request.prepared
@@ -836,19 +787,17 @@ function mapWorkSteerResult(
   phase: "prepare" | "execute_prepared" | "verify" | "recovery",
   prepared?: ControlSteerPrepared
 ): ControlSteerPhaseResult {
-  const identity = "prepared" in request
-    ? request.prepared
-    : request;
+  const identity = "prepared" in request ? request.prepared : request;
   const base = {
     schemaVersion: "chatgpt.browser_control.operation_control_coordinator.v1" as const,
     phase,
-    parentOperationId: "prepared" in request ? identity.parentOperationId : identity.parentOperationId,
-    parentRequestDigest: "prepared" in request ? identity.parentRequestDigest : identity.parentRequestDigest,
-    parentTargetBindingDigest: "prepared" in request ? identity.parentTargetBindingDigest : identity.parentTargetBindingDigest,
-    controlActionId: "prepared" in request ? identity.controlActionId : identity.controlActionId,
+    parentOperationId: identity.parentOperationId,
+    parentRequestDigest: identity.parentRequestDigest,
+    parentTargetBindingDigest: identity.parentTargetBindingDigest,
+    controlActionId: identity.controlActionId,
     action: "steer" as const,
-    requestDigest: "prepared" in request ? identity.requestDigest : identity.requestDigest,
-    expectedAssistantTurnId: "prepared" in request ? identity.expectedAssistantTurnId : identity.expectedAssistantTurnId,
+    requestDigest: identity.requestDigest,
+    expectedAssistantTurnId: identity.expectedAssistantTurnId,
     ...(prepared === undefined ? {} : {
       assistantBranchId: prepared.assistantBranchId,
       assistantParentTurnId: prepared.assistantParentTurnId,
@@ -951,7 +900,9 @@ async function observeWorkSteerPage(
   });
 }
 
-async function resolveWorkComposer(page: Readonly<PageLike>): Promise<Readonly<{ locator: LocatorLike; capabilityKey: string; candidateCount: number }> | undefined> {
+async function resolveWorkComposer(
+  page: Readonly<PageLike>
+): Promise<Readonly<{ locator: LocatorLike; capabilityKey: string; candidateCount: number }> | undefined> {
   try {
     const locator = composerTextbox(page);
     const count = typeof locator.count === "function" ? await locator.count() : 0;
@@ -962,7 +913,9 @@ async function resolveWorkComposer(page: Readonly<PageLike>): Promise<Readonly<{
   }
 }
 
-async function resolveWorkSendControl(page: Readonly<PageLike>): Promise<Readonly<{ locator: LocatorLike; capabilityKey: string; localeKey: string; candidateCount: number }> | undefined> {
+async function resolveWorkSendControl(
+  page: Readonly<PageLike>
+): Promise<Readonly<{ locator: LocatorLike; capabilityKey: string; localeKey: string; candidateCount: number }> | undefined> {
   try {
     const locator = sendButton(page);
     const count = typeof locator.count === "function" ? await locator.count() : 0;
@@ -1010,13 +963,7 @@ function composePrimitives(
     ...(configured === undefined ? {} : { staging: configured })
   });
   const augment = options.primitives?.(context);
-  if (augment !== undefined) {
-    // Provider integrations normally add one narrow method (for example the
-    // chooser handoff) to a production port. Replacing the whole nested port
-    // would silently discard the production Send observers or collector
-    // ownership logic, so merge at the method boundary instead.
-    result = mergePrimitivePorts(result, augment);
-  }
+  if (augment !== undefined) result = mergePrimitivePorts(result, augment);
   return result;
 }
 
@@ -1046,7 +993,7 @@ function mergePrimitivePorts(
 function bootstrapArgsForTarget(target: OperationTargetRequestV1): BootstrapArgs {
   switch (target.type) {
     case "new":
-      return Object.freeze({ url: CHATGPT_HOME, preferExistingTab: false });
+      return Object.freeze({ url: target.url ?? CHATGPT_HOME, preferExistingTab: false });
     case "selected_tab":
       return Object.freeze({
         existingTab: {
@@ -1094,26 +1041,14 @@ function bootstrapEnvironment(
   recoveryTarget: OperationTargetBindingV1 | undefined
 ): RuntimeEnv {
   const copy: RuntimeEnv = { ...env };
-  // A selected-tab request must be proven through browser.tabs.selected. A
-  // cached arbitrary page would make `existingTab: selected` non-exact.
-  if (target.type === "new" || target.type === "selected_tab") {
-    delete copy.page;
-  }
+  if (target.type === "new" || target.type === "selected_tab") delete copy.page;
   if (recoveryTarget !== undefined) {
     copy.expectedTabId = recoveryTarget.tabId;
-    if (copy.page !== undefined && tabIdFromPage(copy.page) !== recoveryTarget.tabId) {
-      delete copy.page;
-    }
+    if (copy.page !== undefined && tabIdFromPage(copy.page) !== recoveryTarget.tabId) delete copy.page;
   }
   return copy;
 }
 
-/**
- * `attachChatGPTBrowser` also supports user-open-tab discovery. That is
- * intentionally broader than an exact selected-tab request, so selected-tab
- * capture is preflighted through the browser's selected-tab primitive and the
- * resulting page is then handed back to attach as its cached exact page.
- */
 async function selectExactSelectedPage(browser: BrowserLike | undefined): Promise<PageLike | undefined> {
   const tabs = browser?.tabs;
   const selected = tabs?.selected;
@@ -1127,16 +1062,12 @@ async function selectExactSelectedPage(browser: BrowserLike | undefined): Promis
       ? descriptor.value
       : undefined;
     bindPageTabId(candidate, candidateTabId);
-    // `candidate` is a coordinated page returned by the coordinated browser.
-    // Validate its URL while retaining that wrapper so the read stays inside
-    // the browser actor; unwrap only after the exact selected-tab proof.
     const url = await Promise.resolve(candidate.url?.()).catch(() => undefined);
     if (!isChatGPTUrl(url)) return undefined;
     page = unwrapCoordinatedPage(candidate);
   } catch {
     return undefined;
   }
-  if (page === undefined) return undefined;
   return page;
 }
 
@@ -1144,16 +1075,17 @@ async function validateExactNavigation(
   page: Readonly<PageLike>,
   target: OperationTargetRequestV1
 ): Promise<void> {
-  if (target.type !== "conversation_id" && target.type !== "url") return;
+  const expectedNewUrl = target.type === "new" ? target.url : undefined;
+  if (target.type !== "conversation_id" && target.type !== "url" && expectedNewUrl === undefined) return;
   const actual = await Promise.resolve(page.url?.()).catch(() => undefined);
   const actualCanonical = canonicalChatGPTUrl(actual);
   if (actualCanonical === undefined) throw new ChatGPTRuntimeFactoryError();
-  if (target.type === "url") {
-    const expected = canonicalChatGPTUrl(target.url);
+  if (target.type === "url" || expectedNewUrl !== undefined) {
+    const expected = canonicalChatGPTUrl(target.type === "url" ? target.url : expectedNewUrl);
     if (expected === undefined || actualCanonical !== expected) throw new ChatGPTRuntimeFactoryError();
     return;
   }
-  if (parseConversationId(actualCanonical) !== target.conversationId) {
+  if (target.type === "conversation_id" && parseConversationId(actualCanonical) !== target.conversationId) {
     throw new ChatGPTRuntimeFactoryError();
   }
 }
@@ -1167,9 +1099,6 @@ async function ensureSurface(
 ): Promise<void> {
   const before = detectExperienceFromSnapshot(await readSurfaceSnapshot(page));
   if (before.experience === surface) return;
-  // A fixed conversation/URL target must never be navigated to a surface home
-  // as a side effect of attachment. The exact target is more important than
-  // a best-effort surface guess; callers can explicitly switch it first.
   if (!allowSwitch || before.experience === "unknown") throw new ChatGPTRuntimeFactoryError();
   const result = await openExperience(
     Object.freeze({ page, expectedTabId: tabId }),
@@ -1260,9 +1189,7 @@ function hasTransferDestination(
   capture: Readonly<{ artifacts: "transfer"; outputDirectory: string }>;
 }> {
   const capture = request?.capture;
-  if (capture === undefined || capture.artifacts !== "transfer" || typeof capture.outputDirectory !== "string") {
-    return false;
-  }
+  if (capture === undefined || capture.artifacts !== "transfer" || typeof capture.outputDirectory !== "string") return false;
   return capture.outputDirectory.length > 0
     && capture.outputDirectory.length <= 4096
     && isAbsolutePath(capture.outputDirectory)
@@ -1280,6 +1207,7 @@ function sameTargetRequest(
   if (left.type !== right.type) return false;
   switch (left.type) {
     case "new":
+      return right.type === "new" && left.url === right.url;
     case "selected_tab":
       return true;
     case "tab_id":
@@ -1326,9 +1254,7 @@ function snapshotCapabilities(
       concurrentTabs: false
     });
   }
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new ChatGPTRuntimeFactoryError();
   const keys = [
     "stableProviderId",
     "stableBrowserId",
@@ -1344,9 +1270,7 @@ function snapshotCapabilities(
     authoritativeTabClaim: readDataProperty<boolean>(value, "authoritativeTabClaim") ?? false,
     concurrentTabs: readDataProperty<boolean>(value, "concurrentTabs") ?? false
   };
-  if (Object.values(result).some(item => typeof item !== "boolean")) {
-    throw new ChatGPTRuntimeFactoryError();
-  }
+  if (Object.values(result).some(item => typeof item !== "boolean")) throw new ChatGPTRuntimeFactoryError();
   return Object.freeze(result);
 }
 
@@ -1377,12 +1301,7 @@ function cloneSafeData(value: unknown, seen = new Set<object>(), depth = 0): unk
   if (depth > 16 || seen.has(value)) throw new ChatGPTRuntimeFactoryError();
   seen.add(value);
   try {
-    // Durable operation snapshots are string-keyed wire data. Silently
-    // dropping a symbol would make the snapshot differ from the caller's
-    // object while still accepting an unreviewed property.
-    if (Reflect.ownKeys(value).some(key => typeof key !== "string")) {
-      throw new ChatGPTRuntimeFactoryError();
-    }
+    if (Reflect.ownKeys(value).some(key => typeof key !== "string")) throw new ChatGPTRuntimeFactoryError();
     if (Array.isArray(value)) {
       const result = value.map(item => cloneSafeData(item, seen, depth + 1));
       seen.delete(value);
