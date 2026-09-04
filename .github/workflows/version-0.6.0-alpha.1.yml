@@ -31,7 +31,6 @@ jobs:
           set -euo pipefail
           node - <<'NODE'
           const fs = require('node:fs');
-
           const rootPath = 'package.json';
           const root = JSON.parse(fs.readFileSync(rootPath, 'utf8'));
           root.version = '0.6.0-alpha.1';
@@ -61,21 +60,19 @@ jobs:
           heading = '# Changelog\n'
           if not text.startswith(heading):
               raise SystemExit('unexpected changelog heading')
-          entry = '''
-
-## 0.6.0-alpha.1
-
-- Adds the visible-browser autonomous development orchestrator with durable
-  Project, planner, worker, and repository workflow state, exact conversation
-  continuity, independent tester evidence, exact-SHA review gates, and
-  fail-closed recovery across uncertain browser operations.
-- Adds first-class GitHub cloud development with Codespaces and an optional
-  Rust build/test gate, while keeping the Node runtime authoritative and Python
-  as the parity protocol client.
-- Adds compiled GitHub npm distribution, an installed `chatgpt-thread` CLI,
-  Project-scoped first-send parity, hardened cross-platform stream cancellation,
-  audited dependency updates, and release metadata for this repository fork.
-'''
+          entry = (
+              '\n## 0.6.0-alpha.1\n\n'
+              '- Adds the visible-browser autonomous development orchestrator with durable\n'
+              '  Project, planner, worker, and repository workflow state, exact conversation\n'
+              '  continuity, independent tester evidence, exact-SHA review gates, and\n'
+              '  fail-closed recovery across uncertain browser operations.\n'
+              '- Adds first-class GitHub cloud development with Codespaces and an optional\n'
+              '  Rust build/test gate, while keeping the Node runtime authoritative and Python\n'
+              '  as the parity protocol client.\n'
+              '- Adds compiled GitHub npm distribution, an installed `chatgpt-thread` CLI,\n'
+              '  Project-scoped first-send parity, hardened cross-platform stream cancellation,\n'
+              '  audited dependency updates, and release metadata for this repository fork.\n'
+          )
           changelog.write_text(heading + entry + text[len(heading):], encoding='utf-8')
           PY
 
