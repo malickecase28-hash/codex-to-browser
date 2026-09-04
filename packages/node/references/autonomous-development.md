@@ -58,7 +58,7 @@ if (result.waiting) {
 
 A worker's first real guidance prompt may establish its conversation directly from the exact ChatGPT Project route. The operation remains a transactional `new` target until ChatGPT exposes the real conversation ID; no synthetic conversation ID or setup message is inserted. Later review must use the same established worker conversation.
 
-The final planner review requires the planner conversation identified by `plannerConversationKey` to exist with exact tab affinity. Applications that own planner provisioning should supply it through the autonomous chat provisioner; the engine does not create a replacement planner at final review time.
+The final planner review requires the planner conversation identified by `plannerConversationKey` to already exist with exact tab affinity. Register that semantic conversation and its affinity in a shared `ConversationManager`, then pass the manager as `dev.autonomous.chat.conversations`. The engine never creates a replacement planner at final review time.
 
 ## GitHub Codespaces
 
