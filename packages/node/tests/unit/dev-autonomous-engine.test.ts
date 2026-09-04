@@ -52,17 +52,17 @@ function ports() {
       return { workerConversationKey: conversationKey, operationId, watcherId };
     }),
     collectGuidance: vi.fn(async dispatch => {
-      if (guidancePending.delete(dispatch.operationId)) return { status: "completed", responseDigest: D1 };
-      return { status: "completed", responseDigest: D1 };
+      guidancePending.delete(dispatch.operationId);
+      return { status: "completed" as const, responseDigest: D1 };
     }),
     readGuidance: vi.fn(async evidence => `guidance:${evidence.responseDigest}`),
     reviewCommit: vi.fn(async input => {
       reviewPending.add(input.operationId);
-      return { status: "completed", verdict: "accepted", reviewDigest: D4 };
+      return { status: "completed" as const, verdict: "accepted" as const, reviewDigest: D4 };
     }),
     reviewIntegration: vi.fn(async input => {
       reviewPending.add(input.operationId);
-      return { status: "completed", verdict: "accepted", reviewDigest: D4 };
+      return { status: "completed" as const, verdict: "accepted" as const, reviewDigest: D4 };
     })
   };
 
@@ -75,7 +75,7 @@ function ports() {
     test: vi.fn(async ({ task, implementation }) => ({
       testerId: `tester-${task.taskId}`,
       candidateDigest: implementation.candidateDigest,
-      status: "passed",
+      status: "passed" as const,
       reportDigest: D4
     })),
     push: vi.fn(async ({ task, implementation }) => ({
@@ -87,7 +87,7 @@ function ports() {
     testIntegration: vi.fn(async ({ implementation }) => ({
       testerId: "integration-tester",
       candidateDigest: implementation.candidateDigest,
-      status: "passed",
+      status: "passed" as const,
       reportDigest: D4
     })),
     pushIntegration: vi.fn(async ({ implementation }) => ({
