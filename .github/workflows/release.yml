@@ -70,8 +70,70 @@ jobs:
       - run: npm run release:check-node-pack
       - run: npm run release:smoke-source
 
+  github-release:
+    name: publish GitHub compiled prerelease
+    needs: [preflight, package-smoke-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/node/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: npm --prefix packages/node ci
+      - run: python -m pip install --upgrade build twine
+      - run: npm run release:check-version
+      - run: npm run node:build
+      - run: npm run node:bundle
+      - run: npm run release:check-node-pack
+      - name: Build npm and Python distributions
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist/github dist/python
+          mkdir -p dist/github dist/python
+          (
+            cd packages/node
+            npm pack --pack-destination "$GITHUB_WORKSPACE/dist/github"
+          )
+          npm run release:build-python
+          npm run release:check-python
+          sha256sum dist/github/*.tgz dist/python/* > dist/github/SHA256SUMS
+      - name: Create or refresh GitHub prerelease with compiled assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              dist/github/*.tgz \
+              dist/github/SHA256SUMS \
+              dist/python/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              dist/github/*.tgz \
+              dist/github/SHA256SUMS \
+              dist/python/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --prerelease \
+              --generate-notes \
+              --title "ChatGPT Surface Control ${GITHUB_REF_NAME#v}"
+          fi
+
   publish-npm:
-    name: publish npm
+    name: publish npmjs (opt-in)
+    if: vars.ENABLE_PUBLIC_REGISTRY_PUBLISH == 'true'
     needs: [preflight, package-smoke-macos]
     runs-on: ubuntu-latest
     environment: release
@@ -94,7 +156,8 @@ jobs:
         run: npm publish --provenance --access public --tag next
 
   publish-pypi:
-    name: publish PyPI
+    name: publish PyPI (opt-in)
+    if: vars.ENABLE_PUBLIC_REGISTRY_PUBLISH == 'true'
     needs: [preflight, package-smoke-macos]
     runs-on: ubuntu-latest
     environment: release
@@ -123,7 +186,8 @@ jobs:
           packages-dir: dist/python
 
   verify-published:
-    name: verify published registry installs
+    name: verify published public registry installs
+    if: vars.ENABLE_PUBLIC_REGISTRY_PUBLISH == 'true'
     needs: [publish-npm, publish-pypi]
     runs-on: ubuntu-latest
     steps:
@@ -135,22 +199,3 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm run release:verify-published
-
-  github-release:
-    name: publish GitHub prerelease
-    needs: verify-published
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - name: Publish release notes for the verified tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${GITHUB_REF_NAME}"
-          --repo "${GITHUB_REPOSITORY}"
-          --verify-tag
-          --prerelease
-          --generate-notes
-          --title "ChatGPT Surface Control ${GITHUB_REF_NAME#v}"
