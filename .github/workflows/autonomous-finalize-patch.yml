@@ -1,0 +1,282 @@
+name: autonomous-finalize-patch
+
+on:
+  push:
+    branches:
+      - chatgpt-dev-orchestrator
+    paths:
+      - ".github/workflows/autonomous-finalize-patch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chatgpt-dev-orchestrator
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/node/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Apply deterministic lifecycle and Python parity patches
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one patch site in {path}, found {count}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          client = "packages/node/src/backend/client.ts"
+          old_setup = '''  let returnRequested = false;
+          let sourceReturned = false;
+          const sourceIterator = events[Symbol.asyncIterator]();
+          const returnSource = (): void => {
+            if (sourceReturned) return;
+            sourceReturned = true;
+            try {
+              const result = sourceIterator.return?.();
+              if (result !== undefined) void Promise.resolve(result).catch(() => {});
+            } catch {
+              // A source iterator's cleanup must not turn caller cancellation into a
+              // second observable stream failure.
+            }
+          };
+          const cancel = (): void => {
+            if (returnRequested) return;
+            returnRequested = true;
+            onReturn?.();
+            returnSource();
+          };
+          const queue = new AsyncQueue<ChatGPTRunStreamEvent>(
+            DEFAULT_BACKEND_STREAM_QUEUE_LIMIT,
+            cancel,
+            DEFAULT_BACKEND_STREAM_QUEUE_BYTES_LIMIT
+          );
+          let resolveCompleted!: (result: ChatGPTRunResult<TOutput>) => void;
+          let rejectCompleted!: (error: unknown) => void;
+          const completed = new Promise<ChatGPTRunResult<TOutput>>((resolve, reject) => {
+            resolveCompleted = resolve;
+            rejectCompleted = reject;
+          });
+          '''
+          new_setup = '''  let returnRequested = false;
+          let sourceReturned = false;
+          const sourceIterator = events[Symbol.asyncIterator]();
+          let resolveCompleted!: (result: ChatGPTRunResult<TOutput>) => void;
+          let rejectCompleted!: (error: unknown) => void;
+          const completed = new Promise<ChatGPTRunResult<TOutput>>((resolve, reject) => {
+            resolveCompleted = resolve;
+            rejectCompleted = reject;
+          });
+          const cancellationError = new BackendClientError(
+            "backend_request_cancelled",
+            "Backend stream iteration was cancelled locally.",
+            true
+          );
+          const returnSource = (): void => {
+            if (sourceReturned) return;
+            sourceReturned = true;
+            try {
+              const result = sourceIterator.return?.();
+              if (result !== undefined) void Promise.resolve(result).catch(() => {});
+            } catch {
+              // A source iterator's cleanup must not turn caller cancellation into a
+              // second observable stream failure.
+            }
+          };
+          const cancelTransport = (): void => {
+            if (returnRequested) return;
+            returnRequested = true;
+            try {
+              onReturn?.();
+            } finally {
+              returnSource();
+            }
+          };
+          const cancelByConsumer = (): void => {
+            if (returnRequested) return;
+            returnRequested = true;
+            // Consumer cancellation owns the public completion outcome before
+            // transport cleanup can race a terminal event into the adapter.
+            rejectCompleted(cancellationError);
+            try {
+              onReturn?.();
+            } finally {
+              returnSource();
+            }
+          };
+          const queue = new AsyncQueue<ChatGPTRunStreamEvent>(
+            DEFAULT_BACKEND_STREAM_QUEUE_LIMIT,
+            cancelByConsumer,
+            DEFAULT_BACKEND_STREAM_QUEUE_BYTES_LIMIT
+          );
+          '''
+          replace_once(client, old_setup, new_setup)
+
+          old_push = '''          if (!queue.push({
+                    type: "run_item_stream_event",
+                    name: event.name as ChatGPTRunStreamEvent["name"],
+                    item: event.item as ChatGPTRunStreamEvent["item"]
+                  })) {
+                    cancel();
+                    throw new BackendClientError(
+                      "backend_stream_overflow",
+                      "High-level backend stream buffering exceeded its bounded event queue.",
+                      true
+                    );
+                  }
+                  continue;
+                }
+                if (event.type === "completed") {
+                  resolveCompleted(event.result as ChatGPTRunResult<TOutput>);
+          '''
+          new_push = '''          if (!queue.push({
+                    type: "run_item_stream_event",
+                    name: event.name as ChatGPTRunStreamEvent["name"],
+                    item: event.item as ChatGPTRunStreamEvent["item"]
+                  })) {
+                    cancelTransport();
+                    throw new BackendClientError(
+                      "backend_stream_overflow",
+                      "High-level backend stream buffering exceeded its bounded event queue.",
+                      true
+                    );
+                  }
+                  // Give a consumer that just received this milestone one event-loop
+                  // turn to return() the iterator before accepting a queued terminal
+                  // backend event. This makes cancellation deterministic even when
+                  // two child-process frames arrive in one Windows scheduler slice.
+                  await new Promise<void>(resolve => setImmediate(resolve));
+                  if (returnRequested) throw cancellationError;
+                  continue;
+                }
+                if (event.type === "completed") {
+                  if (returnRequested) throw cancellationError;
+                  resolveCompleted(event.result as ChatGPTRunResult<TOutput>);
+          '''
+          replace_once(client, old_push, new_push)
+
+          models = "packages/python/src/codex_chatgpt_control/operation_models.py"
+          old_new_target = '''class NewTarget(StrictWireModel):
+              type: Literal["new"]
+          '''
+          new_new_target = '''class NewTarget(StrictWireModel):
+              type: Literal["new"]
+              url: BoundedText4096 | None = None
+
+              @field_validator("url")
+              @classmethod
+              def validate_url(cls, value: str | None) -> str | None:
+                  if value is None:
+                      return None
+                  _bounded_utf8(value, max_bytes=4096, field_name="target URL")
+                  try:
+                      parsed = urlsplit(value)
+                  except ValueError as exc:
+                      raise ValueError("target URL must be a bounded HTTP(S) URL") from exc
+                  if (
+                      parsed.scheme not in {"http", "https"}
+                      or not parsed.hostname
+                      or parsed.username is not None
+                      or parsed.password is not None
+                      or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+                  ):
+                      raise ValueError("target URL must be an HTTP(S) URL without control characters")
+                  return value
+          '''
+          replace_once(models, old_new_target, new_new_target)
+
+          runner = "packages/python/src/codex_chatgpt_control/runner.py"
+          old_direct = '''    if _is_one_of(target_type, "new"):
+                  allowed = {"type"}
+                  if _first_unknown_key(target, allowed) is not None:
+                      raise TransactionalInputError("target", "new targets cannot contain additional fields.")
+                  return {"type": "new"}
+          '''
+          new_direct = '''    if _is_one_of(target_type, "new"):
+                  allowed = {"type", "url"}
+                  if _first_unknown_key(target, allowed) is not None:
+                      raise TransactionalInputError("target", "new targets contain an unsupported field.")
+                  url = _wire_key(target, "url")
+                  if url is None:
+                      return {"type": "new"}
+                  if not isinstance(url, str) or not url:
+                      raise TransactionalInputError("target.url", "url must be non-empty when supplied for a new target.")
+                  return {"type": "new", "url": url}
+          '''
+          replace_once(runner, old_direct, new_direct)
+
+          test_path = Path("packages/python/tests/test_project_new_target.py")
+          test_path.write_text('''from __future__ import annotations
+
+import unittest
+
+from codex_chatgpt_control.operation_models import NewTarget
+from codex_chatgpt_control.runner import TransactionalInputError, _direct_target
+
+
+class ProjectScopedNewTargetTests(unittest.TestCase):
+    def test_typed_new_target_preserves_project_start_url(self) -> None:
+        url = "https://chatgpt.com/g/g-p-project-123/project"
+        target = NewTarget(type="new", url=url)
+        self.assertEqual(target.to_wire(), {"type": "new", "url": url})
+
+    def test_typed_new_target_rejects_non_http_url(self) -> None:
+        with self.assertRaises(ValueError):
+            NewTarget(type="new", url="file:///tmp/not-a-project")
+
+    def test_direct_target_preserves_optional_start_url(self) -> None:
+        url = "https://chatgpt.com/g/g-p-project-123/project"
+        self.assertEqual(_direct_target({"type": "new", "url": url}), {"type": "new", "url": url})
+        self.assertEqual(_direct_target({"type": "new"}), {"type": "new"})
+
+    def test_direct_target_still_rejects_unknown_fields(self) -> None:
+        with self.assertRaises(TransactionalInputError):
+            _direct_target({"type": "new", "url": "https://chatgpt.com/", "title": "unsafe"})
+
+
+if __name__ == "__main__":
+    unittest.main()
+''', encoding="utf-8")
+          PY
+
+      - name: Verify Node stream cancellation and build
+        working-directory: packages/node
+        run: |
+          npm ci
+          npx vitest run tests/unit/backend-client.test.ts
+          npm run build
+
+      - name: Verify Python parity
+        working-directory: packages/python
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m unittest discover -s tests
+          python -m pyright src tests
+
+      - name: Commit verified patches
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/node/src/backend/client.ts packages/python/src/codex_chatgpt_control/operation_models.py packages/python/src/codex_chatgpt_control/runner.py packages/python/tests/test_project_new_target.py
+          git diff --cached --check
+          git commit -m "fix: harden stream cancellation and Python project targets"
+          git push origin HEAD:chatgpt-dev-orchestrator
