@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { nodeErrorCode } from "../errors.js";
 import type {
   DevPlannerTaskRecord,
   DevProjectRecord,
@@ -42,6 +43,7 @@ export function devDigest(value: unknown): string {
 }
 
 function clone<T>(value: T): T {
+  if (value === undefined || value === null || typeof value !== "object") return value;
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
@@ -67,7 +69,7 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
     const raw = await readFile(path, "utf8");
     return JSON.parse(raw) as T;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return clone(fallback);
+    if (nodeErrorCode(error) === "ENOENT") return clone(fallback);
     throw new DevOrchestratorError("state_error", "Development orchestrator state could not be read safely.", false);
   }
 }
