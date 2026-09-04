@@ -6,8 +6,8 @@
     "name": "Adam Allcock",
     "url": "https://github.com/adamallcock"
   },
-  "homepage": "https://github.com/adamallcock/codex-chatgpt-control",
-  "repository": "https://github.com/adamallcock/codex-chatgpt-control",
+  "homepage": "https://github.com/malickecase28-hash/codex-to-browser",
+  "repository": "https://github.com/malickecase28-hash/codex-to-browser",
   "license": "MIT",
   "keywords": [
     "codex",
@@ -30,9 +30,9 @@
       "Read",
       "Write"
     ],
-    "websiteURL": "https://github.com/adamallcock/codex-chatgpt-control",
-    "privacyPolicyURL": "https://github.com/adamallcock/codex-chatgpt-control/blob/main/docs/plugin-privacy.md",
-    "termsOfServiceURL": "https://github.com/adamallcock/codex-chatgpt-control/blob/main/docs/plugin-terms.md",
+    "websiteURL": "https://github.com/malickecase28-hash/codex-to-browser",
+    "privacyPolicyURL": "https://github.com/malickecase28-hash/codex-to-browser/blob/main/docs/plugin-privacy.md",
+    "termsOfServiceURL": "https://github.com/malickecase28-hash/codex-to-browser/blob/main/docs/plugin-terms.md",
     "defaultPrompt": [
       "Delegate this review to the most appropriate visible ChatGPT surface.",
       "Start a visible Work task and report progress without duplicate submission.",
