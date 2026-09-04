@@ -34,6 +34,7 @@ jobs:
           npm ci
           npx vitest run tests/unit/backend-client.test.ts
           npm run build
+          npm run bundle:backend
 
       - name: Verify Python target parity
         working-directory: packages/python
