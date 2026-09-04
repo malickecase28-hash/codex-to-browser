@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import {
   createChatGPT as createBaseChatGPT,
   type ChatGPTClient,
@@ -13,15 +14,38 @@ import {
   type DevOrchestratorOptions,
   type DevSdk
 } from "./types.js";
+import {
+  createDevAutonomousApi,
+  type DevAutonomousApi
+} from "./autonomous-api.js";
+import type { DevAutonomousLocalPort } from "./autonomous-engine.js";
+import {
+  ChatGPTAutonomousPort,
+  type ChatGPTAutonomousPortOptions
+} from "./autonomous-chatgpt-port.js";
+import { FileDevAutonomousWorkflowStore } from "./autonomous-store.js";
 
 export * from "../client.js";
 
+export type DevAutonomousClientOptions = Readonly<{
+  stateRoot?: string;
+  maxParallelTasks?: number;
+  local?: DevAutonomousLocalPort;
+  chat?: Omit<ChatGPTAutonomousPortOptions, "stateRoot">;
+}>;
+
 export type DevChatGPTClientOptions = ChatGPTClientOptions & Readonly<{
-  dev?: DevOrchestratorOptions;
+  dev?: DevOrchestratorOptions & Readonly<{
+    autonomous?: DevAutonomousClientOptions;
+  }>;
+}>;
+
+export type DevChatGPTSdk = DevSdk & Readonly<{
+  autonomous: DevAutonomousApi;
 }>;
 
 export type DevChatGPTClient = ChatGPTClient & Readonly<{
-  dev: DevSdk;
+  dev: DevChatGPTSdk;
 }>;
 
 function devRuntimeEnv(options: DevChatGPTClientOptions): RuntimeEnv {
@@ -74,7 +98,7 @@ async function requireOwnedDevRuntime(env: RuntimeEnv): Promise<RuntimeEnv> {
 export function createChatGPT(options: DevChatGPTClientOptions = {}): DevChatGPTClient {
   const base = createBaseChatGPT(options);
   const session = createRuntimeEnvSession(devRuntimeEnv(options));
-  const dev = createDevOrchestrator(
+  const ui = createDevOrchestrator(
     Object.freeze({
       run: <T>(callback: (env: RuntimeEnv) => Promise<T>): Promise<T> => session.run(async env => {
         return callback(await requireOwnedDevRuntime(env));
@@ -82,6 +106,29 @@ export function createChatGPT(options: DevChatGPTClientOptions = {}): DevChatGPT
     }),
     options.dev
   );
+  const autonomousOptions = options.dev?.autonomous;
+  const autonomousRoot = resolve(
+    autonomousOptions?.stateRoot
+      ?? (options.dev?.stateRoot === undefined
+        ? join(process.cwd(), ".chatgpt-dev", "state", "autonomous")
+        : join(options.dev.stateRoot, "autonomous"))
+  );
+  const chat = new ChatGPTAutonomousPort(base, {
+    ...(autonomousOptions?.chat ?? {}),
+    stateRoot: join(autonomousRoot, "chat")
+  });
+  const store = new FileDevAutonomousWorkflowStore({
+    stateRoot: join(autonomousRoot, "workflows")
+  });
+  const autonomous = createDevAutonomousApi({
+    store,
+    chat,
+    ...(autonomousOptions?.local === undefined ? {} : { local: autonomousOptions.local }),
+    ...(autonomousOptions?.maxParallelTasks === undefined
+      ? {}
+      : { maxParallelTasks: autonomousOptions.maxParallelTasks })
+  });
+  const dev: DevChatGPTSdk = Object.freeze({ ...ui, autonomous });
   return Object.assign(base, { dev });
 }
 
