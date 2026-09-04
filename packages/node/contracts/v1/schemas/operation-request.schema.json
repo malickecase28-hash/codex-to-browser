@@ -32,7 +32,15 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["type"],
-          "properties": { "type": { "const": "new" } }
+          "properties": {
+            "type": { "const": "new" },
+            "url": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^https?://[^\\u0000-\\u001f\\u007f]+$"
+            }
+          }
         },
         {
           "type": "object",
