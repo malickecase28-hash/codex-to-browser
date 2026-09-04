@@ -1,4 +1,5 @@
 import type { LocatorLike, PageLike, RuntimeEnv } from "../types.js";
+import { tabIdFromPage } from "../browser/attach.js";
 import { listProjectSources } from "../commands/project-sources.js";
 import type {
   DevPlannerRunRecord,
@@ -115,7 +116,12 @@ async function clickExact(page: PageLike, names: readonly (string | RegExp)[]): 
   throw new DevOrchestratorError("ui_unsupported", "The requested visible control is not available on this ChatGPT surface.");
 }
 
-async function fillRequired(locator: LocatorLike | undefined, value: string, label: string): Promise<void> {
+async function fillRequired(
+  locatorPromise: LocatorLike | undefined | Promise<LocatorLike | undefined>,
+  value: string,
+  label: string
+): Promise<void> {
+  const locator = await locatorPromise;
   if (!(await isVisible(locator)) || typeof locator?.fill !== "function") {
     throw new DevOrchestratorError("ui_unsupported", `${label} is not exposed by the visible ChatGPT surface.`);
   }
@@ -123,31 +129,19 @@ async function fillRequired(locator: LocatorLike | undefined, value: string, lab
 }
 
 async function ownedPage(env: RuntimeEnv, purpose: string): Promise<PageLike> {
-  if (env.page === undefined) {
-    const create = env.browser?.tabs?.create;
-    const createFallback = env.browser?.tabs?.new;
-    if (typeof create !== "function" && typeof createFallback !== "function") {
-      throw new DevOrchestratorError(
-        "tab_ownership_unavailable",
-        `A dedicated auxiliary ChatGPT tab is required for ${purpose}; the operator-selected tab is never claimed implicitly.`
-      );
-    }
-    const page = typeof create === "function"
-      ? await create(CHATGPT_ORIGIN)
-      : await createFallback!(CHATGPT_ORIGIN);
-    const id = page.tabId ?? page.id;
-    if (id === undefined) {
-      await page.close?.().catch(() => undefined);
-      throw new DevOrchestratorError("tab_ownership_unavailable", "The auxiliary ChatGPT tab has no stable provider tab identity.");
-    }
-    env.page = page;
-    env.expectedTabId = id;
-  }
-
   const page = env.page;
-  const id = page.tabId ?? page.id;
+  if (page === undefined) {
+    throw new DevOrchestratorError(
+      "tab_ownership_unavailable",
+      `An authoritative auxiliary ChatGPT tab is required for ${purpose}; the visible adapter never claims or creates an unbound page itself.`
+    );
+  }
+  const id = tabIdFromPage(page);
   if (id === undefined) {
-    throw new DevOrchestratorError("tab_ownership_unavailable", "A stable provider tab identity is required for development orchestration.");
+    throw new DevOrchestratorError(
+      "tab_ownership_unavailable",
+      "Development orchestration requires browser-bound physical tab identity; PageLike.id and PageLike.tabId are not ownership evidence."
+    );
   }
   if (env.expectedTabId !== undefined && env.expectedTabId !== id) {
     throw new DevOrchestratorError("route_drift", "The owned visible ChatGPT tab changed during a development operation.");
