@@ -142,10 +142,13 @@ describe("autonomous orchestration engine", () => {
     const stateRoot = await root();
     const store = new FileDevAutonomousWorkflowStore({ stateRoot });
     const { chat, local } = ports();
-    chat.ensureWorkerConversation = vi.fn(async () => {
-      throw new DevAutonomousPortError("login_required", true);
-    });
-    const engine = new DevAutonomousEngine(store, chat, local);
+    const blockedChat: DevAutonomousChatPort = {
+      ...chat,
+      ensureWorkerConversation: vi.fn(async () => {
+        throw new DevAutonomousPortError("login_required", true);
+      })
+    };
+    const engine = new DevAutonomousEngine(store, blockedChat, local);
     await engine.create(plan());
 
     const result = await engine.advance("workflow-engine");
