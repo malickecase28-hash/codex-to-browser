@@ -1,0 +1,67 @@
+name: normalize-security-lock
+
+on:
+  push:
+    branches:
+      - chatgpt-dev-orchestrator
+    paths:
+      - ".github/workflows/normalize-security-lock.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chatgpt-dev-orchestrator
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/node/package-lock.json
+
+      - name: Restore main formatting and apply only patched fast-uri
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show origin/main:packages/node/package-lock.json > packages/node/package-lock.json
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("packages/node/package-lock.json")
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              '"version": "3.1.5"': '"version": "3.1.6"',
+              'https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.5.tgz': 'https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.6.tgz',
+              'sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==': 'sha512-9GFPXKTI2EfL4d8E1fC9Sg0SNp8F9s4GJiTo8KSYVcUTQQj9wzvkjWPC7qUIlRo113zYvp5QFAi047d+a0xJQ=='
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one lockfile replacement for {old}, found {count}")
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Verify install and audit
+        working-directory: packages/node
+        run: |
+          npm ci
+          npm audit
+
+      - name: Commit minimal lockfile delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check -- packages/node/package-lock.json
+          git diff --stat origin/main -- packages/node/package-lock.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/node/package-lock.json
+          git commit -m "chore: minimize fast-uri security lock update"
+          git push origin HEAD:chatgpt-dev-orchestrator
