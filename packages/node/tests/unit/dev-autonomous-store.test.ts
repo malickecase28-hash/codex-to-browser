@@ -90,8 +90,8 @@ describe("autonomous workflow store", () => {
     const store = new FileDevAutonomousWorkflowStore({ stateRoot: root });
     await store.create(plan());
 
-    await expect(store.create(plan())).rejects.toMatchObject<Partial<DevAutonomousStoreError>>({
+    await expect(store.create(plan())).rejects.toMatchObject({
       code: "workflow_exists"
-    });
+    } satisfies Partial<DevAutonomousStoreError>);
   });
 });
