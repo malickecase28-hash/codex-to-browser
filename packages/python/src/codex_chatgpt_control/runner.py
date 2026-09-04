@@ -391,10 +391,15 @@ def _direct_target(target: Any) -> dict[str, Any]:
     )
     target_type = _wire_key(target, "type")
     if _is_one_of(target_type, "new"):
-        allowed = {"type"}
+        allowed = {"type", "url"}
         if _first_unknown_key(target, allowed) is not None:
-            raise TransactionalInputError("target", "new targets cannot contain additional fields.")
-        return {"type": "new"}
+            raise TransactionalInputError("target", "new targets contain an unsupported field.")
+        url = _wire_key(target, "url")
+        if url is None:
+            return {"type": "new"}
+        if not isinstance(url, str) or not url:
+            raise TransactionalInputError("target.url", "url must be non-empty when supplied for a new target.")
+        return {"type": "new", "url": url}
     if _is_one_of(target_type, "selected", "selected_tab"):
         allowed = {"type"}
         if _first_unknown_key(target, allowed) is not None:
