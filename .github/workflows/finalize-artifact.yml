@@ -1,0 +1,59 @@
+name: finalize-artifact
+
+on:
+  push:
+    branches:
+      - chatgpt-dev-orchestrator
+    paths:
+      - ".github/workflows/finalize-artifact.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chatgpt-dev-orchestrator
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/node/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Apply isolated patch
+        run: python .github/scripts/finalize_cross_platform_patch.py
+
+      - name: Verify Node cancellation and build
+        working-directory: packages/node
+        run: |
+          npm ci
+          npx vitest run tests/unit/backend-client.test.ts
+          npm run build
+
+      - name: Verify Python target parity
+        working-directory: packages/python
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m unittest discover -s tests
+          python -m pyright src tests
+
+      - name: Validate patch cleanliness
+        run: |
+          git diff --check
+          git status --short
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-final-hardening
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            packages/node/src/backend/client.ts
+            packages/python/src/codex_chatgpt_control/operation_models.py
+            packages/python/src/codex_chatgpt_control/runner.py
+            packages/python/tests/test_project_new_target.py
