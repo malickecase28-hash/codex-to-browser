@@ -1,0 +1,111 @@
+name: patch-github-install-docs
+
+on:
+  push:
+    branches:
+      - chatgpt-dev-orchestrator
+    paths:
+      - ".github/workflows/patch-github-install-docs.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chatgpt-dev-orchestrator
+          fetch-depth: 0
+
+      - name: Make compiled GitHub install the primary fork path
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          readme = Path("packages/node/README.md")
+          text = readme.read_text(encoding="utf-8")
+          old = '''## Install
+
+```bash
+npm install codex-chatgpt-control@next
+```
+'''
+          new = '''## Install the compiled fork from GitHub
+
+This repository publishes an already-compiled Node package to the `npm-dist`
+branch only after the full `main` parity gate succeeds. You do not need a local
+TypeScript, Python, or Rust compiler to install that distribution.
+
+For a private repository, authenticate Git first:
+
+```bash
+gh auth login
+gh auth setup-git
+```
+
+Install into a project:
+
+```bash
+npm install "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
+```
+
+Or install the command-line tools globally:
+
+```bash
+npm install -g "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
+chatgpt-thread --help
+```
+
+The package also installs `codex-chatgpt-control-backend`. Browser-required
+operations still need a visible signed-in ChatGPT session and a compatible
+browser bridge; installation does not bypass login, captcha, rate limits,
+permissions, confirmations, or visible-UI safety checks.
+
+Tagged GitHub releases also attach the verified npm tarball and Python
+wheel/source distribution. Publishing the fork to npmjs or PyPI is optional.
+See the repository `docs/github-install.md` guide for the complete distribution
+and Codespaces workflow.
+'''
+          if text.count(old) != 1:
+              raise SystemExit("unexpected packages/node README install section")
+          readme.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          root = Path("README.md")
+          root_text = root.read_text(encoding="utf-8")
+          marker = "## Quick Start\n"
+          if marker not in root_text:
+              raise SystemExit("root README Quick Start heading not found")
+          if "#npm-dist" not in root_text:
+              insert = '''## Install the compiled fork from GitHub
+
+After the full parity workflow succeeds on `main`, install the already-compiled
+Node SDK directly from this repository:
+
+```bash
+gh auth login
+gh auth setup-git
+npm install "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
+```
+
+For a global CLI install, use `npm install -g` with the same Git URL, then run
+`chatgpt-thread --help`. See [`docs/github-install.md`](docs/github-install.md)
+for package provenance, tarball installation, backend execution, and Codespaces.
+
+'''
+              root_text = root_text.replace(marker, insert + marker, 1)
+              root.write_text(root_text, encoding="utf-8")
+          PY
+
+      - name: Commit documentation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md packages/node/README.md
+          git commit -m "docs: make compiled GitHub install the primary fork path"
+          git push origin HEAD:chatgpt-dev-orchestrator
