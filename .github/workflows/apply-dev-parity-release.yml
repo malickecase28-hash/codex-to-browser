@@ -35,14 +35,8 @@ jobs:
           npm --prefix packages/node ci
           python -m pip install -e "packages/python[dev]"
 
-      - name: Apply verified autonomous source migrations
-        run: |
-          python .github/scripts/apply_dev_parity_release.py
-          python .github/scripts/apply_codex_local_port_wiring.py
-          python .github/scripts/fix_local_port_types.py
-          python .github/scripts/apply_planner_bootstrap.py
-          python .github/scripts/fix_planner_async_dev.py
-          python .github/scripts/fix_dev_surface_matrix.py
+      - name: Apply immutable planning identity wiring
+        run: python .github/scripts/apply_planning_identity_store.py
 
       - name: Build once and regenerate checked-in contract fixtures
         working-directory: packages/node
@@ -50,22 +44,17 @@ jobs:
           npm run build
           npm run contract:generate
 
-      - name: Run focused autonomous safety and planner tests
+      - name: Run focused autonomous durability and planner tests
         working-directory: packages/node
         run: |
           npx vitest run \
-            tests/unit/dev-backend-dispatch.test.ts \
-            tests/unit/dev-orchestrator.test.ts \
-            tests/unit/dev-codex-cli-local-port.test.ts \
+            tests/unit/dev-autonomous-planning-store.test.ts \
             tests/unit/dev-autonomous-planner.test.ts \
             tests/unit/dev-autonomous-api.test.ts \
             tests/unit/dev-autonomous-chatgpt-port.test.ts \
+            tests/unit/dev-autonomous-store.test.ts \
             tests/unit/surface-drift.test.ts \
             tests/unit/parity-suite.test.ts
-
-      - name: Run focused Python dev parity tests
-        working-directory: packages/python
-        run: python -m unittest tests.test_dev_client
 
       - name: Run complete Node suite and bundles
         working-directory: packages/node
@@ -101,7 +90,7 @@ jobs:
           npm run plugin:check
           git diff --check
 
-      - name: Commit verified permanent source, contracts, docs, and bundles
+      - name: Commit verified immutable planning identity source and generated artifacts
         shell: bash
         run: |
           set -euo pipefail
@@ -112,5 +101,5 @@ jobs:
             echo "No generated/source changes to commit"
             exit 0
           fi
-          git commit -m "feat: complete autonomous planner and local execution parity"
+          git commit -m "feat: bind workflow ids to immutable planning specs"
           git push origin HEAD:chatgpt-dev-orchestrator
