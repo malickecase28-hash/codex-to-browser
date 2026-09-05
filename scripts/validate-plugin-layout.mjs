@@ -143,6 +143,7 @@ async function main() {
   assert(!manifest.mcpServers, "V1 plugin must not declare MCP servers");
   assert(!manifest.apps, "V1 plugin must not declare apps");
   assert(manifest.interface?.defaultPrompt?.length <= 3, "Plugin defaultPrompt must contain at most 3 entries");
+  assert(manifest.interface?.defaultPrompt?.some(prompt => typeof prompt === "string" && prompt.includes("autonomous")), "Plugin defaultPrompt must advertise autonomous repository development");
   await assertReferencedAsset(pluginRoot, manifest.interface?.logo, "Plugin logo", 256);
   await assertReferencedAsset(pluginRoot, manifest.interface?.composerIcon, "Plugin composerIcon", 64);
 
@@ -168,6 +169,7 @@ async function main() {
   assert(delegateSkill.includes("name: chatgpt-delegate"), "Delegate skill frontmatter missing name");
   assert(proSkill.includes("name: chatgpt-pro-consult"), "Pro skill frontmatter missing name");
   assert(autonomousSkill.includes("../../runtime/import-chatgpt-control.mjs"), "Autonomous skill must use plugin runtime loader");
+  assert(autonomousSkill.includes("createChatGPTFromEnvironment(undefined, {"), "Autonomous skill must pass enhanced client options through the environment facade");
   assert(autonomousSkill.includes("dev.autonomous.bootstrap"), "Autonomous skill must document planner bootstrap");
   assert(autonomousSkill.includes("resumeIntegration"), "Autonomous skill must document integration recovery");
   assert(autonomousSkill.includes("localCodex"), "Autonomous skill must document the packaged Codex local executor");
@@ -181,6 +183,7 @@ async function main() {
 
   const agentMetadata = await readFile(path.join(pluginRoot, "agents/openai.yaml"), "utf8");
   assert(agentMetadata.includes('$codex-chatgpt-control'), "agents/openai.yaml default_prompt must explicitly invoke $codex-chatgpt-control");
+  assert(agentMetadata.includes('$autonomous-development'), "agents/openai.yaml default_prompt must explicitly route repository work to $autonomous-development");
 
   const pluginFiles = await listTextFiles(pluginRoot);
   for (const file of pluginFiles) {
