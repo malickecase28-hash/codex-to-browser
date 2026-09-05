@@ -9,6 +9,7 @@ import {
   type DevAutonomousWorkflow,
   type DevTaskRecord
 } from "../../src/dev/autonomous-workflow.js";
+import { OPERATION_HANDLE_SCHEMA_VERSION } from "../../src/operations/types.js";
 
 const roots: string[] = [];
 
@@ -97,5 +98,55 @@ describe("ChatGPT worker revision evidence guard", () => {
     });
 
     expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid cached review when its logical conversation or review kind does not match", async () => {
+    const client = { operations: {} } as unknown as ChatGPTClient;
+    const port = new ChatGPTAutonomousPort(client, { stateRoot: await stateRoot() });
+    const watcherId = "dev-watcher-worker-a-review";
+    const digest = `sha256:${"2".repeat(64)}`;
+    await port.turns.remember({
+      watcherId,
+      kind: "worker_review",
+      logicalConversationKey: "worker-task-a",
+      handle: {
+        schemaVersion: OPERATION_HANDLE_SCHEMA_VERSION,
+        operationId: "worker-a-review-operation",
+        requestDigest: `sha256:${"3".repeat(64)}`,
+        surface: "chat",
+        revision: 1,
+        phase: "completed",
+        mutationBoundary: "none"
+      }
+    });
+    await port.turns.storeResponse({
+      watcherId,
+      digest,
+      assistantTurnId: "assistant-review-a",
+      text: JSON.stringify({
+        verdict: "revision_required",
+        guidance: "Fix the exact worker A regression."
+      })
+    });
+
+    await expect(port.readReviewGuidance({
+      watcherId,
+      reviewDigest: digest,
+      conversationKey: "worker-task-b",
+      kind: "worker_review"
+    })).rejects.toMatchObject({
+      blockerCode: "review_guidance_identity_mismatch",
+      recoverable: false
+    });
+
+    await expect(port.readReviewGuidance({
+      watcherId,
+      reviewDigest: digest,
+      conversationKey: "worker-task-a",
+      kind: "planner_review"
+    })).rejects.toMatchObject({
+      blockerCode: "review_guidance_identity_mismatch",
+      recoverable: false
+    });
   });
 });
