@@ -77,7 +77,7 @@ function workflow(task: DevTaskRecord, revision = 0): DevAutonomousWorkflow {
 }
 
 describe("Codex CLI autonomous local port", () => {
-  it("keeps implementation/testing separate, commits only the tested candidate, and never force-pushes", async () => {
+  it("keeps implementation/testing separate, preserves task branch identity across revisions, and pushes only tested candidates", async () => {
     const root = await tempRoot();
     const repository = join(root, "repo");
     const remote = join(root, "remote.git");
@@ -142,6 +142,21 @@ describe("Codex CLI autonomous local port", () => {
     expect(pushed.commitSha).toMatch(/^[0-9a-f]{40}$/);
     expect(await git(remote, "rev-parse", `refs/heads/${implementation.branch}`)).toBe(pushed.commitSha);
 
+    const revisionTask: DevTaskRecord = {
+      ...task,
+      phase: "implementation_pending",
+      attempt: 2,
+      implementation: undefined,
+      tester: undefined,
+      push: undefined
+    };
+    const revisionImplementation = await port.implement({
+      workflow: workflow(revisionTask, 4),
+      task: revisionTask,
+      guidance: "Re-check the same task branch without creating a replacement branch."
+    });
+    expect(revisionImplementation.branch).toBe(implementation.branch);
+
     const acceptedTask: DevTaskRecord = {
       ...task,
       phase: "accepted",
@@ -151,21 +166,26 @@ describe("Codex CLI autonomous local port", () => {
     };
     const integrationWorkflow = workflow(acceptedTask, 7);
     const integration = await port.integrate({ workflow: integrationWorkflow, acceptedTasks: [acceptedTask] });
-    const integrationTester = await port.testIntegration({ workflow: integrationWorkflow, implementation: integration });
+    const advancedIntegrationWorkflow = workflow(acceptedTask, 8);
+    const integrationTester = await port.testIntegration({
+      workflow: advancedIntegrationWorkflow,
+      implementation: integration
+    });
     const integrationPush = await port.pushIntegration({
-      workflow: integrationWorkflow,
+      workflow: workflow(acceptedTask, 9),
       implementation: integration,
       tester: integrationTester
     });
     expect(integrationTester.testerId).not.toBe(integration.implementerId);
     expect(await git(remote, "rev-parse", `refs/heads/${integration.branch}`)).toBe(integrationPush.commitSha);
 
-    expect(codexCalls.length).toBe(4);
+    expect(codexCalls.length).toBe(5);
     for (const args of codexCalls) {
       expect(args).toContain("--sandbox");
       expect(args).toContain("workspace-write");
       expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
       expect(args).not.toContain("--dangerously-bypass-hook-trust");
+      expect(args).not.toContain("--force");
     }
     expect(await readFile(join(repository, "README.md"), "utf8")).toBe("base\n");
   });
