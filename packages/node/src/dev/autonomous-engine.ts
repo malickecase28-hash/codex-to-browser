@@ -24,6 +24,12 @@ export type DevAutonomousReviewObservation =
       reviewDigest: string;
     }>;
 
+export type DevLocalTestFailureContext = Readonly<{
+  candidateDigest: string;
+  reportDigest: string;
+  summary: string;
+}>;
+
 export type DevAutonomousChatPort = Readonly<{
   ensureWorkerConversation(input: Readonly<{
     workflow: DevAutonomousWorkflow;
@@ -35,6 +41,7 @@ export type DevAutonomousChatPort = Readonly<{
     conversationKey: string;
     operationId: string;
     watcherId: string;
+    localTestFailure?: DevLocalTestFailureContext;
   }>): Promise<DevGuidanceDispatch>;
   collectGuidance(
     dispatch: DevGuidanceDispatch,
@@ -73,6 +80,10 @@ export type DevAutonomousLocalPort = Readonly<{
     task: DevTaskRecord;
     implementation: DevImplementationCandidate;
   }>): Promise<DevTesterEvidence>;
+  readTaskTestFailure?(input: Readonly<{
+    workflow: DevAutonomousWorkflow;
+    task: DevTaskRecord;
+  }>): Promise<Readonly<{ summary: string }>>;
   push(input: Readonly<{
     workflow: DevAutonomousWorkflow;
     task: DevTaskRecord;
@@ -147,6 +158,10 @@ export class DevAutonomousEngine {
     return this.store.apply(workflowId, { type: "task_resumed", taskId });
   }
 
+  async resumeIntegration(workflowId: string): Promise<DevAutonomousWorkflow> {
+    return this.store.apply(workflowId, { type: "integration_resumed" });
+  }
+
   async advance(
     workflowId: string,
     options: DevAutonomousAdvanceOptions = {}
@@ -178,6 +193,22 @@ export class DevAutonomousEngine {
       switch (task.phase) {
         case "ready":
         case "revision_required": {
+          let localTestFailure: DevLocalTestFailureContext | undefined;
+          if (task.tester?.status === "failed") {
+            if (task.implementation === undefined || this.local.readTaskTestFailure === undefined) {
+              throw new DevAutonomousPortError(
+                "task_test_feedback_unavailable",
+                true,
+                "The exact failed independent-test feedback is unavailable for the worker revision turn."
+              );
+            }
+            const feedback = await this.local.readTaskTestFailure({ workflow, task });
+            localTestFailure = Object.freeze({
+              candidateDigest: task.implementation.candidateDigest,
+              reportDigest: task.tester.reportDigest,
+              summary: feedback.summary
+            });
+          }
           const conversation = await this.chat.ensureWorkerConversation({ workflow, task });
           const operationId = deterministicUuid(`${workflow.workflowId}:${task.taskId}:${task.attempt}:guidance`);
           const watcherId = deterministicWatcherId(`${workflow.workflowId}:${task.taskId}:${task.attempt}:guidance`);
@@ -186,7 +217,8 @@ export class DevAutonomousEngine {
             task,
             conversationKey: conversation.conversationKey,
             operationId,
-            watcherId
+            watcherId,
+            ...(localTestFailure === undefined ? {} : { localTestFailure })
           });
           await this.store.apply(workflow.workflowId, { type: "guidance_dispatched", taskId: task.taskId, dispatch });
           return { taskId: task.taskId, progressed: true, pending: true };
@@ -276,76 +308,87 @@ export class DevAutonomousEngine {
     workflow: DevAutonomousWorkflow,
     options: DevAutonomousAdvanceOptions
   ): Promise<boolean> {
-    switch (workflow.status) {
-      case "integration_ready": {
-        const priorReview = workflow.integration.plannerReview;
-        let revisionGuidance: string | undefined;
-        if (priorReview?.status === "revision_required") {
-          if (priorReview.reviewWatcherId === undefined || this.chat.readReviewGuidance === undefined) {
-            throw new DevAutonomousPortError(
-              "review_guidance_unavailable",
-              true,
-              "Planner revision guidance cannot be recovered from its durable ChatGPT turn."
-            );
+    try {
+      switch (workflow.status) {
+        case "integration_ready": {
+          const priorReview = workflow.integration.plannerReview;
+          let revisionGuidance: string | undefined;
+          if (priorReview?.status === "revision_required") {
+            if (priorReview.reviewWatcherId === undefined || this.chat.readReviewGuidance === undefined) {
+              throw new DevAutonomousPortError(
+                "review_guidance_unavailable",
+                true,
+                "Planner revision guidance cannot be recovered from its durable ChatGPT turn."
+              );
+            }
+            revisionGuidance = await this.chat.readReviewGuidance({
+              watcherId: priorReview.reviewWatcherId,
+              reviewDigest: priorReview.reviewDigest
+            });
           }
-          revisionGuidance = await this.chat.readReviewGuidance({
-            watcherId: priorReview.reviewWatcherId,
-            reviewDigest: priorReview.reviewDigest
+          const evidence = await this.local.integrate({
+            workflow,
+            acceptedTasks: workflow.tasks.filter(task => task.phase === "accepted"),
+            ...(revisionGuidance === undefined ? {} : { revisionGuidance })
           });
+          await this.store.apply(workflow.workflowId, { type: "integration_candidate", evidence });
+          return true;
         }
-        const evidence = await this.local.integrate({
-          workflow,
-          acceptedTasks: workflow.tasks.filter(task => task.phase === "accepted"),
-          ...(revisionGuidance === undefined ? {} : { revisionGuidance })
-        });
-        await this.store.apply(workflow.workflowId, { type: "integration_candidate", evidence });
-        return true;
+        case "integration_testing": {
+          const implementation = workflow.integration.implementation;
+          if (implementation === undefined) throw new Error("Integration implementation evidence is missing.");
+          const evidence = await this.local.testIntegration({ workflow, implementation });
+          await this.store.apply(workflow.workflowId, { type: "integration_tester_result", evidence });
+          return true;
+        }
+        case "integration_push_pending": {
+          const implementation = workflow.integration.implementation;
+          const tester = workflow.integration.tester;
+          if (implementation === undefined || tester === undefined) throw new Error("Integration test evidence is missing.");
+          const evidence = await this.local.pushIntegration({ workflow, implementation, tester });
+          await this.store.apply(workflow.workflowId, { type: "integration_pushed", evidence });
+          return true;
+        }
+        case "planner_review_pending": {
+          const push = workflow.integration.push;
+          if (push === undefined) throw new Error("Integration push evidence is missing.");
+          const operationId = deterministicUuid(`${workflow.workflowId}:${push.commitSha}:planner-review`);
+          const watcherId = deterministicWatcherId(`${workflow.workflowId}:${push.commitSha}:planner-review`);
+          const observation = await this.chat.reviewIntegration({
+            workflow,
+            commitSha: push.commitSha,
+            operationId,
+            watcherId,
+            wait: options.waitForChatGPT ?? false,
+            ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
+          });
+          if (observation.status === "pending") return false;
+          await this.store.apply(workflow.workflowId, {
+            type: "planner_review",
+            evidence: {
+              plannerConversationKey: workflow.plannerConversationKey,
+              reviewedSha: push.commitSha,
+              status: observation.verdict,
+              reviewDigest: observation.reviewDigest,
+              reviewWatcherId: watcherId
+            }
+          });
+          return true;
+        }
+        case "running":
+        case "blocked":
+        case "completed":
+          return false;
       }
-      case "integration_testing": {
-        const implementation = workflow.integration.implementation;
-        if (implementation === undefined) throw new Error("Integration implementation evidence is missing.");
-        const evidence = await this.local.testIntegration({ workflow, implementation });
-        await this.store.apply(workflow.workflowId, { type: "integration_tester_result", evidence });
-        return true;
-      }
-      case "integration_push_pending": {
-        const implementation = workflow.integration.implementation;
-        const tester = workflow.integration.tester;
-        if (implementation === undefined || tester === undefined) throw new Error("Integration test evidence is missing.");
-        const evidence = await this.local.pushIntegration({ workflow, implementation, tester });
-        await this.store.apply(workflow.workflowId, { type: "integration_pushed", evidence });
-        return true;
-      }
-      case "planner_review_pending": {
-        const push = workflow.integration.push;
-        if (push === undefined) throw new Error("Integration push evidence is missing.");
-        const operationId = deterministicUuid(`${workflow.workflowId}:${push.commitSha}:planner-review`);
-        const watcherId = deterministicWatcherId(`${workflow.workflowId}:${push.commitSha}:planner-review`);
-        const observation = await this.chat.reviewIntegration({
-          workflow,
-          commitSha: push.commitSha,
-          operationId,
-          watcherId,
-          wait: options.waitForChatGPT ?? false,
-          ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
-        });
-        if (observation.status === "pending") return false;
+    } catch (error) {
+      if (error instanceof DevAutonomousPortError) {
         await this.store.apply(workflow.workflowId, {
-          type: "planner_review",
-          evidence: {
-            plannerConversationKey: workflow.plannerConversationKey,
-            reviewedSha: push.commitSha,
-            status: observation.verdict,
-            reviewDigest: observation.reviewDigest,
-            reviewWatcherId: watcherId
-          }
+          type: "integration_blocked",
+          blockerCode: safeBlockerCode(error.blockerCode)
         });
         return true;
       }
-      case "running":
-      case "blocked":
-      case "completed":
-        return false;
+      throw error;
     }
   }
 }
