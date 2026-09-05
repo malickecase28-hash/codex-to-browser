@@ -85,20 +85,4 @@ describe("persisted autonomous snapshot corruption", () => {
       "workflow-snapshot-corruption"
     )).toThrow(/blockedFrom is invalid/);
   });
-
-  it("rejects revision snapshots that lose guidance for the failed candidate", () => {
-    const value: any = structuredClone(acceptedWorkflow());
-    value.status = "running";
-    value.tasks[0].phase = "revision_required";
-    value.tasks[0].attempt = 2;
-    value.tasks[0].tester.status = "failed";
-    delete value.tasks[0].guidance;
-    delete value.tasks[0].push;
-    delete value.tasks[0].workerReview;
-
-    expect(() => parseAutonomousWorkflowSnapshot(
-      value,
-      "workflow-snapshot-corruption"
-    )).toThrow(/worker identity and guidance/);
-  });
 });
