@@ -10,7 +10,8 @@ import type {
   DevWorkerSpec
 } from "./types.js";
 import type { DevWorkflowPlan } from "./autonomous-workflow.js";
-import type { DevAutonomousAdvanceOptions, DevAutonomousRunOptions } from "./autonomous-api.js";
+import type { DevAutonomousAdvanceOptions } from "./autonomous-engine.js";
+import type { DevAutonomousRunOptions } from "./autonomous-api.js";
 
 const DEV_BACKEND_NAMESPACES = new Set(["projects", "planner", "worker", "autonomous"]);
 const DEV_BACKEND_ACTION_LIMIT = 64;
