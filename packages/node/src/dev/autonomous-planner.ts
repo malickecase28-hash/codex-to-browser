@@ -59,7 +59,14 @@ export function validateDevAutonomousPlanningSpec(spec: DevAutonomousPlanningSpe
     } catch {
       throw invalidSpec();
     }
-    if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") {
+    if (
+      parsed.protocol !== "https:"
+      || parsed.port !== ""
+      || parsed.username !== ""
+      || parsed.password !== ""
+      || parsed.search !== ""
+      || parsed.hash !== ""
+    ) {
       throw invalidSpec();
     }
   }
