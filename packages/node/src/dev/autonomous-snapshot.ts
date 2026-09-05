@@ -189,6 +189,9 @@ function validateTaskCoherence(task: DevTaskRecord): void {
   if (task.guidance !== undefined && task.workerConversationKey !== task.guidance.workerConversationKey) {
     invalid(`Task ${task.taskId} guidance changed worker conversation identity.`);
   }
+  if (task.tester !== undefined && task.implementation === undefined) {
+    invalid(`Task ${task.taskId} tester evidence is missing its implementation candidate.`);
+  }
   if (task.implementation !== undefined && task.tester !== undefined) {
     if (task.tester.candidateDigest !== task.implementation.candidateDigest) {
       invalid(`Task ${task.taskId} tester evidence does not match its candidate.`);
@@ -257,11 +260,23 @@ function validateEffectiveTaskPhase(task: DevTaskRecord, phase: Exclude<DevTaskP
       }
       return;
     case "revision_required": {
-      requirePresent(task.workerConversationKey, `Task ${task.taskId} worker identity`);
+      requirePresent(task.workerConversationKey, task.guidance, task.implementation, task.tester, `Task ${task.taskId} revision evidence`);
       const failedTest = task.tester?.status === "failed";
       const rejectedReview = task.workerReview?.status === "revision_required";
-      if (!failedTest && !rejectedReview) invalid(`Task ${task.taskId} revision-required state lacks rejection evidence.`);
-      return;
+      if (failedTest) {
+        if (task.guidanceDispatch !== undefined || task.push !== undefined || task.workerReview !== undefined) {
+          invalid(`Task ${task.taskId} failed-test revision state contains incompatible later evidence.`);
+        }
+        return;
+      }
+      if (rejectedReview) {
+        requirePresent(task.push, task.workerReview, `Task ${task.taskId} rejected review evidence`);
+        if (task.tester?.status !== "passed" || task.guidanceDispatch !== undefined) {
+          invalid(`Task ${task.taskId} review revision is not bound to a passing tested push.`);
+        }
+        return;
+      }
+      invalid(`Task ${task.taskId} revision-required state lacks rejection evidence.`);
     }
     case "accepted":
       requirePresent(task.workerConversationKey, task.implementation, task.tester, task.push, task.workerReview, `Task ${task.taskId} accepted evidence`);
