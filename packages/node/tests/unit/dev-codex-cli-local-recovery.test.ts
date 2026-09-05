@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -182,8 +182,6 @@ describe("Codex CLI local action recovery", () => {
 
     expect(calls.codex).toBe(0);
     expect(evidence.candidateDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    const worktrees = join(fixture.stateRoot, "worktrees");
-    expect(await readFile(join(worktrees, (await import("node:fs/promises")).then ? "" : ""), "utf8").catch(() => "ignored")).toBe("ignored");
   });
 
   it("fails closed when Codex crossed the mutation boundary without a completion marker", async () => {

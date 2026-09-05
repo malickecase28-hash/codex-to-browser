@@ -4157,8 +4157,8 @@ var BrowserGate = class {
     waiter.context = context2;
     if (waiter.kind === "exclusive") this.pushStartedExclusive(waiter);
     else this.startedShared.add(waiter);
-    waiter.promise = new Promise((resolve14, reject) => {
-      waiter.resolve = resolve14;
+    waiter.promise = new Promise((resolve15, reject) => {
+      waiter.resolve = resolve15;
       waiter.reject = reject;
     });
     const onAbort = () => {
@@ -4357,12 +4357,12 @@ var ResourceActor = class {
       this.notifyIfIdle();
       return Promise.reject(new CoordinatorQueueFullError(this.snapshot()));
     }
-    return new Promise((resolve14, reject) => {
+    return new Promise((resolve15, reject) => {
       const pending2 = {
         ...request,
         ...externalSignal === void 0 ? {} : { externalSignal },
         sequence: ++this.sequence,
-        resolve: (value) => resolve14(value),
+        resolve: (value) => resolve15(value),
         reject,
         started: false,
         settled: false,
@@ -6788,9 +6788,9 @@ async function withTimeout2(promise, timeoutMs, message) {
 }
 
 // src/scripts/live-smoke/scenarios.ts
-import { mkdtemp, readFile as readFile11, rm as rm3, stat as stat8, writeFile as writeFile9 } from "node:fs/promises";
+import { mkdtemp, readFile as readFile12, rm as rm3, stat as stat9, writeFile as writeFile9 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join as join18 } from "node:path";
+import { join as join19 } from "node:path";
 
 // src/browser/clipboard.ts
 import { execFile } from "node:child_process";
@@ -6834,7 +6834,7 @@ async function waitForClipboardChange(before, timeoutMs, pollMs = 150) {
     if (current !== void 0 && current.length > 0 && current !== before) {
       return current;
     }
-    await new Promise((resolve14) => setTimeout(resolve14, pollMs));
+    await new Promise((resolve15) => setTimeout(resolve15, pollMs));
   }
   return void 0;
 }
@@ -7609,9 +7609,9 @@ async function readLatestImageDataUrl(page, timeoutMs) {
         if (/^(blob:|https?:)/i.test(src)) {
           const response = await fetch(src);
           const blob = await response.blob();
-          const dataUrl = await new Promise((resolve14, reject) => {
+          const dataUrl = await new Promise((resolve15, reject) => {
             const reader = new FileReader();
-            reader.onload = () => resolve14(String(reader.result));
+            reader.onload = () => resolve15(String(reader.result));
             reader.onerror = () => reject(reader.error ?? new Error("FileReader failed."));
             reader.readAsDataURL(blob);
           });
@@ -8174,21 +8174,21 @@ function sha256Text(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 async function sha256File(path3) {
-  const hash = createHash("sha256");
+  const hash2 = createHash("sha256");
   let bytes = 0;
-  await new Promise((resolve14, reject) => {
+  await new Promise((resolve15, reject) => {
     const stream = createReadStream(path3);
     stream.on("data", (chunk) => {
       bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.byteLength;
-      hash.update(chunk);
+      hash2.update(chunk);
     });
     stream.on("error", reject);
-    stream.on("end", resolve14);
+    stream.on("end", resolve15);
   });
   return {
     path: path3,
     bytes,
-    sha256: hash.digest("hex")
+    sha256: hash2.digest("hex")
   };
 }
 async function writeJsonArtifactWithIntegrity(path3, value, options) {
@@ -8970,12 +8970,12 @@ function waitTextMetadata(rawText) {
   };
 }
 function fnv1a32Hex(text) {
-  let hash = 2166136261;
+  let hash2 = 2166136261;
   for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+    hash2 ^= text.charCodeAt(index);
+    hash2 = Math.imul(hash2, 16777619);
   }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return (hash2 >>> 0).toString(16).padStart(8, "0");
 }
 async function readWaitDomSnapshot(page) {
   if (typeof page.evaluate !== "function") {
@@ -8991,12 +8991,12 @@ async function readWaitDomSnapshot(page) {
     const latestAssistant = assistantNodes.at(-1);
     const latestAssistantTurnIndex = latestAssistant === void 0 ? void 0 : nodes.indexOf(latestAssistant) + 1;
     const normalizedText = normalizeWs(latestAssistant?.innerText ?? latestAssistant?.textContent ?? "");
-    let hash = 2166136261;
+    let hash2 = 2166136261;
     for (let index = 0; index < normalizedText.length; index += 1) {
-      hash ^= normalizedText.charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
+      hash2 ^= normalizedText.charCodeAt(index);
+      hash2 = Math.imul(hash2, 16777619);
     }
-    const textHash = (hash >>> 0).toString(16).padStart(8, "0");
+    const textHash = (hash2 >>> 0).toString(16).padStart(8, "0");
     const trimmedForTransient = normalizedText.replace(/[.。…]+$/g, "").trim().toLowerCase();
     const transient = args.transient.some((phrase) => trimmedForTransient === phrase.toLowerCase()) || /^analyzing (?:the )?images?$/.test(trimmedForTransient) || /^processing (?:the )?images?$/.test(trimmedForTransient) || /^reading (?:the )?images?$/.test(trimmedForTransient);
     const isVisible2 = (element) => {
@@ -9560,7 +9560,7 @@ function isNativeBrowserTimeout(error) {
 async function sleepWithinDeadline(_page, deadline, requestedMs) {
   const waitMs = Math.min(requestedMs, Math.max(0, remainingMs(deadline) - 1));
   if (waitMs <= 0) return;
-  await new Promise((resolve14) => setTimeout(resolve14, waitMs));
+  await new Promise((resolve15) => setTimeout(resolve15, waitMs));
 }
 async function stopContext(page, _deadline) {
   return contextFromPage(page, {}, { minimal: true });
@@ -10246,7 +10246,7 @@ async function sleep(page, ms2) {
     await page.waitForTimeout(ms2);
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, ms2));
+  await new Promise((resolve15) => setTimeout(resolve15, ms2));
 }
 function submitData(userTurnText, turnCount, submissionState, generation) {
   const data = { submitted: true };
@@ -10797,7 +10797,7 @@ async function sleep2(page, ms2) {
     await page.waitForTimeout(ms2);
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, ms2));
+  await new Promise((resolve15) => setTimeout(resolve15, ms2));
 }
 
 // src/runtime/command-routing.ts
@@ -14608,7 +14608,7 @@ async function attachmentDelay(_page, deadline, requestedMs) {
     if (requestedMs > 0) throw new AttachmentDeadlineError("Attachment settling delay");
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, delayMs));
+  await new Promise((resolve15) => setTimeout(resolve15, delayMs));
 }
 async function attachmentContext(page, _deadline) {
   return contextFromPage(page, {}, { minimal: true });
@@ -14864,7 +14864,7 @@ async function waitForPreviewDownloadControl(page, previews, timeoutMs) {
     if (typeof page.waitForTimeout === "function") {
       await page.waitForTimeout(100);
     } else {
-      await new Promise((resolve14) => setTimeout(resolve14, 100));
+      await new Promise((resolve15) => setTimeout(resolve15, 100));
     }
   }
   return void 0;
@@ -15579,8 +15579,8 @@ async function settleChooserBeforeMutation(chooserWait, deadline) {
     let timer;
     const registered = await Promise.race([
       chooserWait.registration.then(() => true),
-      new Promise((resolve14) => {
-        timer = setTimeout(() => resolve14(false), remainingMs3);
+      new Promise((resolve15) => {
+        timer = setTimeout(() => resolve15(false), remainingMs3);
       })
     ]).finally(() => {
       if (timer !== void 0) clearTimeout(timer);
@@ -15589,7 +15589,7 @@ async function settleChooserBeforeMutation(chooserWait, deadline) {
   }
   if (chooserWait.outcome !== void 0) return chooserWait.outcome;
   if (deadline <= Date.now()) return { kind: "timeout" };
-  await new Promise((resolve14) => setTimeout(resolve14, 0));
+  await new Promise((resolve15) => setTimeout(resolve15, 0));
   if (chooserWait.outcome !== void 0) return chooserWait.outcome;
   return deadline <= Date.now() ? { kind: "timeout" } : void 0;
 }
@@ -15601,13 +15601,13 @@ async function awaitFileChooserOutcome(chooserWait, deadline) {
   if (remainingMs3 === 0) {
     return { kind: "timeout" };
   }
-  return new Promise((resolve14) => {
+  return new Promise((resolve15) => {
     let finished = false;
     const finish2 = (outcome) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      resolve14(outcome);
+      resolve15(outcome);
     };
     const timer = setTimeout(() => finish2({ kind: "timeout" }), remainingMs3);
     void chooserWait.promise.then((outcome) => finish2(outcome));
@@ -15702,7 +15702,7 @@ async function waitForProjectSourceTransitionTick(page, waitMs) {
     await page.waitForTimeout(waitMs);
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, waitMs));
+  await new Promise((resolve15) => setTimeout(resolve15, waitMs));
 }
 async function clickProjectSourceControlLocator(page, locator, deadline) {
   if (typeof locator.click !== "function") {
@@ -17770,7 +17770,7 @@ var ConversationRegistry = class {
           break;
         } catch (error) {
           if (attempt >= 2 || !(isNodeError4(error, "EPERM") || isNodeError4(error, "EBUSY"))) throw error;
-          await new Promise((resolve14) => setTimeout(resolve14, 10));
+          await new Promise((resolve15) => setTimeout(resolve15, 10));
         }
       }
     } finally {
@@ -17924,7 +17924,7 @@ var BrowserAffinityRegistry = class {
           break;
         } catch (error) {
           if (attempt >= 2 || !(isNodeError5(error, "EPERM") || isNodeError5(error, "EBUSY"))) throw error;
-          await new Promise((resolve14) => setTimeout(resolve14, 10));
+          await new Promise((resolve15) => setTimeout(resolve15, 10));
         }
       }
     } finally {
@@ -18178,7 +18178,7 @@ function isConversationUrl(value) {
 }
 
 // src/dev/client.ts
-import { join as join17, resolve as resolve13 } from "node:path";
+import { join as join18, resolve as resolve14 } from "node:path";
 
 // src/client.ts
 import { randomUUID as randomUUID7 } from "node:crypto";
@@ -18587,12 +18587,12 @@ function enterResultRecord(value, seen, depth, budget) {
   return true;
 }
 function hashText(value) {
-  let hash = 2166136261;
+  let hash2 = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+    hash2 ^= value.charCodeAt(index);
+    hash2 = Math.imul(hash2, 16777619);
   }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return (hash2 >>> 0).toString(16).padStart(8, "0");
 }
 function threadRefFromContext(context2) {
   const thread = {};
@@ -18840,8 +18840,8 @@ function createMilestoneStream(run) {
           yield next;
           continue;
         }
-        await new Promise((resolve14) => {
-          resolveNext = resolve14;
+        await new Promise((resolve15) => {
+          resolveNext = resolve15;
         });
       }
     }
@@ -21616,7 +21616,7 @@ var OperationClient = class {
     const collectorInput = requiredAdapterObject(adapter, "collector");
     const readContext = requiredMethod(collectorInput, "readContext");
     const observe = requiredMethod(collectorInput, "observe");
-    const sleep4 = requiredMethod(collectorInput, "sleep");
+    const sleep5 = requiredMethod(collectorInput, "sleep");
     const submission = Object.freeze({
       observeStaging: (request) => observeStaging2(request),
       executeFileHandoffOnce: async (request) => {
@@ -21639,7 +21639,7 @@ var OperationClient = class {
     const collector = Object.freeze({
       readContext: (request) => readContext(request),
       observe: (request) => observe(request),
-      sleep: (milliseconds, sleepSignal) => sleep4(milliseconds, sleepSignal)
+      sleep: (milliseconds, sleepSignal) => sleep5(milliseconds, sleepSignal)
     });
     let control;
     const controlInput = optionalDataProperty(adapter, "control");
@@ -27218,14 +27218,14 @@ async function observeAttachmentsAfterHandoff(ports, request, manifest, options)
 }
 async function waitForPostHandoffObservation(milliseconds, signal) {
   if (milliseconds <= 0 || signal?.aborted) return;
-  await new Promise((resolve14) => {
+  await new Promise((resolve15) => {
     let settled = false;
     const finish2 = () => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", finish2);
-      resolve14();
+      resolve15();
     };
     const timer = setTimeout(finish2, milliseconds);
     signal?.addEventListener("abort", finish2, { once: true });
@@ -28845,15 +28845,15 @@ async function waitForPostconditionRetry(normalized, milliseconds) {
   if (remaining <= 0) return false;
   const delay2 = Math.min(milliseconds, remaining);
   if (delay2 === 0) return true;
-  return await new Promise((resolve14) => {
+  return await new Promise((resolve15) => {
     const timer = setTimeout(() => {
       normalized.signal.removeEventListener("abort", onAbort);
-      resolve14(true);
+      resolve15(true);
     }, delay2);
     const onAbort = () => {
       clearTimeout(timer);
       normalized.signal.removeEventListener("abort", onAbort);
-      resolve14(false);
+      resolve15(false);
     };
     normalized.signal.addEventListener("abort", onAbort, { once: true });
   });
@@ -34326,7 +34326,7 @@ async function settleChooserBeforeMutation2(waiter, deadlineAt, signal) {
     if (registration === "timeout") return { kind: "timeout" };
     if (waiter.outcome !== void 0) return waiter.outcome;
     if (remainingBudget(deadlineAt) <= 0) return { kind: "timeout" };
-    await new Promise((resolve14) => setTimeout(resolve14, 0));
+    await new Promise((resolve15) => setTimeout(resolve15, 0));
   } else {
     await flushMicrotasks();
   }
@@ -34335,7 +34335,7 @@ async function settleChooserBeforeMutation2(waiter, deadlineAt, signal) {
   return remainingBudget(deadlineAt) <= 0 ? { kind: "timeout" } : void 0;
 }
 async function awaitRegistration(value, timeoutMs, signal) {
-  return await new Promise((resolve14) => {
+  return await new Promise((resolve15) => {
     let settled = false;
     const timer = setTimeout(() => finish2("timeout"), timeoutMs);
     const onAbort = () => finish2("aborted");
@@ -34344,7 +34344,7 @@ async function awaitRegistration(value, timeoutMs, signal) {
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
-      resolve14(result4);
+      resolve15(result4);
     };
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) {
@@ -34356,7 +34356,7 @@ async function awaitRegistration(value, timeoutMs, signal) {
 }
 async function awaitChooser(waiter, timeoutMs, signal) {
   if (waiter.outcome !== void 0) return waiter.outcome;
-  return await new Promise((resolve14) => {
+  return await new Promise((resolve15) => {
     let settled = false;
     const onAbort = () => finish2({ kind: "aborted" });
     const finish2 = (outcome) => {
@@ -34364,7 +34364,7 @@ async function awaitChooser(waiter, timeoutMs, signal) {
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
-      resolve14(outcome);
+      resolve15(outcome);
     };
     const timer = setTimeout(() => finish2({ kind: "timeout" }), timeoutMs);
     if (signal !== void 0) {
@@ -34408,9 +34408,9 @@ async function boundedCallback(value, timeoutMs) {
   if (isObjectLike3(value) && !isNativePromise(value)) throw new Error("provider promise is not native");
   if (!isNativePromise(value)) return value;
   let timer;
-  const promise = new Promise((resolve14, reject) => {
+  const promise = new Promise((resolve15, reject) => {
     timer = setTimeout(() => reject(new Error("provider callback timed out")), timeoutMs);
-    value.then(resolve14, reject);
+    value.then(resolve15, reject);
   });
   try {
     return await promise;
@@ -35685,11 +35685,11 @@ async function boundedNative(value, timeoutMs) {
     if (value !== null && typeof value === "object") throw new Error("provider callback promise is not native");
     return value;
   }
-  return await new Promise((resolve14, reject) => {
+  return await new Promise((resolve15, reject) => {
     const timer = setTimeout(() => reject(new Error("provider callback timed out")), timeoutMs);
     value.then((result4) => {
       clearTimeout(timer);
-      resolve14(result4);
+      resolve15(result4);
     }, (error) => {
       clearTimeout(timer);
       reject(error);
@@ -36719,14 +36719,14 @@ function buildTarget(raw, options) {
   if (options.target.expectedConversationId !== void 0 && options.target.expectedConversationId !== raw.conversationId) throw new BrowserObservationError("navigation_ambiguous");
   if (options.target.expectedThreadId !== void 0 && options.target.expectedThreadId !== raw.threadId) throw new BrowserObservationError("navigation_ambiguous");
   const hasConversationIdentity = raw.conversationId !== void 0 && raw.threadId !== void 0;
-  const canonicalDigest = hasConversationIdentity ? digest(options.evidenceDigest, "browser-observation-url", raw.canonicalUrl) : void 0;
+  const canonicalDigest2 = hasConversationIdentity ? digest(options.evidenceDigest, "browser-observation-url", raw.canonicalUrl) : void 0;
   const target = {
     provider: availableIdentity(options.target.providerId),
     browser: availableIdentity(options.target.browserId),
     tab: availableIdentity(options.target.tabId),
     thread: raw.threadId === void 0 ? unavailableIdentity("not_observed") : availableIdentity(raw.threadId),
     conversation: raw.conversationId === void 0 ? unavailableIdentity("not_observed") : availableIdentity(raw.conversationId),
-    canonicalThreadUrl: canonicalDigest === void 0 ? unavailableIdentity("not_observed") : availableUrlIdentity(`${OPAQUE_URL_PREFIX}${canonicalDigest.slice("hmac-sha256:".length)}`),
+    canonicalThreadUrl: canonicalDigest2 === void 0 ? unavailableIdentity("not_observed") : availableUrlIdentity(`${OPAQUE_URL_PREFIX}${canonicalDigest2.slice("hmac-sha256:".length)}`),
     authoritativeTabClaim: options.target.authoritativeTabClaim === void 0 ? unavailableIdentity("not_exposed") : availableIdentity(options.target.authoritativeTabClaim),
     coordinationScope: options.target.coordinationScope
   };
@@ -37610,10 +37610,10 @@ async function observeCollector(request, page, target, context2, evidenceDigest,
 async function sleepOutsideBrowser(milliseconds, signal) {
   if (!Number.isSafeInteger(milliseconds) || milliseconds < 0 || milliseconds > 6e4) throw new ProductionPrimitiveError("invalid_sleep");
   if (signal.aborted) throw new ProductionPrimitiveError("operation_cancelled");
-  await new Promise((resolve14, reject) => {
+  await new Promise((resolve15, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
-      resolve14();
+      resolve15();
     }, milliseconds);
     const onAbort = () => {
       clearTimeout(timer);
@@ -38965,7 +38965,7 @@ async function sleepOutsideActor(observers, milliseconds, signal) {
     await observers.sleep(milliseconds, signal);
     return;
   }
-  await new Promise((resolve14, reject) => {
+  await new Promise((resolve15, reject) => {
     if (signal.aborted) {
       reject(new Error("operation cancelled"));
       return;
@@ -38979,7 +38979,7 @@ async function sleepOutsideActor(observers, milliseconds, signal) {
     signal.addEventListener("abort", onAbort, { once: true });
     timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
-      resolve14();
+      resolve15();
     }, milliseconds);
   });
 }
@@ -39870,8 +39870,8 @@ function armProviderBoundary(runtime, fallbackTimeoutMs) {
   let resolveBoundary;
   let timer;
   let cancelled = false;
-  const promise = new Promise((resolve14) => {
-    resolveBoundary = resolve14;
+  const promise = new Promise((resolve15) => {
+    resolveBoundary = resolve15;
   });
   const listener = () => trigger("aborted");
   const removeListener = () => {
@@ -40014,8 +40014,8 @@ async function closeAsyncIterator(iterator, runtime) {
   if (runtime.deadlineAt !== void 0 && runtime.lastNow !== void 0 && runtime.lastNow >= runtime.deadlineAt) {
     let tick;
     const closeSettled = operation.then(() => true, () => true);
-    const grace = new Promise((resolve14) => {
-      tick = setTimeout(() => resolve14(false), 0);
+    const grace = new Promise((resolve15) => {
+      tick = setTimeout(() => resolve15(false), 0);
     });
     const settled = await Promise.race([closeSettled, grace]);
     if (tick !== void 0) clearTimeout(tick);
@@ -40701,20 +40701,20 @@ async function inject(hooks, point, runtime) {
   checkRuntime(runtime);
 }
 function outputIdentityDigest(input, extension) {
-  const hash = createHash8("sha256");
-  hash.update("codex-chatgpt-control/artifact-output/v1\0", "utf8");
-  updateLengthPrefixed(hash, input.operationId);
-  updateLengthPrefixed(hash, input.artifactIdentity);
-  updateLengthPrefixed(hash, extension);
-  updateLengthPrefixed(hash, normalizeMime(input.mimeTypeHint) ?? "");
-  return hash.digest("hex");
+  const hash2 = createHash8("sha256");
+  hash2.update("codex-chatgpt-control/artifact-output/v1\0", "utf8");
+  updateLengthPrefixed(hash2, input.operationId);
+  updateLengthPrefixed(hash2, input.artifactIdentity);
+  updateLengthPrefixed(hash2, extension);
+  updateLengthPrefixed(hash2, normalizeMime(input.mimeTypeHint) ?? "");
+  return hash2.digest("hex");
 }
-function updateLengthPrefixed(hash, value) {
+function updateLengthPrefixed(hash2, value) {
   const bytes = Buffer.from(value, "utf8");
-  hash.update(String(bytes.byteLength), "utf8");
-  hash.update(":", "utf8");
-  hash.update(bytes);
-  hash.update("\0", "utf8");
+  hash2.update(String(bytes.byteLength), "utf8");
+  hash2.update(":", "utf8");
+  hash2.update(bytes);
+  hash2.update("\0", "utf8");
 }
 function validateOpaqueIdentity(value, name) {
   if (typeof value !== "string" || value.length === 0 || byteLength(value) > MAX_IDENTITY_BYTES || /[\u0000-\u001f\u007f]/.test(value)) {
@@ -40902,8 +40902,8 @@ function armProviderBoundary2(prepared, fallbackTimeoutMs) {
   let resolveBoundary;
   let timer;
   let cancelled = false;
-  const promise = new Promise((resolve14) => {
-    resolveBoundary = resolve14;
+  const promise = new Promise((resolve15) => {
+    resolveBoundary = resolve15;
   });
   const listener = () => trigger("aborted");
   const removeListener = () => {
@@ -42490,7 +42490,7 @@ function createOperationBrowserAdapter(options) {
       throw new OperationBrowserAdapterError("target_evidence_unavailable");
     }
   };
-  const sleep4 = async (milliseconds, signal) => {
+  const sleep5 = async (milliseconds, signal) => {
     if (options.collector?.sleep !== void 0) return await options.collector.sleep(milliseconds, signal);
     await sleepOutsideCoordinator(milliseconds, signal);
   };
@@ -42708,7 +42708,7 @@ function createOperationBrowserAdapter(options) {
     recoverSend,
     executeFinalTabTransaction
   });
-  const collector = Object.freeze({ readContext, observe, sleep: sleep4 });
+  const collector = Object.freeze({ readContext, observe, sleep: sleep5 });
   const control = options.control === void 0 ? void 0 : Object.freeze({
     observeTurn,
     executeOnce: executeControlOnce2,
@@ -43818,10 +43818,10 @@ function sleepOutsideCoordinator(milliseconds, signal) {
     return Promise.reject(new OperationBrowserAdapterError("adapter_incomplete"));
   }
   if (signal.aborted) return Promise.reject(new OperationBrowserAdapterError("browser_bridge_unavailable"));
-  return new Promise((resolve14, reject) => {
+  return new Promise((resolve15, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
-      resolve14();
+      resolve15();
     }, milliseconds);
     const onAbort = () => {
       clearTimeout(timer);
@@ -44666,7 +44666,7 @@ function probeExactArtifactInBrowser(args) {
   const boundedIdentity = (value) => typeof value === "string" && identityPattern.test(value);
   const artifactKind = (value) => value === "file" || value === "image" || value === "other";
   const nonnegativeInteger = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-  const positiveInteger2 = (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+  const positiveInteger3 = (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
   const classify = (node2) => {
     const testId = (node2.getAttribute("data-testid") ?? "").toLowerCase();
     if (node2.tagName.toLowerCase() === "img" || testId.includes("image") || node2.hasAttribute("data-image-id")) return "image";
@@ -44778,7 +44778,7 @@ function probeExactArtifactInBrowser(args) {
   };
   const documentRoot = globalThis.document;
   if (documentRoot === void 0 || args.mode !== "read" && args.mode !== "click") return void 0;
-  if (!boundedIdentity(args.assistantTurnId) || !artifactKind(args.kind) || !nonnegativeInteger(args.ordinal) || !positiveInteger2(args.maxArtifacts) || args.maxArtifacts > maximumArtifacts) return void 0;
+  if (!boundedIdentity(args.assistantTurnId) || !artifactKind(args.kind) || !nonnegativeInteger(args.ordinal) || !positiveInteger3(args.maxArtifacts) || args.maxArtifacts > maximumArtifacts) return void 0;
   const walked = walkDocument(documentRoot, args.maxArtifacts);
   if (walked === void 0) return void 0;
   const matchingRoots = walked.roots.filter((info) => {
@@ -51708,17 +51708,447 @@ function unavailableLocalPort() {
 }
 
 // src/dev/codex-cli-local-port.ts
-import { createHash as createHash13 } from "node:crypto";
+import { createHash as createHash14 } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
-  lstat as lstat6,
-  mkdir as mkdir11,
-  readFile as readFile8,
+  lstat as lstat7,
+  mkdir as mkdir12,
+  readFile as readFile9,
   realpath as realpath3,
   rm as rm2,
   writeFile as writeFile7
 } from "node:fs/promises";
-import { isAbsolute as isAbsolute5, join as join13, relative as relative2, resolve as resolve10 } from "node:path";
+import { isAbsolute as isAbsolute5, join as join14, relative as relative2, resolve as resolve11 } from "node:path";
+
+// src/dev/autonomous-local-action-store.ts
+import { createHash as createHash13, randomUUID as randomUUID12 } from "node:crypto";
+import {
+  lstat as lstat6,
+  link as link4,
+  mkdir as mkdir11,
+  open as open7,
+  readFile as readFile8,
+  rename as rename6,
+  stat as stat8,
+  unlink as unlink7
+} from "node:fs/promises";
+import { join as join13, resolve as resolve10 } from "node:path";
+var DEV_AUTONOMOUS_LOCAL_ACTION_SCHEMA_VERSION = "chatgpt.browser_control.dev_autonomous_local_action.v1";
+var DEFAULT_LOCK_TIMEOUT_MS3 = 1e4;
+var DEFAULT_STALE_LOCK_MS2 = 3e4;
+var LOCK_RETRY_MS3 = 25;
+var MAX_RESULT_BYTES = 1024 * 1024;
+var DIGEST_PATTERN21 = /^sha256:[0-9a-f]{64}$/u;
+var COMMIT_PATTERN2 = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+var ACTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
+var queues2 = /* @__PURE__ */ new Map();
+var DevAutonomousLocalActionStoreError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = "DevAutonomousLocalActionStoreError";
+  }
+  code;
+};
+var FileDevAutonomousLocalActionStore = class {
+  stateRoot;
+  lockTimeoutMs;
+  staleLockMs;
+  now;
+  constructor(options = {}) {
+    this.stateRoot = resolve10(
+      options.stateRoot ?? join13(process.cwd(), ".chatgpt-dev", "local", "actions")
+    );
+    this.lockTimeoutMs = positiveInteger2(options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS3, "lockTimeoutMs");
+    this.staleLockMs = positiveInteger2(options.staleLockMs ?? DEFAULT_STALE_LOCK_MS2, "staleLockMs");
+    this.now = options.now ?? (() => Date.now());
+  }
+  async get(actionId) {
+    validateActionId(actionId);
+    const path3 = this.actionPath(actionId);
+    try {
+      const metadata = await lstat6(path3);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) throw corrupt3();
+      return parseRecord2(JSON.parse(await readFile8(path3, "utf8")), actionId);
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return void 0;
+      if (error instanceof DevAutonomousLocalActionStoreError) throw error;
+      throw corrupt3();
+    }
+  }
+  async require(actionId) {
+    const record = await this.get(actionId);
+    if (record === void 0) {
+      throw new DevAutonomousLocalActionStoreError("not_found", "Autonomous local action state was not found.");
+    }
+    return record;
+  }
+  async prepare(identity) {
+    validateIdentity2(identity);
+    await this.ensureDirectories();
+    const existing = await this.get(identity.actionId);
+    if (existing !== void 0) {
+      assertSameIdentity2(existing, identity);
+      return existing;
+    }
+    const timestamp3 = new Date(this.now()).toISOString();
+    const record = freezeRecord3({
+      schemaVersion: DEV_AUTONOMOUS_LOCAL_ACTION_SCHEMA_VERSION,
+      ...identity,
+      phase: "prepared",
+      createdAt: timestamp3,
+      updatedAt: timestamp3
+    });
+    const target = this.actionPath(identity.actionId);
+    const temporary = this.temporaryPath();
+    let handle;
+    try {
+      handle = await open7(temporary, "wx", 384);
+      await handle.writeFile(`${JSON.stringify(record, null, 2)}
+`, "utf8");
+      await handle.sync();
+      await handle.close();
+      handle = void 0;
+      try {
+        await link4(temporary, target);
+        return record;
+      } catch (error) {
+        if (nodeErrorCode(error) !== "EEXIST") throw error;
+        const raced = await this.require(identity.actionId);
+        assertSameIdentity2(raced, identity);
+        return raced;
+      }
+    } catch (error) {
+      if (error instanceof DevAutonomousLocalActionStoreError) throw error;
+      throw new DevAutonomousLocalActionStoreError(
+        "write_failed",
+        "Autonomous local action intent could not be committed safely."
+      );
+    } finally {
+      await handle?.close().catch(() => void 0);
+      await unlink7(temporary).catch(() => void 0);
+    }
+  }
+  async start(actionId) {
+    return this.withRecordLock(actionId, async () => {
+      const current = await this.require(actionId);
+      if (current.phase === "started" || current.phase === "completed") return current;
+      const next = freezeRecord3({
+        ...current,
+        phase: "started",
+        updatedAt: new Date(this.now()).toISOString()
+      });
+      await this.write(next);
+      return next;
+    });
+  }
+  async complete(actionId, result4) {
+    const safeResult = jsonValue(result4);
+    return this.withRecordLock(actionId, async () => {
+      const current = await this.require(actionId);
+      if (current.phase === "prepared") {
+        throw new DevAutonomousLocalActionStoreError(
+          "invalid_transition",
+          "A local action must be marked started before completion evidence can be committed."
+        );
+      }
+      if (current.phase === "completed") {
+        if (canonicalJson3(current.result) !== canonicalJson3(safeResult)) {
+          throw new DevAutonomousLocalActionStoreError(
+            "identity_mismatch",
+            "Completed local action evidence conflicts with its durable receipt."
+          );
+        }
+        return current;
+      }
+      const next = freezeRecord3({
+        ...current,
+        phase: "completed",
+        updatedAt: new Date(this.now()).toISOString(),
+        result: safeResult
+      });
+      await this.write(next);
+      return next;
+    });
+  }
+  async withScope(scopeId, action) {
+    validateText(scopeId, "scopeId", 512);
+    await this.ensureDirectories();
+    return this.withQueuedFileLock(`scope:${scopeId}`, action);
+  }
+  async withRecordLock(actionId, action) {
+    validateActionId(actionId);
+    await this.ensureDirectories();
+    return this.withQueuedFileLock(`action:${actionId}`, action);
+  }
+  async withQueuedFileLock(key, action) {
+    const queueKey = this.lockPath(key);
+    const previous = queues2.get(queueKey) ?? Promise.resolve();
+    let releaseQueue;
+    const current = new Promise((resolveCurrent) => {
+      releaseQueue = resolveCurrent;
+    });
+    const chained = previous.catch(() => void 0).then(() => current);
+    queues2.set(queueKey, chained);
+    await previous.catch(() => void 0);
+    let token;
+    try {
+      token = await this.acquireFileLock(key);
+      return await action();
+    } finally {
+      if (token !== void 0) await this.releaseFileLock(key, token);
+      releaseQueue();
+      if (queues2.get(queueKey) === chained) queues2.delete(queueKey);
+    }
+  }
+  async acquireFileLock(key) {
+    const path3 = this.lockPath(key);
+    const deadline = this.now() + this.lockTimeoutMs;
+    for (; ; ) {
+      const token = randomUUID12();
+      let handle;
+      try {
+        handle = await open7(path3, "wx", 384);
+        const record = { token, pid: process.pid, createdAt: this.now() };
+        await handle.writeFile(`${JSON.stringify(record)}
+`, "utf8");
+        await handle.sync();
+        await handle.close();
+        return token;
+      } catch (error) {
+        await handle?.close().catch(() => void 0);
+        if (nodeErrorCode(error) !== "EEXIST") {
+          throw new DevAutonomousLocalActionStoreError("write_failed", "Autonomous local action lock could not be acquired safely.");
+        }
+        await this.reclaimStaleLock(path3);
+        if (this.now() >= deadline) {
+          throw new DevAutonomousLocalActionStoreError("lock_timeout", "Autonomous local action state is busy in another process.");
+        }
+        await sleep4(LOCK_RETRY_MS3);
+      }
+    }
+  }
+  async reclaimStaleLock(path3) {
+    try {
+      const metadata = await stat8(path3);
+      if (this.now() - metadata.mtimeMs < this.staleLockMs) return;
+      const record = parseLockRecord2(await readFile8(path3, "utf8"));
+      if (this.now() - record.createdAt < this.staleLockMs) return;
+      if (processIsAlive(record.pid)) return;
+      await unlink7(path3);
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return;
+      if (error instanceof DevAutonomousLocalActionStoreError) throw error;
+      throw corrupt3();
+    }
+  }
+  async releaseFileLock(key, token) {
+    const path3 = this.lockPath(key);
+    try {
+      const record = parseLockRecord2(await readFile8(path3, "utf8"));
+      if (record.token === token) await unlink7(path3);
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return;
+    }
+  }
+  async write(record) {
+    const target = this.actionPath(record.actionId);
+    const temporary = this.temporaryPath();
+    let handle;
+    try {
+      handle = await open7(temporary, "wx", 384);
+      await handle.writeFile(`${JSON.stringify(record, null, 2)}
+`, "utf8");
+      await handle.sync();
+      await handle.close();
+      handle = void 0;
+      await rename6(temporary, target);
+    } catch {
+      await handle?.close().catch(() => void 0);
+      await unlink7(temporary).catch(() => void 0);
+      throw new DevAutonomousLocalActionStoreError("write_failed", "Autonomous local action state could not be committed safely.");
+    }
+  }
+  async ensureDirectories() {
+    await mkdir11(this.stateRoot, { recursive: true, mode: 448 });
+    await mkdir11(join13(this.stateRoot, "records"), { recursive: true, mode: 448 });
+    await mkdir11(join13(this.stateRoot, "locks"), { recursive: true, mode: 448 });
+    await mkdir11(join13(this.stateRoot, "tmp"), { recursive: true, mode: 448 });
+  }
+  actionPath(actionId) {
+    return join13(this.stateRoot, "records", `${hash(actionId)}.json`);
+  }
+  lockPath(key) {
+    return join13(this.stateRoot, "locks", `${hash(key)}.lock`);
+  }
+  temporaryPath() {
+    return join13(this.stateRoot, "tmp", `${process.pid}.${randomUUID12()}.tmp`);
+  }
+};
+function parseRecord2(value, actionId) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw corrupt3();
+  const record = value;
+  const allowed = /* @__PURE__ */ new Set([
+    "schemaVersion",
+    "actionId",
+    "kind",
+    "workflowId",
+    "scopeId",
+    "inputDigest",
+    "branch",
+    "taskId",
+    "attempt",
+    "baselineHead",
+    "phase",
+    "createdAt",
+    "updatedAt",
+    "result"
+  ]);
+  if (Object.keys(record).some((key) => !allowed.has(key))) throw corrupt3();
+  const identity = {
+    actionId,
+    kind: record.kind,
+    workflowId: record.workflowId,
+    scopeId: record.scopeId,
+    inputDigest: record.inputDigest,
+    ...record.branch === void 0 ? {} : { branch: record.branch },
+    ...record.taskId === void 0 ? {} : { taskId: record.taskId },
+    ...record.attempt === void 0 ? {} : { attempt: record.attempt },
+    ...record.baselineHead === void 0 ? {} : { baselineHead: record.baselineHead }
+  };
+  validateIdentity2(identity);
+  if (record.schemaVersion !== DEV_AUTONOMOUS_LOCAL_ACTION_SCHEMA_VERSION || record.actionId !== actionId || record.phase !== "prepared" && record.phase !== "started" && record.phase !== "completed" || typeof record.createdAt !== "string" || typeof record.updatedAt !== "string" || !Number.isFinite(Date.parse(record.createdAt)) || !Number.isFinite(Date.parse(record.updatedAt))) throw corrupt3();
+  if (record.phase === "completed" && record.result === void 0) throw corrupt3();
+  if (record.result !== void 0) jsonValue(record.result);
+  return freezeRecord3({
+    schemaVersion: DEV_AUTONOMOUS_LOCAL_ACTION_SCHEMA_VERSION,
+    ...identity,
+    phase: record.phase,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    ...record.result === void 0 ? {} : { result: jsonValue(record.result) }
+  });
+}
+function validateIdentity2(identity) {
+  validateActionId(identity.actionId);
+  if (![
+    "implement",
+    "test",
+    "push",
+    "integrate",
+    "integration_test",
+    "integration_push"
+  ].includes(identity.kind)) throw corrupt3();
+  validateText(identity.workflowId, "workflowId", 512);
+  validateText(identity.scopeId, "scopeId", 512);
+  if (!DIGEST_PATTERN21.test(identity.inputDigest)) throw corrupt3();
+  if (identity.branch !== void 0) validateText(identity.branch, "branch", 512);
+  if (identity.taskId !== void 0) validateText(identity.taskId, "taskId", 256);
+  if (identity.attempt !== void 0 && (!Number.isSafeInteger(identity.attempt) || identity.attempt < 1 || identity.attempt > 1e6)) {
+    throw corrupt3();
+  }
+  if (identity.baselineHead !== void 0 && !COMMIT_PATTERN2.test(identity.baselineHead)) throw corrupt3();
+}
+function assertSameIdentity2(record, identity) {
+  const fields = [
+    "actionId",
+    "kind",
+    "workflowId",
+    "scopeId",
+    "inputDigest",
+    "branch",
+    "taskId",
+    "attempt",
+    "baselineHead"
+  ];
+  if (fields.some((field) => record[field] !== identity[field])) {
+    throw new DevAutonomousLocalActionStoreError(
+      "identity_mismatch",
+      "Autonomous local action identity conflicts with its durable receipt."
+    );
+  }
+}
+function parseLockRecord2(raw) {
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw corrupt3();
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw corrupt3();
+  const record = value;
+  if (Object.keys(record).sort().join(",") !== "createdAt,pid,token" || typeof record.token !== "string" || record.token.length === 0 || !Number.isSafeInteger(record.pid) || typeof record.createdAt !== "number" || !Number.isFinite(record.createdAt)) throw corrupt3();
+  return { token: record.token, pid: record.pid, createdAt: record.createdAt };
+}
+function processIsAlive(pid) {
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = nodeErrorCode(error);
+    if (code === "ESRCH") return false;
+    return true;
+  }
+}
+function jsonValue(value) {
+  let encoded;
+  try {
+    encoded = JSON.stringify(value);
+  } catch {
+    throw corrupt3();
+  }
+  if (encoded === void 0 || Buffer.byteLength(encoded, "utf8") > MAX_RESULT_BYTES) throw corrupt3();
+  return deepFreeze4(JSON.parse(encoded));
+}
+function deepFreeze4(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) deepFreeze4(item);
+    return Object.freeze(value);
+  }
+  if (value !== null && typeof value === "object") {
+    for (const item of Object.values(value)) deepFreeze4(item);
+    return Object.freeze(value);
+  }
+  return value;
+}
+function canonicalJson3(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson3).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const record = value;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson3(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+function validateActionId(value) {
+  if (typeof value !== "string" || !ACTION_ID_PATTERN.test(value)) throw corrupt3();
+}
+function validateText(value, _label, maxLength) {
+  if (typeof value !== "string" || value.trim().length === 0 || value.length > maxLength || /[\u0000-\u001f\u007f]/u.test(value)) throw corrupt3();
+}
+function hash(value) {
+  return createHash13("sha256").update(value, "utf8").digest("hex");
+}
+function positiveInteger2(value, label) {
+  if (!Number.isSafeInteger(value) || value < 1 || value > 864e5) {
+    throw new TypeError(`${label} must be a positive bounded integer.`);
+  }
+  return value;
+}
+async function sleep4(milliseconds) {
+  await new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
+}
+function freezeRecord3(record) {
+  return Object.freeze({ ...record });
+}
+function corrupt3() {
+  return new DevAutonomousLocalActionStoreError(
+    "state_corrupt",
+    "Autonomous local action state is corrupt or unsafe to follow."
+  );
+}
+
+// src/dev/codex-cli-local-port.ts
 var DEFAULT_TIMEOUT_MS3 = 30 * 6e4;
 var MAX_TIMEOUT_MS7 = 4 * 60 * 6e4;
 var DEFAULT_OUTPUT_BYTES = 2 * 1024 * 1024;
@@ -51739,9 +52169,10 @@ var CodexCliAutonomousLocalPort = class {
   timeoutMs;
   maxOutputBytes;
   runProcess;
+  actions;
   constructor(options = {}) {
-    this.repositoryRoot = resolve10(options.repositoryRoot ?? process.cwd());
-    this.stateRoot = resolve10(options.stateRoot ?? join13(this.repositoryRoot, ".chatgpt-dev", "local"));
+    this.repositoryRoot = resolve11(options.repositoryRoot ?? process.cwd());
+    this.stateRoot = resolve11(options.stateRoot ?? join14(this.repositoryRoot, ".chatgpt-dev", "local"));
     this.codexExecutable = boundedExecutable(options.codexExecutable ?? "codex", "codexExecutable");
     this.gitExecutable = boundedExecutable(options.gitExecutable ?? "git", "gitExecutable");
     this.baseRef = boundedToken(options.baseRef ?? "HEAD", "baseRef", 512);
@@ -51756,48 +52187,113 @@ var CodexCliAutonomousLocalPort = class {
       MAX_OUTPUT_BYTES
     );
     this.runProcess = options.processRunner ?? defaultProcessRunner;
+    this.actions = options.actionStore ?? new FileDevAutonomousLocalActionStore({
+      stateRoot: join14(this.stateRoot, "actions")
+    });
   }
   async implement(input) {
     const repositoryRoot = await this.verifiedRepositoryRoot();
     const branch = await this.taskBranch(input.workflow, input.task);
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      branch,
-      `task:${input.workflow.workflowId}:${input.task.taskId}`
-    );
-    const beforeHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    const scopeId = `task:${input.workflow.workflowId}:${input.task.taskId}`;
     const prompt = implementationPrompt(input.workflow, input.task, input.guidance);
-    await this.codex(worktree, prompt, "implementation");
-    const afterHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    if (afterHead !== beforeHead) {
-      throw blocked5("codex_unexpected_commit", "Codex changed Git history during implementation; the port will not guess how to recover.");
-    }
-    const candidateDigest = await this.candidateDigest(worktree);
-    return Object.freeze({
-      implementerId: "codex-cli-implementer",
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      taskId: input.task.taskId,
+      attempt: input.task.attempt,
       branch,
-      candidateDigest
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("implement", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "implement",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch,
+        taskId: input.task.taskId,
+        attempt: input.task.attempt,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence2 = implementationActionResult(record.result, branch);
+        await this.assertImplementationRecovery(worktree, record, evidence2);
+        return evidence2;
+      }
+      if (record.phase === "started") {
+        if (!await this.readCodexCompletion(actionId)) throw recoveryRequired("implementation");
+      } else {
+        await this.actions.start(actionId);
+        await this.runCodexAction(worktree, prompt, "implementation", actionId);
+      }
+      const afterHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      if (afterHead !== baselineHead) {
+        throw blocked5("codex_unexpected_commit", "Codex changed Git history during implementation; the port will not guess how to recover.");
+      }
+      const evidence = Object.freeze({
+        implementerId: "codex-cli-implementer",
+        branch,
+        candidateDigest: await this.candidateDigest(worktree)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
   async test(input) {
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `task:${input.workflow.workflowId}:${input.task.taskId}`
-    );
-    await this.assertCandidate(worktree, input.implementation.candidateDigest);
-    const report2 = await this.independentTest(
-      worktree,
-      independentTestPrompt(input.workflow, input.task),
-      `task:${input.workflow.workflowId}:${input.task.taskId}:${input.task.attempt}`
-    );
-    await this.assertCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
-    return Object.freeze({
-      testerId: "codex-cli-independent-tester",
+    const scopeId = `task:${input.workflow.workflowId}:${input.task.taskId}`;
+    const prompt = independentTestPrompt(input.workflow, input.task);
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      taskId: input.task.taskId,
+      attempt: input.task.attempt,
+      branch: input.implementation.branch,
       candidateDigest: input.implementation.candidateDigest,
-      status: report2.status,
-      reportDigest: digestText(report2.raw)
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("test", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "test",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        taskId: input.task.taskId,
+        attempt: input.task.attempt,
+        baselineHead
+      });
+      await this.assertCandidate(worktree, input.implementation.candidateDigest);
+      if (record.phase === "completed") {
+        const evidence2 = testerActionResult(record.result, input.implementation.candidateDigest, "codex-cli-independent-tester");
+        await this.assertCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+        return evidence2;
+      }
+      let report2;
+      if (record.phase === "started") {
+        report2 = await this.readIndependentTestReport(actionId);
+        if (report2 === void 0) throw recoveryRequired("independent test");
+      } else {
+        await this.actions.start(actionId);
+        report2 = await this.runIndependentTest(worktree, prompt, actionId);
+      }
+      await this.assertCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+      const evidence = Object.freeze({
+        testerId: "codex-cli-independent-tester",
+        candidateDigest: input.implementation.candidateDigest,
+        status: report2.status,
+        reportDigest: digestText(report2.raw)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
   async push(input) {
@@ -51806,29 +52302,40 @@ var CodexCliAutonomousLocalPort = class {
       throw blocked5("untested_candidate", "Only the independently tested candidate may be committed and pushed.");
     }
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `task:${input.workflow.workflowId}:${input.task.taskId}`
-    );
-    await this.assertCandidate(worktree, input.implementation.candidateDigest);
-    await this.gitChecked(worktree, ["add", "--all"]);
-    const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
-    if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
-    if (staged.exitCode === 1) {
-      await this.gitChecked(worktree, [
-        "commit",
-        "-m",
-        commitMessage(input.task.taskId, input.task.title)
-      ]);
-    }
-    const commitSha = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    requireCommitSha(commitSha);
-    await this.gitChecked(worktree, ["push", "--set-upstream", this.remote, input.implementation.branch]);
-    return Object.freeze({
+    const scopeId = `task:${input.workflow.workflowId}:${input.task.taskId}`;
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      taskId: input.task.taskId,
+      attempt: input.task.attempt,
       branch: input.implementation.branch,
-      commitSha,
-      candidateDigest: input.implementation.candidateDigest
+      candidateDigest: input.implementation.candidateDigest,
+      testerReportDigest: input.tester.reportDigest
+    });
+    const actionId = localActionId("push", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "push",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        taskId: input.task.taskId,
+        attempt: input.task.attempt,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence2 = pushActionResult(record.result, input.implementation.branch, input.implementation.candidateDigest);
+        await this.assertPushedResult(worktree, evidence2);
+        return evidence2;
+      }
+      if (record.phase === "prepared") await this.actions.start(actionId);
+      const evidence = await this.reconcileTaskPush(worktree, record, actionId, input);
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
   async integrate(input) {
@@ -51837,58 +52344,126 @@ var CodexCliAutonomousLocalPort = class {
     }
     const repositoryRoot = await this.verifiedRepositoryRoot();
     const branch = integrationBranch(input.workflow);
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
+    const scopeId = `integration:${input.workflow.workflowId}:${branch}`;
+    const acceptedShas = input.acceptedTasks.map((task) => task.push.commitSha);
+    for (const sha of acceptedShas) requireCommitSha(sha);
+    const prompt = integrationPrompt(input.workflow, input.acceptedTasks);
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      revision: input.workflow.revision,
       branch,
-      `integration:${input.workflow.workflowId}:${branch}`
-    );
-    for (const task of input.acceptedTasks) {
-      const sha = task.push.commitSha;
-      requireCommitSha(sha);
-      const result4 = await this.gitRaw(worktree, ["cherry-pick", sha]);
-      if (result4.exitCode !== 0) {
-        await this.gitRaw(worktree, ["cherry-pick", "--abort"]);
-        throw blocked5("integration_conflict", "Accepted task commits could not be integrated without a Git conflict.");
+      acceptedShas,
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("integrate", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "integrate",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence2 = implementationActionResult(record.result, branch, "codex-cli-integrator");
+        await this.assertCommittedCandidate(worktree, evidence2.candidateDigest);
+        return evidence2;
       }
-    }
-    const beforeHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    await this.codex(worktree, integrationPrompt(input.workflow, input.acceptedTasks), "integration");
-    const afterHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    if (afterHead !== beforeHead) {
-      throw blocked5("codex_unexpected_commit", "Codex changed Git history during integration; the port will not guess how to recover.");
-    }
-    await this.gitChecked(worktree, ["add", "--all"]);
-    const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
-    if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
-    if (staged.exitCode === 1) {
-      await this.gitChecked(worktree, ["commit", "-m", `chore(dev): integrate ${safeLabel(input.workflow.workflowId)}`]);
-    }
-    const candidateDigest = await this.committedCandidateDigest(worktree);
-    return Object.freeze({
-      implementerId: "codex-cli-integrator",
-      branch,
-      candidateDigest
+      if (record.phase === "started") {
+        if (!await this.readCodexCompletion(actionId)) throw recoveryRequired("integration");
+      } else {
+        const status = await this.gitText(worktree, ["status", "--porcelain=v1", "--untracked-files=normal"]);
+        if (status !== "") throw blocked5("integration_not_clean", "A fresh integration action requires a clean owned worktree.");
+        await this.actions.start(actionId);
+        for (const sha of acceptedShas) {
+          if (await this.hasIntegratedSource(worktree, sha)) continue;
+          const result4 = await this.gitRaw(worktree, ["cherry-pick", "-x", sha]);
+          if (result4.exitCode !== 0) {
+            await this.gitRaw(worktree, ["cherry-pick", "--abort"]);
+            throw blocked5("integration_conflict", "Accepted task commits could not be integrated without a Git conflict.");
+          }
+        }
+        const beforeCodex = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+        await this.runCodexAction(worktree, prompt, "integration", actionId);
+        const afterCodex = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+        if (afterCodex !== beforeCodex) {
+          throw blocked5("codex_unexpected_commit", "Codex changed Git history during integration; the port will not guess how to recover.");
+        }
+      }
+      await this.gitChecked(worktree, ["add", "--all"]);
+      const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
+      if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
+      if (staged.exitCode === 1) {
+        await this.gitChecked(worktree, [
+          "commit",
+          "-m",
+          `chore(dev): integrate ${safeLabel(input.workflow.workflowId)}`,
+          "-m",
+          actionTrailer(actionId)
+        ]);
+      }
+      await this.assertIntegrationHistory(worktree, baselineHead, actionId, acceptedShas);
+      const evidence = Object.freeze({
+        implementerId: "codex-cli-integrator",
+        branch,
+        candidateDigest: await this.committedCandidateDigest(worktree)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
   async testIntegration(input) {
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `integration:${input.workflow.workflowId}:${input.implementation.branch}`
-    );
-    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
-    const report2 = await this.independentTest(
-      worktree,
-      integrationTestPrompt(input.workflow),
-      `integration:${input.workflow.workflowId}:${input.workflow.revision}`
-    );
-    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
-    return Object.freeze({
-      testerId: "codex-cli-integration-tester",
+    const scopeId = `integration:${input.workflow.workflowId}:${input.implementation.branch}`;
+    const prompt = integrationTestPrompt(input.workflow);
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      branch: input.implementation.branch,
       candidateDigest: input.implementation.candidateDigest,
-      status: report2.status,
-      reportDigest: digestText(report2.raw)
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("integration_test", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "integration_test",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        baselineHead
+      });
+      await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
+      if (record.phase === "completed") {
+        const evidence2 = testerActionResult(record.result, input.implementation.candidateDigest, "codex-cli-integration-tester");
+        await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+        return evidence2;
+      }
+      let report2;
+      if (record.phase === "started") {
+        report2 = await this.readIndependentTestReport(actionId);
+        if (report2 === void 0) throw recoveryRequired("integration test");
+      } else {
+        await this.actions.start(actionId);
+        report2 = await this.runIndependentTest(worktree, prompt, actionId);
+      }
+      await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+      const evidence = Object.freeze({
+        testerId: "codex-cli-integration-tester",
+        candidateDigest: input.implementation.candidateDigest,
+        status: report2.status,
+        reportDigest: digestText(report2.raw)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
   async pushIntegration(input) {
@@ -51897,20 +52472,158 @@ var CodexCliAutonomousLocalPort = class {
       throw blocked5("untested_candidate", "Only the independently tested integration candidate may be pushed.");
     }
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `integration:${input.workflow.workflowId}:${input.implementation.branch}`
-    );
-    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
-    const commitSha = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    requireCommitSha(commitSha);
-    await this.gitChecked(worktree, ["push", "--set-upstream", this.remote, input.implementation.branch]);
+    const scopeId = `integration:${input.workflow.workflowId}:${input.implementation.branch}`;
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      branch: input.implementation.branch,
+      candidateDigest: input.implementation.candidateDigest,
+      testerReportDigest: input.tester.reportDigest
+    });
+    const actionId = localActionId("integration_push", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "integration_push",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence2 = pushActionResult(record.result, input.implementation.branch, input.implementation.candidateDigest);
+        await this.assertPushedResult(worktree, evidence2);
+        return evidence2;
+      }
+      if (record.phase === "prepared") await this.actions.start(actionId);
+      await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
+      const commitSha = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      if (commitSha !== baselineHead) throw recoveryRequired("integration push");
+      requireCommitSha(commitSha);
+      await this.ensureRemoteCommit(worktree, input.implementation.branch, commitSha);
+      const evidence = Object.freeze({
+        branch: input.implementation.branch,
+        commitSha,
+        candidateDigest: input.implementation.candidateDigest
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
+    });
+  }
+  async assertImplementationRecovery(worktree, record, evidence) {
+    const currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    if (record.baselineHead === void 0 || currentHead !== record.baselineHead) throw recoveryRequired("implementation receipt");
+    await this.assertCandidate(worktree, evidence.candidateDigest);
+  }
+  async reconcileTaskPush(worktree, record, actionId, input) {
+    const baselineHead = record.baselineHead;
+    if (baselineHead === void 0) throw recoveryRequired("task push");
+    let currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    if (currentHead === baselineHead) {
+      await this.assertCandidate(worktree, input.implementation.candidateDigest);
+      await this.gitChecked(worktree, ["add", "--all"]);
+      const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
+      if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
+      if (staged.exitCode === 1) {
+        await this.gitChecked(worktree, [
+          "commit",
+          "-m",
+          commitMessage(input.task.taskId, input.task.title),
+          "-m",
+          actionTrailer(actionId)
+        ]);
+        currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      }
+    } else if (!await this.isActionCommit(worktree, currentHead, baselineHead, actionId)) {
+      throw recoveryRequired("task push");
+    }
+    requireCommitSha(currentHead);
+    const status = await this.gitText(worktree, ["status", "--porcelain=v1", "--untracked-files=normal"]);
+    if (status !== "") throw recoveryRequired("task push");
+    await this.ensureRemoteCommit(worktree, input.implementation.branch, currentHead);
     return Object.freeze({
       branch: input.implementation.branch,
-      commitSha,
+      commitSha: currentHead,
       candidateDigest: input.implementation.candidateDigest
     });
+  }
+  async isActionCommit(worktree, head, parent, actionId) {
+    const actualParent = await this.gitText(worktree, ["rev-parse", `${head}^`]);
+    if (actualParent !== parent) return false;
+    const body = await this.gitText(worktree, ["show", "-s", "--format=%B", head], false);
+    return body.split(/\r?\n/u).includes(actionTrailer(actionId));
+  }
+  async ensureRemoteCommit(worktree, branch, commitSha) {
+    const remote = await this.remoteBranchSha(worktree, branch);
+    if (remote === commitSha) return;
+    if (remote !== void 0) {
+      const ancestor = await this.gitRaw(worktree, ["merge-base", "--is-ancestor", remote, commitSha]);
+      if (ancestor.exitCode === 1) throw blocked5("remote_branch_diverged", "The remote autonomous branch no longer points to an ancestor of the exact tested commit.");
+      if (ancestor.exitCode !== 0) throw blocked5("remote_branch_unverifiable", "The remote autonomous branch could not be verified as a safe fast-forward base.");
+    }
+    await this.gitChecked(worktree, ["push", "--set-upstream", this.remote, `${commitSha}:refs/heads/${branch}`]);
+    const verified = await this.remoteBranchSha(worktree, branch);
+    if (verified !== commitSha) throw blocked5("git_push_unverified", "The remote autonomous branch did not verify at the exact pushed commit SHA.");
+  }
+  async remoteBranchSha(worktree, branch) {
+    const result4 = await this.gitChecked(worktree, ["ls-remote", "--heads", this.remote, `refs/heads/${branch}`]);
+    const lines = result4.stdout.trim().split(/\r?\n/u).filter(Boolean);
+    if (lines.length === 0) return void 0;
+    if (lines.length !== 1) throw blocked5("remote_branch_unverifiable", "The remote returned ambiguous branch identity.");
+    const sha = lines[0].split(/\s+/u)[0];
+    if (sha === void 0) throw blocked5("remote_branch_unverifiable", "The remote branch SHA is unavailable.");
+    requireCommitSha(sha);
+    return sha;
+  }
+  async assertPushedResult(worktree, evidence) {
+    const currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    if (currentHead !== evidence.commitSha) throw recoveryRequired("push receipt");
+    const remote = await this.remoteBranchSha(worktree, evidence.branch);
+    if (remote !== evidence.commitSha) throw recoveryRequired("push receipt");
+  }
+  async hasIntegratedSource(worktree, sha) {
+    const ancestor = await this.gitRaw(worktree, ["merge-base", "--is-ancestor", sha, "HEAD"]);
+    if (ancestor.exitCode === 0) return true;
+    if (ancestor.exitCode !== 1) throw gitFailed();
+    const needle = `(cherry picked from commit ${sha})`;
+    const log = await this.gitText(worktree, ["log", "-1", "--format=%H", "--fixed-strings", `--grep=${needle}`, "HEAD"]);
+    return log !== "";
+  }
+  async assertIntegrationHistory(worktree, baselineHead, actionId, acceptedShas) {
+    const log = await this.gitText(worktree, ["log", "--format=%B%x00", `${baselineHead}..HEAD`], false);
+    const commits = log.split("\0").map((value) => value.trim()).filter(Boolean);
+    const action = actionTrailer(actionId);
+    for (const body of commits) {
+      const source = acceptedShas.some((sha) => body.includes(`(cherry picked from commit ${sha})`));
+      const owned = body.split(/\r?\n/u).includes(action);
+      if (!source && !owned) throw recoveryRequired("integration history");
+    }
+    for (const sha of acceptedShas) {
+      if (!await this.hasIntegratedSource(worktree, sha)) throw recoveryRequired("integration history");
+    }
+  }
+  async withActionScope(scopeId, action) {
+    try {
+      return await this.actions.withScope(scopeId, action);
+    } catch (error) {
+      if (error instanceof DevAutonomousLocalActionStoreError) {
+        if (error.code === "lock_timeout") {
+          throw blocked5("local_action_busy", "Another autonomous process currently owns this exact local worktree scope. Retry only after that owner finishes or its stale lock is safely reclaimed.");
+        }
+        if (error.code === "write_failed") {
+          throw blocked5("local_action_state_unavailable", "Durable local action evidence could not be committed safely; no uncertain mutation will be retried.");
+        }
+        throw new DevAutonomousPortError(
+          "local_action_state_invalid",
+          false,
+          "Durable local action identity or evidence is corrupt or conflicts with the requested operation."
+        );
+      }
+      throw error;
+    }
   }
   async verifiedRepositoryRoot() {
     let root;
@@ -51929,7 +52642,7 @@ var CodexCliAutonomousLocalPort = class {
     if (observedReal !== root) {
       throw blocked5("repository_root_mismatch", "The configured autonomous repository root must be the exact Git worktree root.");
     }
-    await mkdir11(this.stateRoot, { recursive: true, mode: 448 });
+    await mkdir12(this.stateRoot, { recursive: true, mode: 448 });
     return root;
   }
   async taskBranch(workflow2, task) {
@@ -51942,13 +52655,13 @@ var CodexCliAutonomousLocalPort = class {
     return branch;
   }
   async ensureWorktree(repositoryRoot, branch, key) {
-    const worktreesRoot = resolve10(this.stateRoot, "worktrees");
-    const path3 = resolve10(worktreesRoot, createHash13("sha256").update(key, "utf8").digest("hex").slice(0, 32));
+    const worktreesRoot = resolve11(this.stateRoot, "worktrees");
+    const path3 = resolve11(worktreesRoot, createHash14("sha256").update(key, "utf8").digest("hex").slice(0, 32));
     if (!inside(worktreesRoot, path3)) throw blocked5("state_path_invalid", "Owned worktree path escaped the autonomous state root.");
-    await mkdir11(worktreesRoot, { recursive: true, mode: 448 });
+    await mkdir12(worktreesRoot, { recursive: true, mode: 448 });
     let pathState = "missing";
     try {
-      pathState = (await lstat6(path3)).isDirectory() ? "directory" : "occupied";
+      pathState = (await lstat7(path3)).isDirectory() ? "directory" : "occupied";
     } catch {
       pathState = "missing";
     }
@@ -51958,7 +52671,7 @@ var CodexCliAutonomousLocalPort = class {
     if (pathState === "directory") {
       const existing = await this.gitRaw(path3, ["rev-parse", "--show-toplevel"]);
       if (existing.exitCode === 0) {
-        const observed = resolve10(existing.stdout.trim());
+        const observed = resolve11(existing.stdout.trim());
         if (observed !== path3) throw blocked5("worktree_mismatch", "An existing autonomous worktree has an unexpected Git root.");
         const currentBranch = await this.gitText(path3, ["branch", "--show-current"]);
         if (currentBranch !== branch) throw blocked5("worktree_mismatch", "An existing autonomous worktree is bound to a different branch.");
@@ -51974,33 +52687,76 @@ var CodexCliAutonomousLocalPort = class {
     } else {
       throw gitFailed();
     }
-    const observedRoot = resolve10(await this.gitText(path3, ["rev-parse", "--show-toplevel"]));
+    const observedRoot = resolve11(await this.gitText(path3, ["rev-parse", "--show-toplevel"]));
     if (observedRoot !== path3) throw blocked5("worktree_mismatch", "Created autonomous worktree could not be verified.");
     return path3;
   }
-  async codex(worktree, prompt, role) {
+  async runCodexAction(worktree, prompt, role, actionId) {
     boundedPrompt(prompt);
-    const args = ["exec", "--cd", worktree, "--sandbox", "workspace-write", "--ephemeral", "--color", "never"];
+    const schemaRoot = resolve11(this.stateRoot, "schemas");
+    const resultRoot = resolve11(this.stateRoot, "action-results");
+    await mkdir12(schemaRoot, { recursive: true, mode: 448 });
+    await mkdir12(resultRoot, { recursive: true, mode: 448 });
+    const schemaPath = resolve11(schemaRoot, "codex-action-completion.json");
+    const resultPath = this.actionResultPath(resultRoot, actionId, "codex");
+    await writeFile7(schemaPath, JSON.stringify(CODEX_ACTION_RESULT_SCHEMA), { encoding: "utf8", mode: 384 });
+    await rm2(resultPath, { force: true });
+    const args = [
+      "exec",
+      "--cd",
+      worktree,
+      "--sandbox",
+      "workspace-write",
+      "--ephemeral",
+      "--color",
+      "never",
+      "--output-schema",
+      schemaPath,
+      "--output-last-message",
+      resultPath
+    ];
     if (this.model !== void 0) args.push("--model", this.model);
     if (this.profile !== void 0) args.push("--profile", this.profile);
     args.push(prompt);
     const result4 = await this.safeRun(this.codexExecutable, args, worktree, codexEnvironment());
     if (result4.exitCode !== 0) {
+      await rm2(resultPath, { force: true });
       throw blocked5("codex_cli_failed", `The isolated Codex ${safeLabel(role)} session did not complete successfully.`);
     }
+    if (!await this.readCodexCompletion(actionId)) {
+      throw blocked5("codex_completion_unverified", "Codex exited successfully without its required structured completion evidence.");
+    }
   }
-  async independentTest(worktree, prompt, key) {
+  async readCodexCompletion(actionId) {
+    const resultRoot = resolve11(this.stateRoot, "action-results");
+    const resultPath = this.actionResultPath(resultRoot, actionId, "codex");
+    let raw;
+    try {
+      const metadata = await lstat7(resultPath);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) throw recoveryRequired("Codex completion marker");
+      raw = await readFile9(resultPath, "utf8");
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return false;
+      if (error instanceof DevAutonomousPortError) throw error;
+      throw recoveryRequired("Codex completion marker");
+    }
+    if (raw.length === 0 || raw.length > 16384) throw recoveryRequired("Codex completion marker");
+    let value;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      throw recoveryRequired("Codex completion marker");
+    }
+    return isRecord15(value) && Object.keys(value).length === 1 && value.status === "completed";
+  }
+  async runIndependentTest(worktree, prompt, actionId) {
     boundedPrompt(prompt);
-    const schemaRoot = resolve10(this.stateRoot, "schemas");
-    const reportsRoot = resolve10(this.stateRoot, "reports");
-    await mkdir11(schemaRoot, { recursive: true, mode: 448 });
-    await mkdir11(reportsRoot, { recursive: true, mode: 448 });
-    const schemaPath = resolve10(schemaRoot, "independent-test-result.json");
-    const reportPath = resolve10(
-      reportsRoot,
-      `${createHash13("sha256").update(key, "utf8").digest("hex").slice(0, 40)}.json`
-    );
-    if (!inside(schemaRoot, schemaPath) || !inside(reportsRoot, reportPath)) throw blocked5("state_path_invalid", "Test evidence path escaped the autonomous state root.");
+    const schemaRoot = resolve11(this.stateRoot, "schemas");
+    const resultRoot = resolve11(this.stateRoot, "action-results");
+    await mkdir12(schemaRoot, { recursive: true, mode: 448 });
+    await mkdir12(resultRoot, { recursive: true, mode: 448 });
+    const schemaPath = resolve11(schemaRoot, "independent-test-result.json");
+    const reportPath = this.actionResultPath(resultRoot, actionId, "test");
     await writeFile7(schemaPath, JSON.stringify(TEST_RESULT_SCHEMA), { encoding: "utf8", mode: 384 });
     await rm2(reportPath, { force: true });
     const args = [
@@ -52021,47 +52777,63 @@ var CodexCliAutonomousLocalPort = class {
     if (this.profile !== void 0) args.push("--profile", this.profile);
     args.push(prompt);
     const result4 = await this.safeRun(this.codexExecutable, args, worktree, codexEnvironment());
-    if (result4.exitCode !== 0) throw blocked5("codex_test_failed", "The independent Codex tester process did not complete successfully.");
+    if (result4.exitCode !== 0) {
+      await rm2(reportPath, { force: true });
+      throw blocked5("codex_test_failed", "The independent Codex tester process did not complete successfully.");
+    }
+    const report2 = await this.readIndependentTestReport(actionId);
+    if (report2 === void 0) throw blocked5("tester_output_invalid", "The independent tester did not produce its required structured result.");
+    return report2;
+  }
+  async readIndependentTestReport(actionId) {
+    const resultRoot = resolve11(this.stateRoot, "action-results");
+    const reportPath = this.actionResultPath(resultRoot, actionId, "test");
     let raw;
     try {
-      raw = await readFile8(reportPath, "utf8");
-    } catch {
-      throw blocked5("tester_output_invalid", "The independent tester did not produce its required structured result.");
+      const metadata = await lstat7(reportPath);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) throw recoveryRequired("independent test report");
+      raw = await readFile9(reportPath, "utf8");
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return void 0;
+      if (error instanceof DevAutonomousPortError) throw error;
+      throw recoveryRequired("independent test report");
     }
-    if (raw.length === 0 || raw.length > 65536) throw blocked5("tester_output_invalid", "The independent tester result exceeded its bounded schema contract.");
+    if (raw.length === 0 || raw.length > 65536) throw recoveryRequired("independent test report");
     let value;
     try {
       value = JSON.parse(raw);
     } catch {
-      throw blocked5("tester_output_invalid", "The independent tester result was not valid JSON.");
+      throw recoveryRequired("independent test report");
     }
-    if (!isRecord15(value) || value.status !== "passed" && value.status !== "failed" || typeof value.summary !== "string") {
-      throw blocked5("tester_output_invalid", "The independent tester result did not match its required schema.");
-    }
-    await rm2(reportPath, { force: true });
+    if (!isRecord15(value) || Object.keys(value).sort().join(",") !== "status,summary" || value.status !== "passed" && value.status !== "failed" || typeof value.summary !== "string" || value.summary.length === 0 || value.summary.length > 32768) throw recoveryRequired("independent test report");
     return Object.freeze({ status: value.status, raw });
   }
+  actionResultPath(root, actionId, suffix) {
+    const path3 = resolve11(root, `${createHash14("sha256").update(`${actionId}:${suffix}`, "utf8").digest("hex")}.json`);
+    if (!inside(root, path3)) throw blocked5("state_path_invalid", "Local action result path escaped the autonomous state root.");
+    return path3;
+  }
   async candidateDigest(worktree) {
-    const hash = createHash13("sha256");
+    const hash2 = createHash14("sha256");
     const diff = await this.gitText(worktree, ["diff", "--binary", "HEAD", "--", "."], false);
-    hash.update(diff, "utf8");
+    hash2.update(diff, "utf8");
     const untracked = await this.gitText(worktree, ["ls-files", "--others", "--exclude-standard", "-z"], false);
     let total = 0;
     for (const entry of untracked.split("\0")) {
       if (entry.length === 0) continue;
-      const file = resolve10(worktree, entry);
+      const file = resolve11(worktree, entry);
       if (!inside(worktree, file)) throw blocked5("candidate_path_invalid", "An untracked candidate file escaped the owned worktree.");
-      const stat9 = await lstat6(file);
-      if (!stat9.isFile() || stat9.size > MAX_UNTRACKED_FILE_BYTES) {
+      const stat10 = await lstat7(file);
+      if (!stat10.isFile() || stat10.size > MAX_UNTRACKED_FILE_BYTES) {
         throw blocked5("candidate_unbounded", "An untracked candidate entry is not a bounded regular file.");
       }
-      total += stat9.size;
+      total += stat10.size;
       if (total > MAX_UNTRACKED_TOTAL_BYTES) throw blocked5("candidate_unbounded", "Untracked candidate content exceeds the bounded evidence limit.");
-      hash.update(entry, "utf8");
-      hash.update("\0", "utf8");
-      hash.update(await readFile8(file));
+      hash2.update(entry, "utf8");
+      hash2.update("\0", "utf8");
+      hash2.update(await readFile9(file));
     }
-    return `sha256:${hash.digest("hex")}`;
+    return `sha256:${hash2.digest("hex")}`;
   }
   async committedCandidateDigest(worktree) {
     const status = await this.gitText(worktree, ["status", "--porcelain=v1", "--untracked-files=normal"]);
@@ -52113,6 +52885,12 @@ var CodexCliAutonomousLocalPort = class {
 function createCodexCliAutonomousLocalPort(options = {}) {
   return new CodexCliAutonomousLocalPort(options);
 }
+var CODEX_ACTION_RESULT_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["status"],
+  properties: { status: { type: "string", enum: ["completed"] } }
+});
 var TEST_RESULT_SCHEMA = Object.freeze({
   type: "object",
   additionalProperties: false,
@@ -52122,6 +52900,45 @@ var TEST_RESULT_SCHEMA = Object.freeze({
     summary: { type: "string", minLength: 1, maxLength: 32768 }
   }
 });
+function localInputDigest(value) {
+  const encoded = JSON.stringify(value);
+  if (encoded === void 0 || Buffer.byteLength(encoded, "utf8") > 1024 * 1024) {
+    throw blocked5("local_action_input_invalid", "Autonomous local action identity exceeded its bounded canonical input.");
+  }
+  return digestText(encoded);
+}
+function localActionId(kind, inputDigest) {
+  return `dev-local-${safeRefPart(kind)}-${createHash14("sha256").update(inputDigest, "utf8").digest("hex").slice(0, 48)}`;
+}
+function actionTrailer(actionId) {
+  return `Dev-Autonomous-Action: ${actionId}`;
+}
+function recoveryRequired(label) {
+  return blocked5(
+    "local_action_recovery_required",
+    `The ${safeLabel(label)} crossed a local mutation boundary without enough durable evidence to retry safely. Inspect the owned worktree/action journal before resuming.`
+  );
+}
+function implementationActionResult(value, branch, implementerId = "codex-cli-implementer") {
+  if (!isRecord15(value) || value.implementerId !== implementerId || value.branch !== branch || !canonicalDigest(value.candidateDigest)) {
+    throw recoveryRequired("implementation receipt");
+  }
+  return Object.freeze({ implementerId, branch, candidateDigest: value.candidateDigest });
+}
+function testerActionResult(value, candidateDigest, testerId) {
+  if (!isRecord15(value) || value.testerId !== testerId || value.candidateDigest !== candidateDigest || value.status !== "passed" && value.status !== "failed" || !canonicalDigest(value.reportDigest)) throw recoveryRequired("tester receipt");
+  return Object.freeze({ testerId, candidateDigest, status: value.status, reportDigest: value.reportDigest });
+}
+function pushActionResult(value, branch, candidateDigest) {
+  if (!isRecord15(value) || value.branch !== branch || value.candidateDigest !== candidateDigest || typeof value.commitSha !== "string") {
+    throw recoveryRequired("push receipt");
+  }
+  requireCommitSha(value.commitSha);
+  return Object.freeze({ branch, commitSha: value.commitSha, candidateDigest });
+}
+function canonicalDigest(value) {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
+}
 function implementationPrompt(workflow2, task, guidance) {
   return boundedPrompt([
     "You are the local implementation agent in an autonomous development workflow.",
@@ -52284,10 +53101,10 @@ function boundedPrompt(value) {
 }
 function safeRefPart(value) {
   const safe2 = value.replace(/[^A-Za-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
-  return safe2.length > 0 ? safe2 : createHash13("sha256").update(value, "utf8").digest("hex").slice(0, 16);
+  return safe2.length > 0 ? safe2 : createHash14("sha256").update(value, "utf8").digest("hex").slice(0, 16);
 }
 function integrationBranch(workflow2) {
-  return `codex/${safeRefPart(workflow2.workflowId)}-integration-r${workflow2.revision}`;
+  return `codex/${safeRefPart(workflow2.workflowId)}-integration`;
 }
 function commitMessage(taskId, title) {
   return `feat(dev): ${safeLabel(taskId)} ${safeLabel(title)}`.slice(0, 240);
@@ -52301,10 +53118,10 @@ function requireCommitSha(value) {
   }
 }
 function digestText(value) {
-  return `sha256:${createHash13("sha256").update(value, "utf8").digest("hex")}`;
+  return `sha256:${createHash14("sha256").update(value, "utf8").digest("hex")}`;
 }
 function inside(root, candidate) {
-  const rel = relative2(resolve10(root), resolve10(candidate));
+  const rel = relative2(resolve11(root), resolve11(candidate));
   return rel === "" || !rel.startsWith("..") && !isAbsolute5(rel);
 }
 function isRecord15(value) {
@@ -52312,14 +53129,14 @@ function isRecord15(value) {
 }
 
 // src/dev/autonomous-chatgpt-port.ts
-import { createHash as createHash16 } from "node:crypto";
-import { join as join16, resolve as resolve12 } from "node:path";
+import { createHash as createHash17 } from "node:crypto";
+import { join as join17, resolve as resolve13 } from "node:path";
 
 // src/response-watchers.ts
-import { createHash as createHash14, randomUUID as randomUUID12 } from "node:crypto";
-import { mkdir as mkdir12, readFile as readFile9, readdir as readdir3, rename as rename6, unlink as unlink7, writeFile as writeFile8 } from "node:fs/promises";
+import { createHash as createHash15, randomUUID as randomUUID13 } from "node:crypto";
+import { mkdir as mkdir13, readFile as readFile10, readdir as readdir3, rename as rename7, unlink as unlink8, writeFile as writeFile8 } from "node:fs/promises";
 import { homedir as homedir4, platform as platform4 } from "node:os";
-import { join as join14 } from "node:path";
+import { join as join15 } from "node:path";
 var ResponseWatcherIdentityError = class extends Error {
   constructor() {
     super("Response watcher identity does not match the existing operation.");
@@ -52377,9 +53194,9 @@ var ResponseWatcherRegistry = class {
     const record = await this.store.get(watcherId);
     if (record === void 0) throw new ResponseWatcherNotFoundError();
     if (record.state !== "pending") return record;
-    return await new Promise((resolve14, reject) => {
+    return await new Promise((resolve15, reject) => {
       const current = this.waiters.get(watcherId) ?? [];
-      current.push({ resolve: resolve14, reject });
+      current.push({ resolve: resolve15, reject });
       this.waiters.set(watcherId, current);
     });
   }
@@ -52426,8 +53243,8 @@ var ResponseWatcherRegistry = class {
   async serial(action) {
     const previous = this.mutation;
     let release;
-    this.mutation = new Promise((resolve14) => {
-      release = resolve14;
+    this.mutation = new Promise((resolve15) => {
+      release = resolve15;
     });
     await previous;
     try {
@@ -52445,8 +53262,8 @@ var FileResponseWatcherStore = class {
   }
   async get(watcherId) {
     try {
-      const value = JSON.parse(await readFile9(this.path(watcherId), "utf8"));
-      return parseRecord2(value);
+      const value = JSON.parse(await readFile10(this.path(watcherId), "utf8"));
+      return parseRecord3(value);
     } catch (error) {
       if (isCode(error, "ENOENT")) return void 0;
       throw error;
@@ -52463,21 +53280,21 @@ var FileResponseWatcherStore = class {
     const records = [];
     for (const name of names) {
       if (!name.endsWith(".json")) continue;
-      records.push(parseRecord2(JSON.parse(await readFile9(join14(this.stateRoot, name), "utf8"))));
+      records.push(parseRecord3(JSON.parse(await readFile10(join15(this.stateRoot, name), "utf8"))));
     }
     return records;
   }
   async put(record) {
     const previous = storeQueues.get(this.stateRoot) ?? Promise.resolve();
     const queued = previous.catch(() => void 0).then(async () => {
-      await mkdir12(this.stateRoot, { recursive: true, mode: 448 });
-      const temporary = join14(this.stateRoot, `${randomUUID12()}.tmp`);
+      await mkdir13(this.stateRoot, { recursive: true, mode: 448 });
+      const temporary = join15(this.stateRoot, `${randomUUID13()}.tmp`);
       try {
         await writeFile8(temporary, `${JSON.stringify(record, null, 2)}
 `, { encoding: "utf8", mode: 384 });
-        await rename6(temporary, this.path(record.watcherId));
+        await rename7(temporary, this.path(record.watcherId));
       } finally {
-        await unlink7(temporary).catch(() => void 0);
+        await unlink8(temporary).catch(() => void 0);
       }
     });
     storeQueues.set(this.stateRoot, queued);
@@ -52488,13 +53305,13 @@ var FileResponseWatcherStore = class {
     }
   }
   path(watcherId) {
-    return join14(this.stateRoot, `${createHash14("sha256").update(watcherId, "utf8").digest("hex")}.json`);
+    return join15(this.stateRoot, `${createHash15("sha256").update(watcherId, "utf8").digest("hex")}.json`);
   }
 };
 function defaultResponseWatcherStateRoot() {
-  if (platform4() === "win32") return join14(process.env.LOCALAPPDATA?.trim() || join14(homedir4(), "AppData", "Local"), "codex-chatgpt-control", "response-watchers-v1");
-  if (platform4() === "darwin") return join14(homedir4(), "Library", "Application Support", "codex-chatgpt-control", "response-watchers-v1");
-  return join14(process.env.XDG_STATE_HOME?.trim() || join14(homedir4(), ".local", "state"), "codex-chatgpt-control", "response-watchers-v1");
+  if (platform4() === "win32") return join15(process.env.LOCALAPPDATA?.trim() || join15(homedir4(), "AppData", "Local"), "codex-chatgpt-control", "response-watchers-v1");
+  if (platform4() === "darwin") return join15(homedir4(), "Library", "Application Support", "codex-chatgpt-control", "response-watchers-v1");
+  return join15(process.env.XDG_STATE_HOME?.trim() || join15(homedir4(), ".local", "state"), "codex-chatgpt-control", "response-watchers-v1");
 }
 function sameRegistration(left, right) {
   return left.watcherId === right.watcherId && left.logicalConversationKey === right.logicalConversationKey && left.conversationId === right.conversationId && left.providerId === right.providerId && left.browserId === right.browserId && left.tabId === right.tabId && left.operationId === right.operationId && left.targetBindingDigest === right.targetBindingDigest && left.baselineAssistantTurnCount === right.baselineAssistantTurnCount && left.baselineSnapshotDigest === right.baselineSnapshotDigest && JSON.stringify(left.baselineAssistantTurnIds) === JSON.stringify(right.baselineAssistantTurnIds);
@@ -52512,7 +53329,7 @@ function validateRegistration(value) {
 function validateCompletion(value) {
   if (typeof value.assistantTurnId !== "string" || value.assistantTurnId.trim().length === 0 || !Number.isSafeInteger(value.assistantTurnCount) || value.assistantTurnCount < 1) throw new TypeError("Invalid response watcher completion.");
 }
-function parseRecord2(value) {
+function parseRecord3(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Invalid response watcher record.");
   const record = value;
   const allowed = /* @__PURE__ */ new Set(["watcherId", "logicalConversationKey", "conversationId", "providerId", "browserId", "tabId", "operationId", "targetBindingDigest", "baselineAssistantTurnIds", "baselineAssistantTurnCount", "baselineSnapshotDigest", "state", "registeredAt", "updatedAt", "completion"]);
@@ -52538,13 +53355,13 @@ function isCode(error, code) {
 }
 
 // src/dev/autonomous-turn-store.ts
-import { createHash as createHash15, randomUUID as randomUUID13 } from "node:crypto";
-import { mkdir as mkdir13, open as open7, readFile as readFile10, rename as rename7, unlink as unlink8 } from "node:fs/promises";
-import { join as join15, resolve as resolve11 } from "node:path";
+import { createHash as createHash16, randomUUID as randomUUID14 } from "node:crypto";
+import { mkdir as mkdir14, open as open8, readFile as readFile11, rename as rename8, unlink as unlink9 } from "node:fs/promises";
+import { join as join16, resolve as resolve12 } from "node:path";
 var DEV_AUTONOMOUS_TURN_SCHEMA_VERSION = "chatgpt.browser_control.dev_autonomous_turn.v1";
 var MAX_TURN_TEXT_BYTES = 4 * 1024 * 1024;
-var DIGEST_PATTERN21 = /^(?:sha256|hmac-sha256):[0-9a-f]{64}$/u;
-var queues2 = /* @__PURE__ */ new Map();
+var DIGEST_PATTERN22 = /^(?:sha256|hmac-sha256):[0-9a-f]{64}$/u;
+var queues3 = /* @__PURE__ */ new Map();
 var DevAutonomousTurnStoreError = class extends Error {
   constructor(code, message) {
     super(message);
@@ -52556,14 +53373,14 @@ var DevAutonomousTurnStoreError = class extends Error {
 var FileDevAutonomousTurnStore = class {
   stateRoot;
   constructor(options = {}) {
-    this.stateRoot = resolve11(options.stateRoot ?? join15(process.cwd(), ".chatgpt-dev", "state", "turns"));
+    this.stateRoot = resolve12(options.stateRoot ?? join16(process.cwd(), ".chatgpt-dev", "state", "turns"));
     this.now = options.now ?? (() => /* @__PURE__ */ new Date());
   }
   now;
   async get(watcherId) {
     validateId(watcherId, "watcherId");
     try {
-      return parseRecord3(JSON.parse(await readFile10(this.path(watcherId), "utf8")), watcherId);
+      return parseRecord4(JSON.parse(await readFile11(this.path(watcherId), "utf8")), watcherId);
     } catch (error) {
       if (nodeErrorCode(error) === "ENOENT") return void 0;
       if (error instanceof DevAutonomousTurnStoreError) throw error;
@@ -52642,45 +53459,45 @@ var FileDevAutonomousTurnStore = class {
   }
   async withQueue(watcherId, action) {
     const key = this.path(watcherId);
-    const previous = queues2.get(key) ?? Promise.resolve();
+    const previous = queues3.get(key) ?? Promise.resolve();
     let release;
     const current = new Promise((resolveCurrent) => {
       release = resolveCurrent;
     });
     const chained = previous.catch(() => void 0).then(() => current);
-    queues2.set(key, chained);
+    queues3.set(key, chained);
     await previous.catch(() => void 0);
     try {
       return await action();
     } finally {
       release();
-      if (queues2.get(key) === chained) queues2.delete(key);
+      if (queues3.get(key) === chained) queues3.delete(key);
     }
   }
   path(watcherId) {
-    return join15(this.stateRoot, `${createHash15("sha256").update(watcherId, "utf8").digest("hex")}.json`);
+    return join16(this.stateRoot, `${createHash16("sha256").update(watcherId, "utf8").digest("hex")}.json`);
   }
   async write(record) {
-    await mkdir13(this.stateRoot, { recursive: true, mode: 448 });
+    await mkdir14(this.stateRoot, { recursive: true, mode: 448 });
     const target = this.path(record.watcherId);
-    const temporary = join15(this.stateRoot, `${randomUUID13()}.tmp`);
+    const temporary = join16(this.stateRoot, `${randomUUID14()}.tmp`);
     let handle;
     try {
-      handle = await open7(temporary, "wx", 384);
+      handle = await open8(temporary, "wx", 384);
       await handle.writeFile(`${JSON.stringify(record, null, 2)}
 `, "utf8");
       await handle.sync();
       await handle.close();
       handle = void 0;
-      await rename7(temporary, target);
+      await rename8(temporary, target);
     } catch {
       await handle?.close().catch(() => void 0);
-      await unlink8(temporary).catch(() => void 0);
+      await unlink9(temporary).catch(() => void 0);
       throw new DevAutonomousTurnStoreError("write_failed", "Autonomous turn state could not be committed safely.");
     }
   }
 };
-function parseRecord3(value, watcherId) {
+function parseRecord4(value, watcherId) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) invalid4();
   const record = value;
   const allowed = /* @__PURE__ */ new Set(["schemaVersion", "watcherId", "kind", "logicalConversationKey", "handle", "createdAt", "updatedAt", "response"]);
@@ -52732,7 +53549,7 @@ function validateId(value, label, maxLength = 256) {
   }
 }
 function validateDigest(value) {
-  if (typeof value !== "string" || !DIGEST_PATTERN21.test(value)) invalid4();
+  if (typeof value !== "string" || !DIGEST_PATTERN22.test(value)) invalid4();
 }
 function invalid4() {
   throw new DevAutonomousTurnStoreError("invalid_record", "Autonomous turn state is invalid.");
@@ -52744,16 +53561,16 @@ var PROJECT_ID_PATTERN = /^g-p-[A-Za-z0-9._:-]{1,256}$/u;
 var ChatGPTAutonomousPort = class {
   constructor(chatgpt, options = {}) {
     this.chatgpt = chatgpt;
-    const root = resolve12(options.stateRoot ?? join16(process.cwd(), ".chatgpt-dev", "state"));
+    const root = resolve13(options.stateRoot ?? join17(process.cwd(), ".chatgpt-dev", "state"));
     this.conversations = options.conversations ?? new ConversationManager(chatgpt, options.conversationOptions ?? {
-      stateRoot: join16(root, "conversations"),
-      affinityStateRoot: join16(root, "browser-affinity")
+      stateRoot: join17(root, "conversations"),
+      affinityStateRoot: join17(root, "browser-affinity")
     });
     this.watcherStore = options.watcherStore ?? new FileResponseWatcherStore({
-      stateRoot: join16(root, "response-watchers")
+      stateRoot: join17(root, "response-watchers")
     });
     this.watchers = options.watchers ?? new ResponseWatcherRegistry(this.watcherStore);
-    this.turns = options.turns ?? new FileDevAutonomousTurnStore({ stateRoot: join16(root, "turns") });
+    this.turns = options.turns ?? new FileDevAutonomousTurnStore({ stateRoot: join17(root, "turns") });
     this.provisioner = options.provisioner;
   }
   chatgpt;
@@ -53050,7 +53867,7 @@ var ChatGPTAutonomousPort = class {
         "The exact autonomous ChatGPT response is no longer available from the operation collector."
       );
     }
-    const digest4 = collected.response.text?.digest ?? `sha256:${createHash16("sha256").update(text, "utf8").digest("hex")}`;
+    const digest4 = collected.response.text?.digest ?? `sha256:${createHash17("sha256").update(text, "utf8").digest("hex")}`;
     const stored = await this.turns.storeResponse({
       watcherId,
       digest: digest4,
@@ -53303,22 +54120,22 @@ function createChatGPT2(options = {}) {
     options.dev
   );
   const autonomousOptions = options.dev?.autonomous;
-  const autonomousRoot = resolve13(
-    autonomousOptions?.stateRoot ?? (options.dev?.stateRoot === void 0 ? join17(process.cwd(), ".chatgpt-dev", "state", "autonomous") : join17(options.dev.stateRoot, "autonomous"))
+  const autonomousRoot = resolve14(
+    autonomousOptions?.stateRoot ?? (options.dev?.stateRoot === void 0 ? join18(process.cwd(), ".chatgpt-dev", "state", "autonomous") : join18(options.dev.stateRoot, "autonomous"))
   );
   const chat = new ChatGPTAutonomousPort(base, {
     ...autonomousOptions?.chat ?? {},
-    stateRoot: join17(autonomousRoot, "chat")
+    stateRoot: join18(autonomousRoot, "chat")
   });
   const store = new FileDevAutonomousWorkflowStore({
-    stateRoot: join17(autonomousRoot, "workflows")
+    stateRoot: join18(autonomousRoot, "workflows")
   });
   if (autonomousOptions?.local !== void 0 && autonomousOptions.localCodex !== void 0) {
     throw new TypeError("Configure either dev.autonomous.local or dev.autonomous.localCodex, not both.");
   }
   const local = autonomousOptions?.local ?? (autonomousOptions?.localCodex === void 0 ? void 0 : createCodexCliAutonomousLocalPort({
     ...autonomousOptions.localCodex,
-    stateRoot: autonomousOptions.localCodex.stateRoot ?? join17(autonomousRoot, "local")
+    stateRoot: autonomousOptions.localCodex.stateRoot ?? join18(autonomousRoot, "local")
   }));
   const autonomous = createDevAutonomousApi({
     store,
@@ -53336,8 +54153,8 @@ async function restoreChatExperience(experience, options = {}) {
   const attempts = Math.max(1, Math.min(5, options.attempts ?? 3));
   const delayMs = Math.max(0, Math.min(5e3, options.delayMs ?? 750));
   const timeoutMs = Math.max(1e3, Math.min(12e4, options.timeoutMs ?? 6e4));
-  const sleep4 = options.sleep ?? (async (milliseconds) => {
-    await new Promise((resolve14) => setTimeout(resolve14, milliseconds));
+  const sleep5 = options.sleep ?? (async (milliseconds) => {
+    await new Promise((resolve15) => setTimeout(resolve15, milliseconds));
   });
   let terminal;
   let observedExperience;
@@ -53359,7 +54176,7 @@ async function restoreChatExperience(experience, options = {}) {
       }
     }
     if (attempt < attempts) {
-      await sleep4(delayMs);
+      await sleep5(delayMs);
     }
   }
   return {
@@ -53373,8 +54190,8 @@ async function restoreWorkEffort(configuration, effort, options = {}) {
   const attempts = Math.max(1, Math.min(5, options.attempts ?? 3));
   const delayMs = Math.max(0, Math.min(5e3, options.delayMs ?? 750));
   const timeoutMs = Math.max(1e3, Math.min(12e4, options.timeoutMs ?? 6e4));
-  const sleep4 = options.sleep ?? (async (milliseconds) => {
-    await new Promise((resolve14) => setTimeout(resolve14, milliseconds));
+  const sleep5 = options.sleep ?? (async (milliseconds) => {
+    await new Promise((resolve15) => setTimeout(resolve15, milliseconds));
   });
   let terminal;
   let observedEffort;
@@ -53404,7 +54221,7 @@ async function restoreWorkEffort(configuration, effort, options = {}) {
       }
     }
     if (attempt < attempts) {
-      await sleep4(delayMs);
+      await sleep5(delayMs);
     }
   }
   return {
@@ -53709,7 +54526,7 @@ var requiredScenarios = [
     };
     const result4 = await chatgpt.createReport(command, { destDir: context2.reportDir, basename: "redacted-run-report" });
     const path3 = result4.data?.path;
-    const body = path3 === void 0 ? "" : await readFile11(path3, "utf8").catch(() => "");
+    const body = path3 === void 0 ? "" : await readFile12(path3, "utf8").catch(() => "");
     return result4.ok && body.includes("[redacted:") && !body.includes("private@example.com") && !body.includes("/example/user/private") ? pass(meta, result4, { path: path3 }) : fail2(meta, result4, { path: path3, bodyPreview: body.slice(0, 500) });
   }),
   scenario("runner-new-ask-read", true, () => true, async (context2, meta) => {
@@ -53802,7 +54619,7 @@ var requiredScenarios = [
       report: { enabled: true, destDir: context2.reportDir, basename: "runner-report-redacted", includeContent: false }
     });
     const path3 = result4.data?.reportPath ?? result4.reportPath;
-    const body = path3 === void 0 ? "" : await readFile11(path3, "utf8").catch(() => "");
+    const body = path3 === void 0 ? "" : await readFile12(path3, "utf8").catch(() => "");
     return result4.ok && path3 !== void 0 && body.includes("[redacted:") && !body.includes(secret) ? pass(meta, result4, { path: path3 }) : fail2(meta, result4, { path: path3, bodyPreview: body.slice(0, 500), output: result4.output_text });
   }),
   scenario("runner-mode-unavailable", true, () => true, async (context2, meta) => {
@@ -53990,8 +54807,8 @@ var optionalScenarios = [
       return skipped(meta, `blocked: expected one exact conversation tab, found ${matches.length}`);
     }
     const exactTab = matches[0];
-    const stateRoot = await mkdtemp(join18(tmpdir(), "chatgpt-affinity-state-"));
-    const affinityStateRoot = await mkdtemp(join18(tmpdir(), "chatgpt-affinity-root-"));
+    const stateRoot = await mkdtemp(join19(tmpdir(), "chatgpt-affinity-state-"));
+    const affinityStateRoot = await mkdtemp(join19(tmpdir(), "chatgpt-affinity-root-"));
     const key = "live-smoke-initial-affinity";
     try {
       const chatgpt = createChatGPT2(clientOptionsFor(context2));
@@ -54071,8 +54888,8 @@ var optionalScenarios = [
       if (targetUrl === void 0 || !conversationMatches(targetUrl, conversationId, conversationUrl2)) {
         return skipped(meta, "blocked: exact conversation URL is unavailable");
       }
-      const stateRoot = await mkdtemp(join18(tmpdir(), "chatgpt-affinity-recovery-state-"));
-      const affinityStateRoot = await mkdtemp(join18(tmpdir(), "chatgpt-affinity-recovery-root-"));
+      const stateRoot = await mkdtemp(join19(tmpdir(), "chatgpt-affinity-recovery-state-"));
+      const affinityStateRoot = await mkdtemp(join19(tmpdir(), "chatgpt-affinity-recovery-root-"));
       const key = "live-smoke-affinity-recovery";
       let duplicateTabId;
       try {
@@ -54302,8 +55119,8 @@ var optionalScenarios = [
     }, env);
     const download = typeof result4.data === "object" && result4.data !== null ? result4.data : void 0;
     const path3 = download?.path;
-    const bytes = path3 === void 0 ? 0 : (await stat8(path3).catch(() => void 0))?.size ?? 0;
-    const content = path3 === void 0 ? "" : await readFile11(path3, "utf8").catch(() => "");
+    const bytes = path3 === void 0 ? 0 : (await stat9(path3).catch(() => void 0))?.size ?? 0;
+    const content = path3 === void 0 ? "" : await readFile12(path3, "utf8").catch(() => "");
     const rows = content.replace(/^\uFEFF/, "").trim().split(/\r?\n/).map((row) => row.trim());
     const exactFile = download?.suggestedFilename === "chatgpt-live-smoke.csv";
     const exactContent = rows[0] === "name,value" && rows[1] === "smoke,1" && rows.length === 2;
@@ -54598,15 +55415,15 @@ async function stopGenerationIfVisible(env) {
   await stopGeneration(env, { confirmStop: true, timeoutMs: 5e3 }).catch(() => void 0);
 }
 function hashPreview(text) {
-  let hash = 0;
+  let hash2 = 0;
   for (const char of text) {
-    hash = (hash << 5) - hash + char.charCodeAt(0) | 0;
+    hash2 = (hash2 << 5) - hash2 + char.charCodeAt(0) | 0;
   }
-  return Math.abs(hash).toString(16);
+  return Math.abs(hash2).toString(16);
 }
 async function tempFile(name, body) {
-  const dir = await mkdtemp(join18(tmpdir(), "chatgpt-live-smoke-"));
-  const file = join18(dir, name);
+  const dir = await mkdtemp(join19(tmpdir(), "chatgpt-live-smoke-"));
+  const file = join19(dir, name);
   await writeFile9(file, body, "utf8");
   return file;
 }

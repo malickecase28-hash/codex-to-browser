@@ -9,6 +9,7 @@ import {
   writeFile
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { nodeErrorCode } from "../errors.js";
 import type {
   DevAutonomousLocalPort,
   DevAutonomousPortError
@@ -20,6 +21,11 @@ import type {
   DevTaskRecord,
   DevTesterEvidence
 } from "./autonomous-workflow.js";
+import {
+  DevAutonomousLocalActionStoreError,
+  FileDevAutonomousLocalActionStore,
+  type DevAutonomousLocalActionRecord
+} from "./autonomous-local-action-store.js";
 
 const DEFAULT_TIMEOUT_MS = 30 * 60_000;
 const MAX_TIMEOUT_MS = 4 * 60 * 60_000;
@@ -67,6 +73,8 @@ export type CodexCliAutonomousLocalPortOptions = Readonly<{
   profile?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /** Optional durable action journal override. */
+  actionStore?: FileDevAutonomousLocalActionStore;
   /** Test seam. Production callers normally leave this unset. */
   processRunner?: CodexCliLocalProcessRunner;
 }>;
@@ -95,6 +103,7 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
   private readonly runProcess: CodexCliLocalProcessRunner;
+  readonly actions: FileDevAutonomousLocalActionStore;
 
   constructor(options: CodexCliAutonomousLocalPortOptions = {}) {
     this.repositoryRoot = resolve(options.repositoryRoot ?? process.cwd());
@@ -113,6 +122,9 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
       MAX_OUTPUT_BYTES
     );
     this.runProcess = options.processRunner ?? defaultProcessRunner;
+    this.actions = options.actionStore ?? new FileDevAutonomousLocalActionStore({
+      stateRoot: join(this.stateRoot, "actions")
+    });
   }
 
   async implement(input: Readonly<{
@@ -122,23 +134,53 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
   }>): Promise<DevImplementationCandidate> {
     const repositoryRoot = await this.verifiedRepositoryRoot();
     const branch = await this.taskBranch(input.workflow, input.task);
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      branch,
-      `task:${input.workflow.workflowId}:${input.task.taskId}`
-    );
-    const beforeHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    const scopeId = `task:${input.workflow.workflowId}:${input.task.taskId}`;
     const prompt = implementationPrompt(input.workflow, input.task, input.guidance);
-    await this.codex(worktree, prompt, "implementation");
-    const afterHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    if (afterHead !== beforeHead) {
-      throw blocked("codex_unexpected_commit", "Codex changed Git history during implementation; the port will not guess how to recover.");
-    }
-    const candidateDigest = await this.candidateDigest(worktree);
-    return Object.freeze({
-      implementerId: "codex-cli-implementer",
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      taskId: input.task.taskId,
+      attempt: input.task.attempt,
       branch,
-      candidateDigest
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("implement", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "implement",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch,
+        taskId: input.task.taskId,
+        attempt: input.task.attempt,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence = implementationActionResult(record.result, branch);
+        await this.assertImplementationRecovery(worktree, record, evidence);
+        return evidence;
+      }
+      if (record.phase === "started") {
+        if (!(await this.readCodexCompletion(actionId))) throw recoveryRequired("implementation");
+      } else {
+        await this.actions.start(actionId);
+        await this.runCodexAction(worktree, prompt, "implementation", actionId);
+      }
+      const afterHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      if (afterHead !== baselineHead) {
+        throw blocked("codex_unexpected_commit", "Codex changed Git history during implementation; the port will not guess how to recover.");
+      }
+      const evidence = Object.freeze({
+        implementerId: "codex-cli-implementer",
+        branch,
+        candidateDigest: await this.candidateDigest(worktree)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
 
@@ -148,23 +190,55 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     implementation: DevImplementationCandidate;
   }>): Promise<DevTesterEvidence> {
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `task:${input.workflow.workflowId}:${input.task.taskId}`
-    );
-    await this.assertCandidate(worktree, input.implementation.candidateDigest);
-    const report = await this.independentTest(
-      worktree,
-      independentTestPrompt(input.workflow, input.task),
-      `task:${input.workflow.workflowId}:${input.task.taskId}:${input.task.attempt}`
-    );
-    await this.assertCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
-    return Object.freeze({
-      testerId: "codex-cli-independent-tester",
+    const scopeId = `task:${input.workflow.workflowId}:${input.task.taskId}`;
+    const prompt = independentTestPrompt(input.workflow, input.task);
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      taskId: input.task.taskId,
+      attempt: input.task.attempt,
+      branch: input.implementation.branch,
       candidateDigest: input.implementation.candidateDigest,
-      status: report.status,
-      reportDigest: digestText(report.raw)
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("test", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "test",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        taskId: input.task.taskId,
+        attempt: input.task.attempt,
+        baselineHead
+      });
+      await this.assertCandidate(worktree, input.implementation.candidateDigest);
+      if (record.phase === "completed") {
+        const evidence = testerActionResult(record.result, input.implementation.candidateDigest, "codex-cli-independent-tester");
+        await this.assertCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+        return evidence;
+      }
+      let report: Readonly<{ status: "passed" | "failed"; raw: string }> | undefined;
+      if (record.phase === "started") {
+        report = await this.readIndependentTestReport(actionId);
+        if (report === undefined) throw recoveryRequired("independent test");
+      } else {
+        await this.actions.start(actionId);
+        report = await this.runIndependentTest(worktree, prompt, actionId);
+      }
+      await this.assertCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+      const evidence = Object.freeze({
+        testerId: "codex-cli-independent-tester",
+        candidateDigest: input.implementation.candidateDigest,
+        status: report.status,
+        reportDigest: digestText(report.raw)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
 
@@ -179,29 +253,40 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
       throw blocked("untested_candidate", "Only the independently tested candidate may be committed and pushed.");
     }
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `task:${input.workflow.workflowId}:${input.task.taskId}`
-    );
-    await this.assertCandidate(worktree, input.implementation.candidateDigest);
-    await this.gitChecked(worktree, ["add", "--all"]);
-    const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
-    if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
-    if (staged.exitCode === 1) {
-      await this.gitChecked(worktree, [
-        "commit",
-        "-m",
-        commitMessage(input.task.taskId, input.task.title)
-      ]);
-    }
-    const commitSha = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    requireCommitSha(commitSha);
-    await this.gitChecked(worktree, ["push", "--set-upstream", this.remote, input.implementation.branch]);
-    return Object.freeze({
+    const scopeId = `task:${input.workflow.workflowId}:${input.task.taskId}`;
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      taskId: input.task.taskId,
+      attempt: input.task.attempt,
       branch: input.implementation.branch,
-      commitSha,
-      candidateDigest: input.implementation.candidateDigest
+      candidateDigest: input.implementation.candidateDigest,
+      testerReportDigest: input.tester.reportDigest
+    });
+    const actionId = localActionId("push", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "push",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        taskId: input.task.taskId,
+        attempt: input.task.attempt,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence = pushActionResult(record.result, input.implementation.branch, input.implementation.candidateDigest);
+        await this.assertPushedResult(worktree, evidence);
+        return evidence;
+      }
+      if (record.phase === "prepared") await this.actions.start(actionId);
+      const evidence = await this.reconcileTaskPush(worktree, record, actionId, input);
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
 
@@ -214,37 +299,77 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     }
     const repositoryRoot = await this.verifiedRepositoryRoot();
     const branch = integrationBranch(input.workflow);
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
+    const scopeId = `integration:${input.workflow.workflowId}:${branch}`;
+    const acceptedShas = input.acceptedTasks.map(task => task.push!.commitSha);
+    for (const sha of acceptedShas) requireCommitSha(sha);
+    const prompt = integrationPrompt(input.workflow, input.acceptedTasks);
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      revision: input.workflow.revision,
       branch,
-      `integration:${input.workflow.workflowId}:${branch}`
-    );
-    for (const task of input.acceptedTasks) {
-      const sha = task.push!.commitSha;
-      requireCommitSha(sha);
-      const result = await this.gitRaw(worktree, ["cherry-pick", sha]);
-      if (result.exitCode !== 0) {
-        await this.gitRaw(worktree, ["cherry-pick", "--abort"]);
-        throw blocked("integration_conflict", "Accepted task commits could not be integrated without a Git conflict.");
+      acceptedShas,
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("integrate", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "integrate",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence = implementationActionResult(record.result, branch, "codex-cli-integrator");
+        await this.assertCommittedCandidate(worktree, evidence.candidateDigest);
+        return evidence;
       }
-    }
-    const beforeHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    await this.codex(worktree, integrationPrompt(input.workflow, input.acceptedTasks), "integration");
-    const afterHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    if (afterHead !== beforeHead) {
-      throw blocked("codex_unexpected_commit", "Codex changed Git history during integration; the port will not guess how to recover.");
-    }
-    await this.gitChecked(worktree, ["add", "--all"]);
-    const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
-    if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
-    if (staged.exitCode === 1) {
-      await this.gitChecked(worktree, ["commit", "-m", `chore(dev): integrate ${safeLabel(input.workflow.workflowId)}`]);
-    }
-    const candidateDigest = await this.committedCandidateDigest(worktree);
-    return Object.freeze({
-      implementerId: "codex-cli-integrator",
-      branch,
-      candidateDigest
+      if (record.phase === "started") {
+        if (!(await this.readCodexCompletion(actionId))) throw recoveryRequired("integration");
+      } else {
+        const status = await this.gitText(worktree, ["status", "--porcelain=v1", "--untracked-files=normal"]);
+        if (status !== "") throw blocked("integration_not_clean", "A fresh integration action requires a clean owned worktree.");
+        await this.actions.start(actionId);
+        for (const sha of acceptedShas) {
+          if (await this.hasIntegratedSource(worktree, sha)) continue;
+          const result = await this.gitRaw(worktree, ["cherry-pick", "-x", sha]);
+          if (result.exitCode !== 0) {
+            await this.gitRaw(worktree, ["cherry-pick", "--abort"]);
+            throw blocked("integration_conflict", "Accepted task commits could not be integrated without a Git conflict.");
+          }
+        }
+        const beforeCodex = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+        await this.runCodexAction(worktree, prompt, "integration", actionId);
+        const afterCodex = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+        if (afterCodex !== beforeCodex) {
+          throw blocked("codex_unexpected_commit", "Codex changed Git history during integration; the port will not guess how to recover.");
+        }
+      }
+      await this.gitChecked(worktree, ["add", "--all"]);
+      const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
+      if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
+      if (staged.exitCode === 1) {
+        await this.gitChecked(worktree, [
+          "commit",
+          "-m",
+          `chore(dev): integrate ${safeLabel(input.workflow.workflowId)}`,
+          "-m",
+          actionTrailer(actionId)
+        ]);
+      }
+      await this.assertIntegrationHistory(worktree, baselineHead, actionId, acceptedShas);
+      const evidence = Object.freeze({
+        implementerId: "codex-cli-integrator",
+        branch,
+        candidateDigest: await this.committedCandidateDigest(worktree)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
 
@@ -253,23 +378,51 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     implementation: DevImplementationCandidate;
   }>): Promise<DevTesterEvidence> {
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `integration:${input.workflow.workflowId}:${input.implementation.branch}`
-    );
-    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
-    const report = await this.independentTest(
-      worktree,
-      integrationTestPrompt(input.workflow),
-      `integration:${input.workflow.workflowId}:${input.workflow.revision}`
-    );
-    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
-    return Object.freeze({
-      testerId: "codex-cli-integration-tester",
+    const scopeId = `integration:${input.workflow.workflowId}:${input.implementation.branch}`;
+    const prompt = integrationTestPrompt(input.workflow);
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      branch: input.implementation.branch,
       candidateDigest: input.implementation.candidateDigest,
-      status: report.status,
-      reportDigest: digestText(report.raw)
+      promptDigest: digestText(prompt)
+    });
+    const actionId = localActionId("integration_test", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "integration_test",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        baselineHead
+      });
+      await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
+      if (record.phase === "completed") {
+        const evidence = testerActionResult(record.result, input.implementation.candidateDigest, "codex-cli-integration-tester");
+        await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+        return evidence;
+      }
+      let report: Readonly<{ status: "passed" | "failed"; raw: string }> | undefined;
+      if (record.phase === "started") {
+        report = await this.readIndependentTestReport(actionId);
+        if (report === undefined) throw recoveryRequired("integration test");
+      } else {
+        await this.actions.start(actionId);
+        report = await this.runIndependentTest(worktree, prompt, actionId);
+      }
+      await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest, "tester_modified_candidate");
+      const evidence = Object.freeze({
+        testerId: "codex-cli-integration-tester",
+        candidateDigest: input.implementation.candidateDigest,
+        status: report.status,
+        reportDigest: digestText(report.raw)
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
     });
   }
 
@@ -283,20 +436,189 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
       throw blocked("untested_candidate", "Only the independently tested integration candidate may be pushed.");
     }
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const worktree = await this.ensureWorktree(
-      repositoryRoot,
-      input.implementation.branch,
-      `integration:${input.workflow.workflowId}:${input.implementation.branch}`
-    );
-    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
-    const commitSha = await this.gitText(worktree, ["rev-parse", "HEAD"]);
-    requireCommitSha(commitSha);
-    await this.gitChecked(worktree, ["push", "--set-upstream", this.remote, input.implementation.branch]);
+    const scopeId = `integration:${input.workflow.workflowId}:${input.implementation.branch}`;
+    const inputDigest = localInputDigest({
+      workflowId: input.workflow.workflowId,
+      branch: input.implementation.branch,
+      candidateDigest: input.implementation.candidateDigest,
+      testerReportDigest: input.tester.reportDigest
+    });
+    const actionId = localActionId("integration_push", inputDigest);
+    return this.withActionScope(scopeId, async () => {
+      const worktree = await this.ensureWorktree(repositoryRoot, input.implementation.branch, scopeId);
+      const previous = await this.actions.get(actionId);
+      const baselineHead = previous?.baselineHead ?? await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      const record = await this.actions.prepare({
+        actionId,
+        kind: "integration_push",
+        workflowId: input.workflow.workflowId,
+        scopeId,
+        inputDigest,
+        branch: input.implementation.branch,
+        baselineHead
+      });
+      if (record.phase === "completed") {
+        const evidence = pushActionResult(record.result, input.implementation.branch, input.implementation.candidateDigest);
+        await this.assertPushedResult(worktree, evidence);
+        return evidence;
+      }
+      if (record.phase === "prepared") await this.actions.start(actionId);
+      await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
+      const commitSha = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      if (commitSha !== baselineHead) throw recoveryRequired("integration push");
+      requireCommitSha(commitSha);
+      await this.ensureRemoteCommit(worktree, input.implementation.branch, commitSha);
+      const evidence = Object.freeze({
+        branch: input.implementation.branch,
+        commitSha,
+        candidateDigest: input.implementation.candidateDigest
+      });
+      await this.actions.complete(actionId, evidence);
+      return evidence;
+    });
+  }
+
+  private async assertImplementationRecovery(
+    worktree: string,
+    record: DevAutonomousLocalActionRecord,
+    evidence: DevImplementationCandidate
+  ): Promise<void> {
+    const currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    if (record.baselineHead === undefined || currentHead !== record.baselineHead) throw recoveryRequired("implementation receipt");
+    await this.assertCandidate(worktree, evidence.candidateDigest);
+  }
+
+  private async reconcileTaskPush(
+    worktree: string,
+    record: DevAutonomousLocalActionRecord,
+    actionId: string,
+    input: Readonly<{
+      workflow: DevAutonomousWorkflow;
+      task: DevTaskRecord;
+      implementation: DevImplementationCandidate;
+      tester: DevTesterEvidence;
+    }>
+  ): Promise<Readonly<{ branch: string; commitSha: string; candidateDigest: string }>> {
+    const baselineHead = record.baselineHead;
+    if (baselineHead === undefined) throw recoveryRequired("task push");
+    let currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    if (currentHead === baselineHead) {
+      await this.assertCandidate(worktree, input.implementation.candidateDigest);
+      await this.gitChecked(worktree, ["add", "--all"]);
+      const staged = await this.gitRaw(worktree, ["diff", "--cached", "--quiet"]);
+      if (staged.exitCode !== 0 && staged.exitCode !== 1) throw gitFailed();
+      if (staged.exitCode === 1) {
+        await this.gitChecked(worktree, [
+          "commit",
+          "-m",
+          commitMessage(input.task.taskId, input.task.title),
+          "-m",
+          actionTrailer(actionId)
+        ]);
+        currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+      }
+    } else if (!(await this.isActionCommit(worktree, currentHead, baselineHead, actionId))) {
+      throw recoveryRequired("task push");
+    }
+    requireCommitSha(currentHead);
+    const status = await this.gitText(worktree, ["status", "--porcelain=v1", "--untracked-files=normal"]);
+    if (status !== "") throw recoveryRequired("task push");
+    await this.ensureRemoteCommit(worktree, input.implementation.branch, currentHead);
     return Object.freeze({
       branch: input.implementation.branch,
-      commitSha,
+      commitSha: currentHead,
       candidateDigest: input.implementation.candidateDigest
     });
+  }
+
+  private async isActionCommit(worktree: string, head: string, parent: string, actionId: string): Promise<boolean> {
+    const actualParent = await this.gitText(worktree, ["rev-parse", `${head}^`]);
+    if (actualParent !== parent) return false;
+    const body = await this.gitText(worktree, ["show", "-s", "--format=%B", head], false);
+    return body.split(/\r?\n/u).includes(actionTrailer(actionId));
+  }
+
+  private async ensureRemoteCommit(worktree: string, branch: string, commitSha: string): Promise<void> {
+    const remote = await this.remoteBranchSha(worktree, branch);
+    if (remote === commitSha) return;
+    if (remote !== undefined) {
+      const ancestor = await this.gitRaw(worktree, ["merge-base", "--is-ancestor", remote, commitSha]);
+      if (ancestor.exitCode === 1) throw blocked("remote_branch_diverged", "The remote autonomous branch no longer points to an ancestor of the exact tested commit.");
+      if (ancestor.exitCode !== 0) throw blocked("remote_branch_unverifiable", "The remote autonomous branch could not be verified as a safe fast-forward base.");
+    }
+    await this.gitChecked(worktree, ["push", "--set-upstream", this.remote, `${commitSha}:refs/heads/${branch}`]);
+    const verified = await this.remoteBranchSha(worktree, branch);
+    if (verified !== commitSha) throw blocked("git_push_unverified", "The remote autonomous branch did not verify at the exact pushed commit SHA.");
+  }
+
+  private async remoteBranchSha(worktree: string, branch: string): Promise<string | undefined> {
+    const result = await this.gitChecked(worktree, ["ls-remote", "--heads", this.remote, `refs/heads/${branch}`]);
+    const lines = result.stdout.trim().split(/\r?\n/u).filter(Boolean);
+    if (lines.length === 0) return undefined;
+    if (lines.length !== 1) throw blocked("remote_branch_unverifiable", "The remote returned ambiguous branch identity.");
+    const sha = lines[0]!.split(/\s+/u)[0];
+    if (sha === undefined) throw blocked("remote_branch_unverifiable", "The remote branch SHA is unavailable.");
+    requireCommitSha(sha);
+    return sha;
+  }
+
+  private async assertPushedResult(
+    worktree: string,
+    evidence: Readonly<{ branch: string; commitSha: string; candidateDigest: string }>
+  ): Promise<void> {
+    const currentHead = await this.gitText(worktree, ["rev-parse", "HEAD"]);
+    if (currentHead !== evidence.commitSha) throw recoveryRequired("push receipt");
+    const remote = await this.remoteBranchSha(worktree, evidence.branch);
+    if (remote !== evidence.commitSha) throw recoveryRequired("push receipt");
+  }
+
+  private async hasIntegratedSource(worktree: string, sha: string): Promise<boolean> {
+    const ancestor = await this.gitRaw(worktree, ["merge-base", "--is-ancestor", sha, "HEAD"]);
+    if (ancestor.exitCode === 0) return true;
+    if (ancestor.exitCode !== 1) throw gitFailed();
+    const needle = `(cherry picked from commit ${sha})`;
+    const log = await this.gitText(worktree, ["log", "-1", "--format=%H", "--fixed-strings", `--grep=${needle}`, "HEAD"]);
+    return log !== "";
+  }
+
+  private async assertIntegrationHistory(
+    worktree: string,
+    baselineHead: string,
+    actionId: string,
+    acceptedShas: readonly string[]
+  ): Promise<void> {
+    const log = await this.gitText(worktree, ["log", "--format=%B%x00", `${baselineHead}..HEAD`], false);
+    const commits = log.split("\0").map(value => value.trim()).filter(Boolean);
+    const action = actionTrailer(actionId);
+    for (const body of commits) {
+      const source = acceptedShas.some(sha => body.includes(`(cherry picked from commit ${sha})`));
+      const owned = body.split(/\r?\n/u).includes(action);
+      if (!source && !owned) throw recoveryRequired("integration history");
+    }
+    for (const sha of acceptedShas) {
+      if (!(await this.hasIntegratedSource(worktree, sha))) throw recoveryRequired("integration history");
+    }
+  }
+
+  private async withActionScope<T>(scopeId: string, action: () => Promise<T>): Promise<T> {
+    try {
+      return await this.actions.withScope(scopeId, action);
+    } catch (error) {
+      if (error instanceof DevAutonomousLocalActionStoreError) {
+        if (error.code === "lock_timeout") {
+          throw blocked("local_action_busy", "Another autonomous process currently owns this exact local worktree scope. Retry only after that owner finishes or its stale lock is safely reclaimed.");
+        }
+        if (error.code === "write_failed") {
+          throw blocked("local_action_state_unavailable", "Durable local action evidence could not be committed safely; no uncertain mutation will be retried.");
+        }
+        throw new PortError(
+          "local_action_state_invalid",
+          false,
+          "Durable local action identity or evidence is corrupt or conflicts with the requested operation."
+        );
+      }
+      throw error;
+    }
   }
 
   private async verifiedRepositoryRoot(): Promise<string> {
@@ -370,73 +692,118 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     return path;
   }
 
-  private async codex(worktree: string, prompt: string, role: string): Promise<void> {
-    boundedPrompt(prompt);
-    const args = ["exec", "--cd", worktree, "--sandbox", "workspace-write", "--ephemeral", "--color", "never"];
-    if (this.model !== undefined) args.push("--model", this.model);
-    if (this.profile !== undefined) args.push("--profile", this.profile);
-    args.push(prompt);
-    const result = await this.safeRun(this.codexExecutable, args, worktree, codexEnvironment());
-    if (result.exitCode !== 0) {
-      throw blocked("codex_cli_failed", `The isolated Codex ${safeLabel(role)} session did not complete successfully.`);
-    }
-  }
-
-  private async independentTest(
-    worktree: string,
-    prompt: string,
-    key: string
-  ): Promise<Readonly<{ status: "passed" | "failed"; raw: string }>> {
+  private async runCodexAction(worktree: string, prompt: string, role: string, actionId: string): Promise<void> {
     boundedPrompt(prompt);
     const schemaRoot = resolve(this.stateRoot, "schemas");
-    const reportsRoot = resolve(this.stateRoot, "reports");
+    const resultRoot = resolve(this.stateRoot, "action-results");
     await mkdir(schemaRoot, { recursive: true, mode: 0o700 });
-    await mkdir(reportsRoot, { recursive: true, mode: 0o700 });
-    const schemaPath = resolve(schemaRoot, "independent-test-result.json");
-    const reportPath = resolve(
-      reportsRoot,
-      `${createHash("sha256").update(key, "utf8").digest("hex").slice(0, 40)}.json`
-    );
-    if (!inside(schemaRoot, schemaPath) || !inside(reportsRoot, reportPath)) throw blocked("state_path_invalid", "Test evidence path escaped the autonomous state root.");
-    await writeFile(schemaPath, JSON.stringify(TEST_RESULT_SCHEMA), { encoding: "utf8", mode: 0o600 });
-    await rm(reportPath, { force: true });
+    await mkdir(resultRoot, { recursive: true, mode: 0o700 });
+    const schemaPath = resolve(schemaRoot, "codex-action-completion.json");
+    const resultPath = this.actionResultPath(resultRoot, actionId, "codex");
+    await writeFile(schemaPath, JSON.stringify(CODEX_ACTION_RESULT_SCHEMA), { encoding: "utf8", mode: 0o600 });
+    await rm(resultPath, { force: true });
     const args = [
-      "exec",
-      "--cd",
-      worktree,
-      "--sandbox",
-      "workspace-write",
-      "--ephemeral",
-      "--color",
-      "never",
-      "--output-schema",
-      schemaPath,
-      "--output-last-message",
-      reportPath
+      "exec", "--cd", worktree, "--sandbox", "workspace-write", "--ephemeral", "--color", "never",
+      "--output-schema", schemaPath,
+      "--output-last-message", resultPath
     ];
     if (this.model !== undefined) args.push("--model", this.model);
     if (this.profile !== undefined) args.push("--profile", this.profile);
     args.push(prompt);
     const result = await this.safeRun(this.codexExecutable, args, worktree, codexEnvironment());
-    if (result.exitCode !== 0) throw blocked("codex_test_failed", "The independent Codex tester process did not complete successfully.");
+    if (result.exitCode !== 0) {
+      await rm(resultPath, { force: true });
+      throw blocked("codex_cli_failed", `The isolated Codex ${safeLabel(role)} session did not complete successfully.`);
+    }
+    if (!(await this.readCodexCompletion(actionId))) {
+      throw blocked("codex_completion_unverified", "Codex exited successfully without its required structured completion evidence.");
+    }
+  }
+
+  private async readCodexCompletion(actionId: string): Promise<boolean> {
+    const resultRoot = resolve(this.stateRoot, "action-results");
+    const resultPath = this.actionResultPath(resultRoot, actionId, "codex");
     let raw: string;
     try {
-      raw = await readFile(reportPath, "utf8");
-    } catch {
-      throw blocked("tester_output_invalid", "The independent tester did not produce its required structured result.");
+      const metadata = await lstat(resultPath);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) throw recoveryRequired("Codex completion marker");
+      raw = await readFile(resultPath, "utf8");
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return false;
+      if (error instanceof PortError) throw error;
+      throw recoveryRequired("Codex completion marker");
     }
-    if (raw.length === 0 || raw.length > 65_536) throw blocked("tester_output_invalid", "The independent tester result exceeded its bounded schema contract.");
+    if (raw.length === 0 || raw.length > 16_384) throw recoveryRequired("Codex completion marker");
     let value: unknown;
-    try {
-      value = JSON.parse(raw);
-    } catch {
-      throw blocked("tester_output_invalid", "The independent tester result was not valid JSON.");
-    }
-    if (!isRecord(value) || (value.status !== "passed" && value.status !== "failed") || typeof value.summary !== "string") {
-      throw blocked("tester_output_invalid", "The independent tester result did not match its required schema.");
-    }
+    try { value = JSON.parse(raw); } catch { throw recoveryRequired("Codex completion marker"); }
+    return isRecord(value) && Object.keys(value).length === 1 && value.status === "completed";
+  }
+
+  private async runIndependentTest(
+    worktree: string,
+    prompt: string,
+    actionId: string
+  ): Promise<Readonly<{ status: "passed" | "failed"; raw: string }>> {
+    boundedPrompt(prompt);
+    const schemaRoot = resolve(this.stateRoot, "schemas");
+    const resultRoot = resolve(this.stateRoot, "action-results");
+    await mkdir(schemaRoot, { recursive: true, mode: 0o700 });
+    await mkdir(resultRoot, { recursive: true, mode: 0o700 });
+    const schemaPath = resolve(schemaRoot, "independent-test-result.json");
+    const reportPath = this.actionResultPath(resultRoot, actionId, "test");
+    await writeFile(schemaPath, JSON.stringify(TEST_RESULT_SCHEMA), { encoding: "utf8", mode: 0o600 });
     await rm(reportPath, { force: true });
+    const args = [
+      "exec", "--cd", worktree, "--sandbox", "workspace-write", "--ephemeral", "--color", "never",
+      "--output-schema", schemaPath,
+      "--output-last-message", reportPath
+    ];
+    if (this.model !== undefined) args.push("--model", this.model);
+    if (this.profile !== undefined) args.push("--profile", this.profile);
+    args.push(prompt);
+    const result = await this.safeRun(this.codexExecutable, args, worktree, codexEnvironment());
+    if (result.exitCode !== 0) {
+      await rm(reportPath, { force: true });
+      throw blocked("codex_test_failed", "The independent Codex tester process did not complete successfully.");
+    }
+    const report = await this.readIndependentTestReport(actionId);
+    if (report === undefined) throw blocked("tester_output_invalid", "The independent tester did not produce its required structured result.");
+    return report;
+  }
+
+  private async readIndependentTestReport(
+    actionId: string
+  ): Promise<Readonly<{ status: "passed" | "failed"; raw: string }> | undefined> {
+    const resultRoot = resolve(this.stateRoot, "action-results");
+    const reportPath = this.actionResultPath(resultRoot, actionId, "test");
+    let raw: string;
+    try {
+      const metadata = await lstat(reportPath);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) throw recoveryRequired("independent test report");
+      raw = await readFile(reportPath, "utf8");
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return undefined;
+      if (error instanceof PortError) throw error;
+      throw recoveryRequired("independent test report");
+    }
+    if (raw.length === 0 || raw.length > 65_536) throw recoveryRequired("independent test report");
+    let value: unknown;
+    try { value = JSON.parse(raw); } catch { throw recoveryRequired("independent test report"); }
+    if (
+      !isRecord(value)
+      || Object.keys(value).sort().join(",") !== "status,summary"
+      || (value.status !== "passed" && value.status !== "failed")
+      || typeof value.summary !== "string"
+      || value.summary.length === 0
+      || value.summary.length > 32_768
+    ) throw recoveryRequired("independent test report");
     return Object.freeze({ status: value.status, raw });
+  }
+
+  private actionResultPath(root: string, actionId: string, suffix: string): string {
+    const path = resolve(root, `${createHash("sha256").update(`${actionId}:${suffix}`, "utf8").digest("hex")}.json`);
+    if (!inside(root, path)) throw blocked("state_path_invalid", "Local action result path escaped the autonomous state root.");
+    return path;
   }
 
   private async candidateDigest(worktree: string): Promise<string> {
@@ -528,6 +895,13 @@ export function createCodexCliAutonomousLocalPort(
   return new CodexCliAutonomousLocalPort(options);
 }
 
+const CODEX_ACTION_RESULT_SCHEMA = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: ["status"],
+  properties: { status: { type: "string", enum: ["completed"] } }
+});
+
 const TEST_RESULT_SCHEMA = Object.freeze({
   type: "object",
   additionalProperties: false,
@@ -537,6 +911,67 @@ const TEST_RESULT_SCHEMA = Object.freeze({
     summary: { type: "string", minLength: 1, maxLength: 32_768 }
   }
 });
+
+function localInputDigest(value: unknown): string {
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined || Buffer.byteLength(encoded, "utf8") > 1024 * 1024) {
+    throw blocked("local_action_input_invalid", "Autonomous local action identity exceeded its bounded canonical input.");
+  }
+  return digestText(encoded);
+}
+
+function localActionId(kind: string, inputDigest: string): string {
+  return `dev-local-${safeRefPart(kind)}-${createHash("sha256").update(inputDigest, "utf8").digest("hex").slice(0, 48)}`;
+}
+
+function actionTrailer(actionId: string): string {
+  return `Dev-Autonomous-Action: ${actionId}`;
+}
+
+function recoveryRequired(label: string): PortError {
+  return blocked(
+    "local_action_recovery_required",
+    `The ${safeLabel(label)} crossed a local mutation boundary without enough durable evidence to retry safely. Inspect the owned worktree/action journal before resuming.`
+  );
+}
+
+function implementationActionResult(
+  value: unknown,
+  branch: string,
+  implementerId = "codex-cli-implementer"
+): DevImplementationCandidate {
+  if (!isRecord(value) || value.implementerId !== implementerId || value.branch !== branch || !canonicalDigest(value.candidateDigest)) {
+    throw recoveryRequired("implementation receipt");
+  }
+  return Object.freeze({ implementerId, branch, candidateDigest: value.candidateDigest });
+}
+
+function testerActionResult(value: unknown, candidateDigest: string, testerId: string): DevTesterEvidence {
+  if (
+    !isRecord(value)
+    || value.testerId !== testerId
+    || value.candidateDigest !== candidateDigest
+    || (value.status !== "passed" && value.status !== "failed")
+    || !canonicalDigest(value.reportDigest)
+  ) throw recoveryRequired("tester receipt");
+  return Object.freeze({ testerId, candidateDigest, status: value.status, reportDigest: value.reportDigest });
+}
+
+function pushActionResult(
+  value: unknown,
+  branch: string,
+  candidateDigest: string
+): Readonly<{ branch: string; commitSha: string; candidateDigest: string }> {
+  if (!isRecord(value) || value.branch !== branch || value.candidateDigest !== candidateDigest || typeof value.commitSha !== "string") {
+    throw recoveryRequired("push receipt");
+  }
+  requireCommitSha(value.commitSha);
+  return Object.freeze({ branch, commitSha: value.commitSha, candidateDigest });
+}
+
+function canonicalDigest(value: unknown): value is string {
+  return typeof value === "string" && /^sha256:[0-9a-f]{64}$/u.test(value);
+}
 
 function implementationPrompt(workflow: DevAutonomousWorkflow, task: DevTaskRecord, guidance: string): string {
   return boundedPrompt([
@@ -727,7 +1162,7 @@ function safeRefPart(value: string): string {
 }
 
 function integrationBranch(workflow: DevAutonomousWorkflow): string {
-  return `codex/${safeRefPart(workflow.workflowId)}-integration-r${workflow.revision}`;
+  return `codex/${safeRefPart(workflow.workflowId)}-integration`;
 }
 
 function commitMessage(taskId: string, title: string): string {

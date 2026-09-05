@@ -105,7 +105,10 @@ describe("Codex CLI autonomous local port", () => {
       if (outputIndex >= 0) {
         const output = args[outputIndex + 1];
         if (output === undefined) throw new Error("missing output path");
-        await writeFile(output, JSON.stringify({ status: "passed", summary: "independently verified" }), "utf8");
+        const payload = prompt.includes("independent testing agent") || prompt.includes("independent integration tester")
+          ? { status: "passed", summary: "independently verified" }
+          : { status: "completed" };
+        await writeFile(output, JSON.stringify(payload), "utf8");
       }
       return { exitCode: 0, stdout: "", stderr: "" };
     };
@@ -179,7 +182,13 @@ describe("Codex CLI autonomous local port", () => {
     expect(integrationTester.testerId).not.toBe(integration.implementerId);
     expect(await git(remote, "rev-parse", `refs/heads/${integration.branch}`)).toBe(integrationPush.commitSha);
 
-    expect(codexCalls.length).toBe(5);
+    const reintegration = await port.integrate({
+      workflow: workflow(acceptedTask, 10),
+      acceptedTasks: [acceptedTask]
+    });
+    expect(reintegration.branch).toBe(integration.branch);
+
+    expect(codexCalls.length).toBe(6);
     for (const args of codexCalls) {
       expect(args).toContain("--sandbox");
       expect(args).toContain("workspace-write");
