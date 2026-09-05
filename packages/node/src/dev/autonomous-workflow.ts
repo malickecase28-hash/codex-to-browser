@@ -432,7 +432,7 @@ function integrationCandidate(workflow: DevAutonomousWorkflow, evidence: DevImpl
   if (!workflow.tasks.every(task => task.phase === "accepted")) {
     invalidTransition("Integration cannot begin until every task is accepted by its worker.");
   }
-  if (workflow.status !== "integration_ready" && workflow.status !== "planner_review_pending") {
+  if (workflow.status !== "integration_ready") {
     invalidTransition("Integration candidate is not valid in the current workflow phase.");
   }
   validateImplementation(evidence);
