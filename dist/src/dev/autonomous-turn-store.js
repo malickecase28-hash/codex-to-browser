@@ -1,0 +1,234 @@
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { nodeErrorCode } from "../errors.js";
+import { OPERATION_HANDLE_SCHEMA_VERSION } from "../operations/types.js";
+export const DEV_AUTONOMOUS_TURN_SCHEMA_VERSION = "chatgpt.browser_control.dev_autonomous_turn.v1";
+const MAX_TURN_TEXT_BYTES = 4 * 1024 * 1024;
+const DIGEST_PATTERN = /^(?:sha256|hmac-sha256):[0-9a-f]{64}$/u;
+const queues = new Map();
+export class DevAutonomousTurnStoreError extends Error {
+    code;
+    constructor(code, message) {
+        super(message);
+        this.code = code;
+        this.name = "DevAutonomousTurnStoreError";
+    }
+}
+export class FileDevAutonomousTurnStore {
+    stateRoot;
+    constructor(options = {}) {
+        this.stateRoot = resolve(options.stateRoot ?? join(process.cwd(), ".chatgpt-dev", "state", "turns"));
+        this.now = options.now ?? (() => new Date());
+    }
+    now;
+    async get(watcherId) {
+        validateId(watcherId, "watcherId");
+        try {
+            return parseRecord(JSON.parse(await readFile(this.path(watcherId), "utf8")), watcherId);
+        }
+        catch (error) {
+            if (nodeErrorCode(error) === "ENOENT")
+                return undefined;
+            if (error instanceof DevAutonomousTurnStoreError)
+                throw error;
+            throw new DevAutonomousTurnStoreError("invalid_record", "Autonomous turn state could not be decoded safely.");
+        }
+    }
+    async require(watcherId) {
+        const record = await this.get(watcherId);
+        if (record === undefined)
+            throw new DevAutonomousTurnStoreError("not_found", "Autonomous turn state was not found.");
+        return record;
+    }
+    async remember(input) {
+        validateId(input.watcherId, "watcherId");
+        validateId(input.logicalConversationKey, "logicalConversationKey", 512);
+        validateHandle(input.handle);
+        if (input.kind !== "planner_plan" && input.kind !== "guidance" && input.kind !== "worker_review" && input.kind !== "planner_review") {
+            throw new DevAutonomousTurnStoreError("invalid_record", "Autonomous turn kind is invalid.");
+        }
+        return this.withQueue(input.watcherId, async () => {
+            const existing = await this.get(input.watcherId);
+            if (existing !== undefined) {
+                if (existing.kind !== input.kind
+                    || existing.logicalConversationKey !== input.logicalConversationKey
+                    || !sameHandle(existing.handle, input.handle)) {
+                    throw new DevAutonomousTurnStoreError("identity_mismatch", "Autonomous turn identity does not match the existing record.");
+                }
+                return existing;
+            }
+            const timestamp = this.now().toISOString();
+            const record = Object.freeze({
+                schemaVersion: DEV_AUTONOMOUS_TURN_SCHEMA_VERSION,
+                watcherId: input.watcherId,
+                kind: input.kind,
+                logicalConversationKey: input.logicalConversationKey,
+                handle: Object.freeze({ ...input.handle }),
+                createdAt: timestamp,
+                updatedAt: timestamp
+            });
+            await this.write(record);
+            return record;
+        });
+    }
+    async storeResponse(input) {
+        validateDigest(input.digest);
+        validateId(input.assistantTurnId, "assistantTurnId", 512);
+        if (typeof input.text !== "string")
+            throw new DevAutonomousTurnStoreError("invalid_record", "Autonomous turn response must be text.");
+        if (Buffer.byteLength(input.text, "utf8") > MAX_TURN_TEXT_BYTES) {
+            throw new DevAutonomousTurnStoreError("response_too_large", "Autonomous turn response exceeds the durable cache limit.");
+        }
+        return this.withQueue(input.watcherId, async () => {
+            const current = await this.require(input.watcherId);
+            if (current.response !== undefined) {
+                if (current.response.digest !== input.digest
+                    || current.response.assistantTurnId !== input.assistantTurnId
+                    || current.response.text !== input.text) {
+                    throw new DevAutonomousTurnStoreError("identity_mismatch", "Autonomous turn response does not match the existing durable evidence.");
+                }
+                return current;
+            }
+            const next = Object.freeze({
+                ...current,
+                updatedAt: this.now().toISOString(),
+                response: Object.freeze({
+                    digest: input.digest,
+                    assistantTurnId: input.assistantTurnId,
+                    text: input.text
+                })
+            });
+            await this.write(next);
+            return next;
+        });
+    }
+    async readResponse(watcherId, expectedDigest) {
+        const response = (await this.require(watcherId)).response;
+        if (response === undefined)
+            return undefined;
+        if (expectedDigest !== undefined && response.digest !== expectedDigest) {
+            throw new DevAutonomousTurnStoreError("identity_mismatch", "Autonomous turn response digest does not match the requested evidence.");
+        }
+        return Object.freeze({ ...response });
+    }
+    async withQueue(watcherId, action) {
+        const key = this.path(watcherId);
+        const previous = queues.get(key) ?? Promise.resolve();
+        let release;
+        const current = new Promise(resolveCurrent => { release = resolveCurrent; });
+        const chained = previous.catch(() => undefined).then(() => current);
+        queues.set(key, chained);
+        await previous.catch(() => undefined);
+        try {
+            return await action();
+        }
+        finally {
+            release();
+            if (queues.get(key) === chained)
+                queues.delete(key);
+        }
+    }
+    path(watcherId) {
+        return join(this.stateRoot, `${createHash("sha256").update(watcherId, "utf8").digest("hex")}.json`);
+    }
+    async write(record) {
+        await mkdir(this.stateRoot, { recursive: true, mode: 0o700 });
+        const target = this.path(record.watcherId);
+        const temporary = join(this.stateRoot, `${randomUUID()}.tmp`);
+        let handle;
+        try {
+            handle = await open(temporary, "wx", 0o600);
+            await handle.writeFile(`${JSON.stringify(record, null, 2)}\n`, "utf8");
+            await handle.sync();
+            await handle.close();
+            handle = undefined;
+            await rename(temporary, target);
+        }
+        catch {
+            await handle?.close().catch(() => undefined);
+            await unlink(temporary).catch(() => undefined);
+            throw new DevAutonomousTurnStoreError("write_failed", "Autonomous turn state could not be committed safely.");
+        }
+    }
+}
+function parseRecord(value, watcherId) {
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+        invalid();
+    const record = value;
+    const allowed = new Set(["schemaVersion", "watcherId", "kind", "logicalConversationKey", "handle", "createdAt", "updatedAt", "response"]);
+    if (Object.keys(record).some(key => !allowed.has(key)))
+        invalid();
+    if (record.schemaVersion !== DEV_AUTONOMOUS_TURN_SCHEMA_VERSION || record.watcherId !== watcherId)
+        invalid();
+    validateId(record.watcherId, "watcherId");
+    validateId(record.logicalConversationKey, "logicalConversationKey", 512);
+    if (record.kind !== "planner_plan" && record.kind !== "guidance" && record.kind !== "worker_review" && record.kind !== "planner_review")
+        invalid();
+    if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string")
+        invalid();
+    validateHandle(record.handle);
+    let response;
+    if (record.response !== undefined) {
+        if (record.response === null || typeof record.response !== "object" || Array.isArray(record.response))
+            invalid();
+        const raw = record.response;
+        if (Object.keys(raw).sort().join(",") !== "assistantTurnId,digest,text")
+            invalid();
+        validateDigest(raw.digest);
+        validateId(raw.assistantTurnId, "assistantTurnId", 512);
+        if (typeof raw.text !== "string" || Buffer.byteLength(raw.text, "utf8") > MAX_TURN_TEXT_BYTES)
+            invalid();
+        response = Object.freeze({ digest: raw.digest, assistantTurnId: raw.assistantTurnId, text: raw.text });
+    }
+    return Object.freeze({
+        schemaVersion: DEV_AUTONOMOUS_TURN_SCHEMA_VERSION,
+        watcherId,
+        kind: record.kind,
+        logicalConversationKey: record.logicalConversationKey,
+        handle: Object.freeze({ ...record.handle }),
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        ...(response === undefined ? {} : { response })
+    });
+}
+function validateHandle(handle) {
+    if (handle === null || typeof handle !== "object" || Array.isArray(handle))
+        invalid();
+    if (handle.schemaVersion !== OPERATION_HANDLE_SCHEMA_VERSION)
+        invalid();
+    validateId(handle.operationId, "operationId", 512);
+    validateDigest(handle.requestDigest);
+    if (handle.surface !== "chat" && handle.surface !== "work")
+        invalid();
+    if (!Number.isSafeInteger(handle.revision) || handle.revision < 0)
+        invalid();
+    if (!["prepared", "handoff_pending", "ready", "send_pending", "submitted", "generating", "capturing", "completed", "uncertain"].includes(handle.phase))
+        invalid();
+    if (!["none", "handoff_may_have_occurred", "send_may_have_occurred", "control_may_have_occurred"].includes(handle.mutationBoundary))
+        invalid();
+    if (handle.targetBindingDigest !== undefined)
+        validateDigest(handle.targetBindingDigest);
+}
+function sameHandle(left, right) {
+    return left.schemaVersion === right.schemaVersion
+        && left.operationId === right.operationId
+        && left.requestDigest === right.requestDigest
+        && left.surface === right.surface
+        && left.revision === right.revision
+        && left.phase === right.phase
+        && left.mutationBoundary === right.mutationBoundary
+        && left.targetBindingDigest === right.targetBindingDigest;
+}
+function validateId(value, label, maxLength = 256) {
+    if (typeof value !== "string" || value.trim().length === 0 || value.length > maxLength || /[\u0000-\u001f\u007f]/u.test(value)) {
+        throw new DevAutonomousTurnStoreError("invalid_record", `${label} is invalid.`);
+    }
+}
+function validateDigest(value) {
+    if (typeof value !== "string" || !DIGEST_PATTERN.test(value))
+        invalid();
+}
+function invalid() {
+    throw new DevAutonomousTurnStoreError("invalid_record", "Autonomous turn state is invalid.");
+}

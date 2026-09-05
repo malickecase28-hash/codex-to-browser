@@ -1,0 +1,16 @@
+import type { AskHelperArgs, AskInThreadArgs, AttachAskReadArgs, CommandResult, DownloadLatestArgs, PrecannedResponseArgs, RuntimeEnv, SearchOpenCopyArgs, SendAndWaitArgs, SequencePlan, TwoTurnExchangeArgs } from "../types.js";
+export declare function planAsk(args: AskHelperArgs): SequencePlan;
+export declare function planAskInThread(args: AskInThreadArgs): SequencePlan;
+export declare function planAttachAskRead(args: AttachAskReadArgs): SequencePlan;
+export declare function planDownloadLatestAttachment(args: DownloadLatestArgs): SequencePlan;
+export declare function planSearchOpenCopyLatest(args: SearchOpenCopyArgs): SequencePlan;
+export declare function planTwoTurnExchange(args: TwoTurnExchangeArgs): SequencePlan;
+export declare function ask(args: AskHelperArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function askInThread(args: AskInThreadArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function findSwitchAskWaitRead(args: AskInThreadArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function sendAndWait(args: SendAndWaitArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function sendPrecannedResponse(args: PrecannedResponseArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function attachAskRead(args: AttachAskReadArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function downloadLatestAttachment(args: DownloadLatestArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function searchOpenCopyLatest(args: SearchOpenCopyArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;
+export declare function twoTurnExchange(args: TwoTurnExchangeArgs, env?: RuntimeEnv): Promise<CommandResult<unknown>>;

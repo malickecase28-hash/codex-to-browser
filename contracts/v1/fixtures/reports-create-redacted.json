@@ -1,0 +1,31 @@
+{
+  "result": {
+    "context": {
+      "timestamp": "2026-06-06T00:00:00.000Z"
+    },
+    "data": {
+      "bytes": 335,
+      "includeContent": false,
+      "integrity": {
+        "inputs": [],
+        "output": {
+          "bytes": 82,
+          "sha256": "d8cd174ddee7b33b70c9c5534ccbd745f46e4bfdc3b884cfb4632e1982e94081",
+          "untrusted": true
+        },
+        "schemaVersion": "chatgpt.browser_control.integrity.v1",
+        "target": {
+          "bytes": 335,
+          "path": "/tmp/codex-chatgpt-control/reports/contract-fixtures/fixed-contract-report.json",
+          "sha256": "f187607ac2a07ea75ae308a9b2cc796f68fe1c9f5ffafef9cbaa3ad6934f6047"
+        }
+      },
+      "metaPath": "/tmp/codex-chatgpt-control/reports/contract-fixtures/fixed-contract-report.json.meta.json",
+      "path": "/tmp/codex-chatgpt-control/reports/contract-fixtures/fixed-contract-report.json"
+    },
+    "ok": true,
+    "status": "ok",
+    "warnings": []
+  },
+  "schemaVersion": "chatgpt.browser_control.command_result.v1"
+}

@@ -1,0 +1,10 @@
+import type { CommandResult, ProjectSource, ProjectSourcesAddArgs, ProjectSourcesAddData, ProjectSourcesAddPlanData, ProjectSourcesListArgs, ProjectSourcesListData, ProjectSourcesPlanAddArgs, ProjectSourcesUrl, RuntimeEnv } from "../types.js";
+type SafeCandidate = NonNullable<NonNullable<CommandResult["blocker"]>["candidates"]>[number];
+export declare function normalizeProjectSourcesUrl(value: string): ProjectSourcesUrl;
+export declare function buildProjectSourceAddPlan(env: RuntimeEnv, args: ProjectSourcesPlanAddArgs): Promise<CommandResult<ProjectSourcesAddPlanData>>;
+export declare function listProjectSources(env: RuntimeEnv, args: ProjectSourcesListArgs): Promise<CommandResult<ProjectSourcesListData>>;
+export declare function addProjectSources(env: RuntimeEnv, args: ProjectSourcesAddArgs): Promise<CommandResult<ProjectSourcesAddData | ProjectSourcesAddPlanData>>;
+export declare function diffProjectSourceNames(before: ProjectSource[], after: ProjectSource[]): ProjectSource[];
+export declare function extractProjectSourcesFromHtml(html: string): ProjectSource[];
+export declare function safeProjectSourceCandidatesFromHtml(html: string): SafeCandidate[];
+export {};

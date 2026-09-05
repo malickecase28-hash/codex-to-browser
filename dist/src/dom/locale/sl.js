@@ -1,0 +1,55 @@
+/**
+ * Slovenian (sl-SI). Captured 2026-06-09 against a live chatgpt.com session
+ * (html lang=sl-SI, Google Translate confirmed off).
+ *
+ * Some non-Intelligence surfaces may still fall back to English + `selector_drift`.
+ *
+ * Intelligence picker labels updated 2026-06-10, stop-control labels updated 2026-06-15, Chat/Work surface labels updated 2026-07-17, and Power/Advanced selector labels updated 2026-08-08 from visible ChatGPT sessions.
+ */
+export const sl = {
+    configurationAxes: {
+        power: ["Moč"],
+        effort: ["Napor"],
+        speed: ["Hitrost"],
+        advanced: ["Napredno"],
+    },
+    configurationOptions: {
+        instant: ["Takoj"],
+        light: ["Osnovno"],
+        medium: ["Srednje"],
+        high: ["Visoko"],
+        extraHigh: ["Zelo visoko"],
+        max: ["Največ"],
+        standard: ["Standardno"],
+        fast: ["Hitro"],
+    },
+    composerTextbox: ["Vprašajte kar koli"],
+    sendButton: ["Pošlji poziv"],
+    searchChatsButton: ["Išči po klepetih"],
+    searchChatsPlaceholder: ["Išči po klepetih …"],
+    newChat: ["Nov klepet"],
+    addFilesButton: ["Dodaj datoteke in še več"],
+    addFilesOpenerCandidates: ["Dodaj datoteke in še več"],
+    addPhotosFilesMenuItem: ["Naloži fotografije in datoteke"],
+    copyResponse: ["Kopiraj odgovor"],
+    modeLabels: ["Takoj", "Srednja", "Visoka", "Zelo visoko", "Srednje", "Visoko"],
+    modeOptions: {
+        instant: ["Takoj"],
+        medium: ["Srednja", "Srednje"],
+        high: ["Visoka", "Visoko"],
+        extraHigh: ["Zelo visoko"],
+    },
+    modeOpenerExtra: ["Konfiguracija …"],
+    experienceOptions: {
+        chat: ["Klepet"],
+        work: ["Delo"],
+    },
+    tools: {
+        web_search: ["Iskanje po spletu"],
+        deep_research: ["Poglobljeno raziskovanje"],
+        create_image: ["Ustvari sliko"],
+    },
+    signedInMarkers: ["Nov klepet", "Išči po klepetih", "Nedavno", "Zgodovina klepetov", "Projekti", "Vprašajte kar koli"],
+    responseActions: ["Kopiraj odgovor"],
+    stopControl: ["Ustavi odgovarjanje"],
+};

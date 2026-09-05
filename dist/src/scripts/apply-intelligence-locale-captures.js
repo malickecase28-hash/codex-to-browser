@@ -1,0 +1,528 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readLanguageCoverage } from "./locale-capture/language-coverage.js";
+const ENGLISH_MODE_LABELS = new Set(["Latest", "Instant", "Thinking", "Extended", "Medium", "High", "Extra High", "Pro"]);
+const ENGLISH_STOP_CONTROL = new Set(["stop generating", "stop streaming", "stop answering", "cancel"]);
+// These labels are unsafe regardless of language provenance: they are generic
+// controls that can describe Send, dialog dismissal, or unrelated cancellation.
+// Keep this separate from the English-exclusion set so changing the canonical
+// English registry can never make them eligible for a locale stop selector.
+const UNSAFE_GENERIC_STOP_CONTROLS = new Set(["cancel"]);
+const ENGLISH_STOPPED_ASSISTANT = new Set(["stopped thinking", "stopped answering", "generation stopped"]);
+const INTELLIGENCE_MODE_OPTION_IDS = ["instant", "medium", "high", "extraHigh", "pro"];
+const ENGLISH_INTELLIGENCE_MODE_OPTIONS = {
+    instant: "Instant",
+    medium: "Medium",
+    high: "High",
+    extraHigh: "Extra High",
+    pro: "Pro",
+};
+const EXPERIENCE_OPTION_IDS = ["chat", "work"];
+const WORK_CONFIGURATION_AXIS_IDS = ["model", "effort", "speed"];
+const CHAT_CONFIGURATION_AXIS_IDS = ["model", "effort"];
+const CONFIGURATION_AXIS_IDS = ["power", "model", "intelligence", "effort", "speed", "advanced"];
+const CONFIGURATION_OPTION_IDS = ["instant", "light", "medium", "high", "extraHigh", "max", "ultra", "pro", "standard", "fast"];
+const CHAT_EFFORT_OPTION_IDS = ["instant", "medium", "high", "extraHigh", "pro"];
+const EFFORT_OPTION_IDS = ["light", "medium", "high", "extraHigh", "max", "ultra"];
+const SPEED_OPTION_IDS = ["standard", "fast"];
+const ENGLISH_EXPERIENCE_OPTIONS = new Set(["chat", "quick chat", "work"]);
+const ENGLISH_CONFIGURATION_AXES = {
+    model: "Model",
+    intelligence: "Intelligence",
+    effort: "Effort",
+    speed: "Speed",
+    power: "Power",
+    advanced: "Advanced"
+};
+const ENGLISH_CONFIGURATION_OPTIONS = {
+    instant: "Instant",
+    light: "Light",
+    medium: "Medium",
+    high: "High",
+    extraHigh: "Extra High",
+    max: "Max",
+    ultra: "Ultra",
+    pro: "Pro",
+    standard: "Standard",
+    fast: "Fast",
+};
+const ENGLISH_COMPOSER_LABELS = new Set(["chat with chatgpt", "ask chatgpt", "work on anything", "work on something"]);
+const UPDATE_NOTE = " * Intelligence picker labels updated 2026-06-10, stop-control labels updated 2026-06-15, Chat/Work surface labels updated 2026-07-17, and Power/Advanced selector labels updated 2026-08-08 from visible ChatGPT sessions.";
+class ApplyUsageError extends Error {
+    exitCode;
+    constructor(message, exitCode = 2) {
+        super(message);
+        this.exitCode = exitCode;
+        this.name = "ApplyUsageError";
+    }
+}
+const USAGE = [
+    "Usage:",
+    "  npm run apply:intelligence-locales -- --in ../../outputs/intelligence-locale-captures/2026-06-10-intelligence-picker.jsonl --reviewed",
+    "",
+    "Options:",
+    "  --in             JSONL capture file to apply.",
+    "  --reviewed       Required to write locale files.",
+    "  --coverage-path  Path to language-coverage.md."
+].join("\n");
+export async function main(argv = process.argv.slice(2)) {
+    let options;
+    try {
+        options = parseArgs(argv);
+    }
+    catch (error) {
+        if (error instanceof ApplyUsageError) {
+            console.log(error.message);
+            return error.exitCode;
+        }
+        throw error;
+    }
+    const root = packageRoot();
+    const languages = await readLanguageCoverage(options.coveragePath);
+    const captures = latestSuccessfulCaptures(await readFile(options.input, "utf8"));
+    const planned = [];
+    for (const language of languages) {
+        if (/^en(?:-|$)/i.test(language.bcp47))
+            continue;
+        const record = captures.get(language.bcp47);
+        if (record === undefined) {
+            throw new ApplyUsageError(`Missing successful capture for ${language.bcp47}.`, 1);
+        }
+        const labels = observedNonEnglishLabels(record);
+        const modeOptions = observedNonEnglishModeOptions(record);
+        const stopControl = observedNonEnglishGenerationLabels(record.generationStopLabels, ENGLISH_STOP_CONTROL);
+        const stoppedAssistant = observedNonEnglishGenerationLabels(record.generationStoppedLabels, ENGLISH_STOPPED_ASSISTANT);
+        const surface = observedNonEnglishSurface(record);
+        if (labels.length === 0
+            && Object.keys(modeOptions).length === 0
+            && stopControl.length === 0
+            && stoppedAssistant.length === 0
+            && surface.workComposerTextbox.length === 0
+            && Object.keys(surface.experienceOptions).length === 0
+            && Object.keys(surface.configurationAxes).length === 0
+            && Object.keys(surface.configurationOptions).length === 0)
+            continue;
+        planned.push({
+            locale: language.bcp47,
+            file: resolve(root, "src/dom/locale", `${language.bcp47}.ts`),
+            labels,
+            modeOptions,
+            stopControl,
+            stoppedAssistant,
+            surface,
+        });
+    }
+    if (!options.reviewed) {
+        for (const change of planned) {
+            console.log(`${change.locale.padEnd(8)} ${change.labels.join(" | ")}`);
+        }
+        console.log(`\nRefusing to write without --reviewed. Planned locale files: ${planned.length}.`);
+        return 2;
+    }
+    for (const change of planned) {
+        const before = await readFile(change.file, "utf8");
+        const after = mergeCapture(before, change.labels, change.modeOptions, {
+            stopControl: change.stopControl,
+            stoppedAssistant: change.stoppedAssistant,
+        }, change.surface);
+        if (after !== before) {
+            await writeFile(change.file, after, "utf8");
+            console.log(`updated ${change.locale} labels=${change.labels.length} modeOptions=${Object.keys(change.modeOptions).length} surfaces=${surfaceContributionCount(change.surface)} stopControl=${change.stopControl.length} stoppedAssistant=${change.stoppedAssistant.length}`);
+        }
+    }
+    return 0;
+}
+function latestSuccessfulCaptures(jsonl) {
+    const latest = new Map();
+    for (const line of jsonl.split(/\r?\n/)) {
+        if (line.trim().length === 0)
+            continue;
+        const record = JSON.parse(line);
+        if (record.status === "ok" && Array.isArray(record.intelligenceLabels)) {
+            latest.set(record.requestedLocale, record);
+        }
+    }
+    return latest;
+}
+function observedNonEnglishLabels(record) {
+    const seen = new Set();
+    const labels = [];
+    for (const label of record.intelligenceLabels ?? []) {
+        if (ENGLISH_MODE_LABELS.has(label) || seen.has(label))
+            continue;
+        seen.add(label);
+        labels.push(label);
+    }
+    return labels;
+}
+function observedNonEnglishModeOptions(record) {
+    const labels = record.intelligenceLabels ?? [];
+    if (labels.length !== INTELLIGENCE_MODE_OPTION_IDS.length) {
+        throw new ApplyUsageError(`${record.requestedLocale} has ${labels.length} Intelligence labels; expected ${INTELLIGENCE_MODE_OPTION_IDS.length}.`, 1);
+    }
+    const modeOptions = {};
+    for (let index = 0; index < INTELLIGENCE_MODE_OPTION_IDS.length; index += 1) {
+        const id = INTELLIGENCE_MODE_OPTION_IDS[index];
+        const label = labels[index];
+        if (label !== ENGLISH_INTELLIGENCE_MODE_OPTIONS[id]) {
+            modeOptions[id] = [label];
+        }
+    }
+    return modeOptions;
+}
+function observedNonEnglishGenerationLabels(values, englishValues) {
+    return dedupe((values ?? [])
+        .map(value => value.replace(/\s+/g, " ").trim())
+        .filter(value => value.length > 0
+        && !englishValues.has(value.toLowerCase())
+        && !UNSAFE_GENERIC_STOP_CONTROLS.has(value.toLowerCase())));
+}
+function observedNonEnglishSurface(record) {
+    const empty = {
+        workComposerTextbox: [],
+        experienceOptions: {},
+        configurationAxes: {},
+        configurationOptions: {},
+    };
+    const capture = record.surfaceCapture;
+    if (capture === undefined)
+        return empty;
+    if (capture.status !== "ok" || capture.chat === undefined || capture.work === undefined || !capture.restoredChat) {
+        throw new ApplyUsageError(`${record.requestedLocale} surface capture was not successful and restored: ${capture.blocker?.message ?? "unknown blocker"}.`, 1);
+    }
+    const contribution = { ...empty };
+    contribution.experienceOptions = {
+        ...nonEnglishSlot("chat", capture.chat.optionLabel, ENGLISH_EXPERIENCE_OPTIONS),
+        ...nonEnglishSlot("work", capture.work.optionLabel, ENGLISH_EXPERIENCE_OPTIONS),
+    };
+    const sharedComposerLabels = new Set(capture.chat.composerLabels.map(normalizedLower));
+    contribution.workComposerTextbox = dedupe(capture.work.composerLabels
+        .map(normalized)
+        .filter(label => label.length > 0
+        && !sharedComposerLabels.has(normalizedLower(label))
+        && !ENGLISH_COMPOSER_LABELS.has(normalizedLower(label))));
+    addLocalizedConfigurationAxis(contribution.configurationAxes, "power", capture.chat.power?.axisLabel);
+    addLocalizedConfigurationAxis(contribution.configurationAxes, "power", capture.work.power?.axisLabel);
+    addLocalizedConfigurationAxis(contribution.configurationAxes, "advanced", capture.chat.advanced?.label);
+    addLocalizedConfigurationAxis(contribution.configurationAxes, "advanced", capture.work.advanced?.label);
+    const chatRows = capture.chat.configurationRows;
+    if (chatRows !== undefined) {
+        if (chatRows.length !== CHAT_CONFIGURATION_AXIS_IDS.length
+            || chatRows.some((row, index) => row.axis !== CHAT_CONFIGURATION_AXIS_IDS[index])) {
+            throw new ApplyUsageError(`${record.requestedLocale} did not capture the ordered Chat Model/Effort rows.`, 1);
+        }
+        for (const row of chatRows) {
+            addLocalizedConfigurationAxis(contribution.configurationAxes, row.axis, row.axisLabel);
+            if (row.axis === "effort") {
+                assignOrderedLocalizedOptions(record.requestedLocale, row.options, CHAT_EFFORT_OPTION_IDS, contribution.configurationOptions, "Chat Effort");
+            }
+        }
+    }
+    const rows = capture.work.configurationRows;
+    if (rows.length !== WORK_CONFIGURATION_AXIS_IDS.length
+        || rows.some((row, index) => row.axis !== WORK_CONFIGURATION_AXIS_IDS[index])) {
+        throw new ApplyUsageError(`${record.requestedLocale} did not capture the ordered Model/Effort/Speed rows.`, 1);
+    }
+    for (const row of rows) {
+        addLocalizedConfigurationAxis(contribution.configurationAxes, row.axis, row.axisLabel);
+        if (row.axis === "effort") {
+            assignOrderedLocalizedOptions(record.requestedLocale, row.options, EFFORT_OPTION_IDS, contribution.configurationOptions, "Effort");
+        }
+        else if (row.axis === "speed") {
+            assignOrderedLocalizedOptions(record.requestedLocale, row.options, SPEED_OPTION_IDS, contribution.configurationOptions, "Speed");
+        }
+    }
+    return contribution;
+}
+function addLocalizedConfigurationAxis(target, axis, value) {
+    const label = normalized(value);
+    if (label.length === 0 || label === ENGLISH_CONFIGURATION_AXES[axis])
+        return;
+    target[axis] = dedupe([...(target[axis] ?? []), label]);
+}
+function assignOrderedLocalizedOptions(locale, options, ids, target, axis) {
+    if (options.length === 0 || options.length > ids.length) {
+        throw new ApplyUsageError(`${locale} captured ${options.length} ${axis} options; expected 1-${ids.length}.`, 1);
+    }
+    options.forEach((option, index) => {
+        const id = ids[index];
+        const label = normalized(option.label);
+        if (label.length > 0 && label !== ENGLISH_CONFIGURATION_OPTIONS[id]) {
+            target[id] = dedupe([...(target[id] ?? []), label]);
+        }
+    });
+}
+function nonEnglishSlot(id, value, englishValues) {
+    const label = normalized(value);
+    return label.length > 0 && !englishValues.has(normalizedLower(label)) ? { [id]: [label] } : {};
+}
+export function mergeCapture(source, labels, modeOptions, generationLabels = {}, surface = {
+    workComposerTextbox: [],
+    experienceOptions: {},
+    configurationAxes: {},
+    configurationOptions: {},
+}) {
+    let text = updateComment(source);
+    if (labels.length > 0) {
+        const existing = parseExistingModeLabels(text);
+        const merged = dedupe([...existing, ...labels]);
+        const line = `  modeLabels: [${merged.map(label => JSON.stringify(label)).join(", ")}],`;
+        if (/^\s*modeLabels:\s*\[[^\]]*\],/m.test(text)) {
+            text = text.replace(/^\s*modeLabels:\s*\[[^\]]*\],/m, line);
+        }
+        else if (/^\s*copyResponse:\s*.*,\n/m.test(text)) {
+            text = text.replace(/^(\s*copyResponse:\s*.*,\n)/m, `$1${line}\n`);
+        }
+        else {
+            text = text.replace(/^export const \w+ = \{\n/m, match => `${match}${line}\n`);
+        }
+    }
+    text = mergeModeOptions(text, modeOptions);
+    text = mergeTopLevelStringArrayProperty(text, "workComposerTextbox", surface.workComposerTextbox, "composerTextbox");
+    text = mergeNestedOptions(text, "experienceOptions", EXPERIENCE_OPTION_IDS, surface.experienceOptions, "modeOpenerExtra");
+    text = mergeNestedOptions(text, "configurationAxes", CONFIGURATION_AXIS_IDS, surface.configurationAxes, "experienceOptions");
+    text = mergeNestedOptions(text, "configurationOptions", CONFIGURATION_OPTION_IDS, surface.configurationOptions, "configurationAxes");
+    text = mergeStringArrayProperty(text, "stopControl", generationLabels.stopControl ?? []);
+    text = mergeStringArrayProperty(text, "stoppedAssistant", generationLabels.stoppedAssistant ?? []);
+    return text;
+}
+function parseExistingModeLabels(source) {
+    const match = /^\s*modeLabels:\s*\[(?<body>[^\]]*)\],/m.exec(source);
+    const body = match?.groups?.body;
+    if (body === undefined)
+        return [];
+    const labels = [];
+    for (const stringMatch of body.matchAll(/"((?:\\"|[^"])*)"/g)) {
+        labels.push(JSON.parse(`"${stringMatch[1]}"`));
+    }
+    return labels;
+}
+function mergeModeOptions(source, modeOptions) {
+    const existing = parseExistingModeOptions(source);
+    const merged = {};
+    for (const id of INTELLIGENCE_MODE_OPTION_IDS) {
+        const values = dedupe([...(existing[id] ?? []), ...(modeOptions[id] ?? [])]);
+        if (values.length > 0) {
+            merged[id] = values;
+        }
+    }
+    const block = formatModeOptions(merged);
+    if (block === undefined) {
+        return source;
+    }
+    if (/^\s*modeOptions:\s*\{[\s\S]*?^\s*\},\n/m.test(source)) {
+        return source.replace(/^\s*modeOptions:\s*\{[\s\S]*?^\s*\},\n/m, `${block}\n`);
+    }
+    if (/^\s*modeLabels:\s*\[[^\]]*\],\n/m.test(source)) {
+        return source.replace(/^(\s*modeLabels:\s*\[[^\]]*\],\n)/m, `$1${block}\n`);
+    }
+    return source.replace(/^export const \w+ = \{\n/m, match => `${match}${block}\n`);
+}
+function parseExistingModeOptions(source) {
+    const options = {};
+    const blockMatch = /^\s*modeOptions:\s*\{(?<body>[\s\S]*?)^\s*\},/m.exec(source);
+    const body = blockMatch?.groups?.body;
+    if (body === undefined)
+        return options;
+    for (const id of INTELLIGENCE_MODE_OPTION_IDS) {
+        const lineMatch = new RegExp(`^\\s*${id}:\\s*\\[(?<body>[^\\]]*)\\],`, "m").exec(body);
+        const lineBody = lineMatch?.groups?.body;
+        if (lineBody === undefined)
+            continue;
+        const values = [];
+        for (const stringMatch of lineBody.matchAll(/"((?:\\"|[^"])*)"/g)) {
+            values.push(JSON.parse(`"${stringMatch[1]}"`));
+        }
+        if (values.length > 0) {
+            options[id] = values;
+        }
+    }
+    return options;
+}
+function formatModeOptions(modeOptions) {
+    const lines = INTELLIGENCE_MODE_OPTION_IDS
+        .map(id => {
+        const values = modeOptions[id];
+        return values === undefined || values.length === 0
+            ? undefined
+            : `    ${id}: [${values.map(value => JSON.stringify(value)).join(", ")}],`;
+    })
+        .filter((line) => line !== undefined);
+    if (lines.length === 0) {
+        return undefined;
+    }
+    return ["  modeOptions: {", ...lines, "  },"].join("\n");
+}
+function mergeTopLevelStringArrayProperty(source, property, values, insertAfterProperty) {
+    if (values.length === 0)
+        return source;
+    const existing = parseExistingStringArrayProperty(source, property);
+    const merged = dedupe([...existing, ...values]);
+    const line = `  ${property}: [${merged.map(value => JSON.stringify(value)).join(", ")}],`;
+    const propertyPattern = new RegExp(`^\\s*${property}:\\s*\\[[^\\]]*\\],`, "m");
+    if (propertyPattern.test(source))
+        return source.replace(propertyPattern, line);
+    const anchor = new RegExp(`^(\\s*${insertAfterProperty}:\\s*[^\\n]+,\\n)`, "m");
+    if (anchor.test(source))
+        return source.replace(anchor, `$1${line}\n`);
+    return source.replace(/^export const \w+ = \{\n/m, match => `${match}${line}\n`);
+}
+function mergeNestedOptions(source, property, ids, additions, insertAfterProperty) {
+    const existing = parseNestedOptions(source, property, ids);
+    const merged = {};
+    for (const id of ids) {
+        const values = dedupe([...(existing[id] ?? []), ...(additions[id] ?? [])]);
+        if (values.length > 0)
+            merged[id] = values;
+    }
+    const lines = ids.flatMap(id => {
+        const values = merged[id];
+        return values === undefined || values.length === 0
+            ? []
+            : [`    ${id}: [${values.map(value => JSON.stringify(value)).join(", ")}],`];
+    });
+    if (lines.length === 0)
+        return source;
+    const block = [`  ${property}: {`, ...lines, "  },"].join("\n");
+    const blockPattern = new RegExp(`^\\s*${property}:\\s*\\{[\\s\\S]*?^\\s*\\},\\n`, "m");
+    if (blockPattern.test(source))
+        return source.replace(blockPattern, `${block}\n`);
+    const nestedAnchor = new RegExp(`^(\\s*${insertAfterProperty}:\\s*\\{[\\s\\S]*?^\\s*\\},\\n)`, "m");
+    if (nestedAnchor.test(source))
+        return source.replace(nestedAnchor, `$1${block}\n`);
+    const lineAnchor = new RegExp(`^(\\s*${insertAfterProperty}:\\s*[^\\n]+,\\n)`, "m");
+    if (lineAnchor.test(source))
+        return source.replace(lineAnchor, `$1${block}\n`);
+    return source.replace(/^export const \w+ = \{\n/m, match => `${match}${block}\n`);
+}
+function parseNestedOptions(source, property, ids) {
+    const result = {};
+    const block = new RegExp(`^\\s*${property}:\\s*\\{(?<body>[\\s\\S]*?)^\\s*\\},`, "m").exec(source)?.groups?.body;
+    if (block === undefined)
+        return result;
+    for (const id of ids) {
+        const body = new RegExp(`^\\s*${id}:\\s*\\[(?<body>[^\\]]*)\\],`, "m").exec(block)?.groups?.body;
+        if (body === undefined)
+            continue;
+        const values = parseJsonStringList(body);
+        if (values.length > 0)
+            result[id] = values;
+    }
+    return result;
+}
+function mergeStringArrayProperty(source, property, values) {
+    if (values.length === 0)
+        return source;
+    const existing = parseExistingStringArrayProperty(source, property);
+    const merged = dedupe([...existing, ...values])
+        .filter(value => property !== "stopControl" || !UNSAFE_GENERIC_STOP_CONTROLS.has(value.toLowerCase()));
+    const line = `  ${property}: [${merged.map(value => JSON.stringify(value)).join(", ")}],`;
+    const propertyPattern = new RegExp(`^\\s*${property}:\\s*\\[[^\\]]*\\],`, "m");
+    if (propertyPattern.test(source)) {
+        return source.replace(propertyPattern, line);
+    }
+    if (/^\s*responseActions:\s*.*,\n/m.test(source)) {
+        return source.replace(/^(\s*responseActions:\s*.*,\n)/m, `$1${line}\n`);
+    }
+    if (/^\s*modeOptions:\s*\{[\s\S]*?^\s*\},\n/m.test(source)) {
+        return source.replace(/^(\s*modeOptions:\s*\{[\s\S]*?^\s*\},\n)/m, `$1${line}\n`);
+    }
+    return source.replace(/^export const \w+ = \{\n/m, match => `${match}${line}\n`);
+}
+function parseExistingStringArrayProperty(source, property) {
+    const match = new RegExp(`^\\s*${property}:\\s*\\[(?<body>[^\\]]*)\\],`, "m").exec(source);
+    const body = match?.groups?.body;
+    if (body === undefined)
+        return [];
+    const values = [];
+    for (const stringMatch of body.matchAll(/"((?:\\"|[^"])*)"/g)) {
+        values.push(JSON.parse(`"${stringMatch[1]}"`));
+    }
+    return values;
+}
+function updateComment(source) {
+    let text = source.replace(/\n \* Omitted because they match English case-insensitively: `modeLabels`[\s\S]*?blocker copy\.\n/g, "\n * Some non-Intelligence surfaces may still fall back to English + `selector_drift`.\n");
+    text = text.replace(/^ \* Intelligence picker labels updated 2026-06-10[^\n]*$/m, UPDATE_NOTE);
+    if (!text.includes(UPDATE_NOTE)) {
+        text = text.replace(/\n \*\//, `\n *\n${UPDATE_NOTE}\n */`);
+    }
+    return text;
+}
+function parseJsonStringList(body) {
+    const values = [];
+    for (const stringMatch of body.matchAll(/"((?:\\"|[^"])*)"/g)) {
+        values.push(JSON.parse(`"${stringMatch[1]}"`));
+    }
+    return values;
+}
+function normalized(value) {
+    return (value ?? "").replace(/\s+/g, " ").trim();
+}
+function normalizedLower(value) {
+    return normalized(value).toLocaleLowerCase();
+}
+function surfaceContributionCount(surface) {
+    return surface.workComposerTextbox.length
+        + Object.keys(surface.experienceOptions).length
+        + Object.keys(surface.configurationAxes).length
+        + Object.keys(surface.configurationOptions).length;
+}
+function dedupe(values) {
+    const seen = new Set();
+    const result = [];
+    for (const value of values) {
+        if (seen.has(value))
+            continue;
+        seen.add(value);
+        result.push(value);
+    }
+    return result;
+}
+function parseArgs(argv) {
+    let input;
+    let reviewed = false;
+    let coveragePath;
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index];
+        switch (arg) {
+            case "--help":
+            case "-h":
+                throw new ApplyUsageError(USAGE, 0);
+            case "--in":
+                input = requiredValue(argv, ++index, arg);
+                break;
+            case "--reviewed":
+                reviewed = true;
+                break;
+            case "--coverage-path":
+                coveragePath = requiredValue(argv, ++index, arg);
+                break;
+            default:
+                throw new ApplyUsageError(`Unknown option: ${arg}\n\n${USAGE}`);
+        }
+    }
+    if (input === undefined) {
+        throw new ApplyUsageError(`--in is required.\n\n${USAGE}`);
+    }
+    const root = packageRoot();
+    return {
+        input: resolve(root, input),
+        reviewed,
+        coveragePath: resolve(root, coveragePath ?? "references/language-coverage.md"),
+    };
+}
+function requiredValue(argv, index, flag) {
+    const value = argv[index];
+    if (value === undefined || value.startsWith("--")) {
+        throw new ApplyUsageError(`${flag} requires a value.\n\n${USAGE}`);
+    }
+    return value;
+}
+function packageRoot() {
+    return resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+}
+if (typeof process !== "undefined" && process.argv[1] === fileURLToPath(import.meta.url)) {
+    const exitCode = await main();
+    process.exitCode = exitCode;
+}

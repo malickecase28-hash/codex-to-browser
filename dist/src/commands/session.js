@@ -1,0 +1,132 @@
+import { attachChatGPTBrowser, isChatGPTUrl, tabIdFromPage } from "../browser/attach.js";
+import { readPageState } from "../browser/page-state.js";
+import { BrowserBridgeUnavailableError, resultError, resultOk } from "../errors.js";
+import { unwrapCoordinatedPage } from "../runtime/coordinated-page.js";
+import { contextFromPage } from "./context.js";
+export async function bootstrap(env, args = {}) {
+    try {
+        const attached = await attachChatGPTBrowser(env, args);
+        env.browser = attached.browser;
+        env.page = attached.page;
+        if (attached.tabId !== undefined) {
+            env.expectedTabId = attached.tabId;
+        }
+        const state = await readPageState(attached.page);
+        const data = {
+            browserName: attached.browserName,
+            tabId: attached.tabId ?? "unknown",
+            url: state.url,
+            loggedIn: state.signedIn
+        };
+        const context = attached.tabId === undefined
+            ? { browserName: attached.browserName }
+            : { browserName: attached.browserName, tabId: attached.tabId };
+        return resultOk(data, await contextFromPage(attached.page, context));
+    }
+    catch (error) {
+        return resultError(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+export async function ensurePage(env, options = {}) {
+    if (env.page === undefined) {
+        return bootstrap(env, { preferExistingTab: true });
+    }
+    const affinity = await verifyTabAffinity(env);
+    if (affinity !== undefined) {
+        return affinity;
+    }
+    const origin = await verifyChatGPTOrigin(env);
+    if (origin !== undefined) {
+        return origin;
+    }
+    return resultOk({}, await contextFromPage(env.page, tabContext(env), { minimal: options.minimalContext === true }));
+}
+async function verifyChatGPTOrigin(env) {
+    if (env.page === undefined)
+        return undefined;
+    const actualUrl = await Promise.resolve(env.page.url?.()).catch(() => undefined);
+    if (isChatGPTUrl(actualUrl))
+        return undefined;
+    return {
+        ok: false,
+        status: "blocked",
+        warnings: [],
+        blocker: {
+            kind: "selector_drift",
+            code: "unsafe_chatgpt_origin",
+            message: "ChatGPT command refused to operate because the controlled tab is not on an allowlisted ChatGPT origin.",
+            visibleText: actualUrl ?? "The current tab URL could not be verified.",
+            remediation: [
+                {
+                    label: "Reopen ChatGPT",
+                    instruction: "Run session.bootstrap against https://chatgpt.com or claim an exact supported ChatGPT tab before retrying.",
+                    userActionRequired: false
+                }
+            ],
+            resumable: false
+        },
+        context: await contextFromPage(env.page, tabContext(env))
+    };
+}
+export async function verifyTabAffinity(env) {
+    if (env.expectedTabId === undefined || env.page === undefined) {
+        return undefined;
+    }
+    // The coordinated facade intentionally snapshots its public identity when
+    // it is created so its coordinator key cannot drift underneath queued work.
+    // Affinity verification has a different job: it must inspect the provider
+    // page that the facade protects and detect a changed/reused tab claim.
+    const actualTabId = tabIdFromPage(unwrapCoordinatedPage(env.page));
+    if (actualTabId === undefined) {
+        return affinityResult(env, "tab_affinity_unverifiable", actualTabId);
+    }
+    if (actualTabId !== env.expectedTabId) {
+        return affinityResult(env, "tab_affinity_lost", actualTabId);
+    }
+    const openTabs = env.browser?.user?.openTabs;
+    if (typeof openTabs !== "function") {
+        return undefined;
+    }
+    let tabs;
+    try {
+        tabs = await Promise.resolve(openTabs.call(env.browser.user));
+    }
+    catch {
+        return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+    }
+    if (!Array.isArray(tabs)) {
+        return resultError(new BrowserBridgeUnavailableError(), await contextFromPage(env.page, tabContext(env, actualTabId)));
+    }
+    if (!tabs.some(tab => tab.id === env.expectedTabId)) {
+        return affinityResult(env, "tab_affinity_lost", actualTabId);
+    }
+    return undefined;
+}
+function affinityResult(env, code, actualTabId) {
+    const message = code === "tab_affinity_unverifiable"
+        ? `ChatGPT command cannot verify it is still attached to expected tab ${env.expectedTabId}.`
+        : `ChatGPT command would run on tab ${actualTabId ?? env.expectedTabId}, but the workflow expected tab ${env.expectedTabId}.`;
+    return contextFromPage(env.page, tabContext(env, actualTabId)).then(context => ({
+        ok: false,
+        status: "blocked",
+        warnings: [],
+        blocker: {
+            kind: "selector_drift",
+            code,
+            message,
+            remediation: [
+                {
+                    label: "Reclaim the intended tab",
+                    instruction: "Run session.bootstrap again with an exact existingTab target, or pass the correct page/tab to createChatGPT before retrying.",
+                    userActionRequired: false
+                }
+            ],
+            resumable: false
+        },
+        context
+    }));
+}
+function tabContext(env, actualTabId = tabIdFromPage(unwrapCoordinatedPage(env.page))) {
+    const tabId = actualTabId ?? env.expectedTabId;
+    return tabId === undefined ? {} : { tabId };
+}

@@ -1,0 +1,58 @@
+/**
+ * Telugu (te-IN). Captured 2026-06-09 against a live chatgpt.com session
+ * (html lang=te-IN, Google Translate confirmed off).
+ *
+ * Some non-Intelligence surfaces may still fall back to English + `selector_drift`.
+ *
+ * Intelligence picker labels updated 2026-06-10, stop-control labels updated 2026-06-15, Chat/Work surface labels updated 2026-07-17, and Power/Advanced selector labels updated 2026-08-08 from visible ChatGPT sessions.
+ */
+export const te = {
+    configurationAxes: {
+        power: ["పవర్"],
+        model: ["మోడల్"],
+        effort: ["ప్రయత్నం", "ఆలోచన"],
+        speed: ["వేగం"],
+        advanced: ["అధునాతనం"],
+    },
+    configurationOptions: {
+        instant: ["తక్షణం"],
+        light: ["లైట్"],
+        medium: ["మీడియం"],
+        high: ["హై"],
+        extraHigh: ["ఎక్స్‌ట్రా హై"],
+        max: ["గరిష్ఠం"],
+        ultra: ["అల్ట్రా"],
+        standard: ["స్టాండర్డ్"],
+        fast: ["వేగవంతం"],
+    },
+    composerTextbox: ["ఏదైనా అడగండి"],
+    sendButton: ["ప్రాంప్ట్‌ను పంపించండి"],
+    searchChatsButton: ["చాట్‌లను శోధించండి"],
+    searchChatsPlaceholder: ["చాట్‌లను వెతకండి..."],
+    newChat: ["కొత్త చాట్"],
+    addFilesButton: ["ఫైల్‌లను మరియు మరిన్ని జోడించండి"],
+    addFilesOpenerCandidates: ["ఫైల్‌లను మరియు మరిన్ని జోడించండి"],
+    addPhotosFilesMenuItem: ["ఫోటోలు & ఫైల్‌లను అప్‌లోడ్ చేయండి"],
+    copyResponse: ["ప్రతిస్పందనను కాపీ చేయండి"],
+    modeLabels: ["తక్షణం", "మధ్యస్థ", "అధిక", "అత్యధిక", "ప్రో", "మీడియం", "హై", "ఎక్స్‌ట్రా హై"],
+    modeOptions: {
+        instant: ["తక్షణం"],
+        medium: ["మధ్యస్థ", "మీడియం"],
+        high: ["అధిక", "హై"],
+        extraHigh: ["అత్యధిక", "ఎక్స్‌ట్రా హై"],
+        pro: ["ప్రో"],
+    },
+    modeOpenerExtra: ["కాన్ఫిగర్ చేయండి"],
+    experienceOptions: {
+        chat: ["చాట్"],
+        work: ["వర్క్"],
+    },
+    tools: {
+        web_search: ["వెబ్‌లో వెతకడం"],
+        deep_research: ["సంపూర్ణ పరిశోధన"],
+        create_image: ["చిత్రాన్ని సృష్టించు"],
+    },
+    signedInMarkers: ["కొత్త చాట్", "చాట్‌లను శోధించండి", "ఇటీవలివి", "చాట్ చరిత్ర", "ప్రాజెక్ట్‌లు", "ఏదైనా అడగండి"],
+    responseActions: ["ప్రతిస్పందనను కాపీ చేయండి"],
+    stopControl: ["సమాధానం ఇవ్వడం ఆపు"],
+};

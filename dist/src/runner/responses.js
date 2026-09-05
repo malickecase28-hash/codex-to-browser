@@ -1,0 +1,221 @@
+import { renderUntrustedOutputReturnEnvelope } from "../safety/untrusted-output.js";
+const acceptedTopLevelFields = new Set([
+    "input",
+    "operationId",
+    "thread",
+    "existingTab",
+    "preferExistingTab",
+    "experience",
+    "configuration",
+    "attachments",
+    "mode",
+    "tools",
+    "text",
+    "stream",
+    "report",
+    "instructions",
+    "instructionsMode"
+]);
+const unsupportedAlternatives = {
+    model: "Use experience plus configuration for visible ChatGPT UI preferences. Legacy mode remains supported. These do not select an API model.",
+    temperature: "No browser-control equivalent. ChatGPT web does not expose API temperature.",
+    top_p: "No browser-control equivalent. ChatGPT web does not expose API nucleus sampling.",
+    seed: "No browser-control equivalent. Visible ChatGPT web does not expose deterministic API seeds.",
+    logprobs: "No browser-control equivalent. Visible ChatGPT web does not expose token log probabilities.",
+    top_logprobs: "No browser-control equivalent. Visible ChatGPT web does not expose token log probabilities.",
+    previous_response_id: "Use thread: { type: \"conversationId\", conversationId } or a ChatGPT thread URL.",
+    store: "No browser-control equivalent. Use visible ChatGPT settings or temporary chat controls when implemented.",
+    service_tier: "No browser-control equivalent. Visible ChatGPT web does not expose API service tiers.",
+    max_output_tokens: "Use response.maxChars/read maxChars for capture limits. This does not control model generation.",
+    parallel_tool_calls: "No browser-control equivalent. Visible ChatGPT browser control selects visible tools sequentially.",
+    truncation: "No browser-control equivalent. Use prompt design and response capture limits instead."
+};
+const responseFormats = new Set([
+    "markdown",
+    "text",
+    "normalized_text",
+    "visible_text",
+    "html",
+    "blocks",
+    "all"
+]);
+const operationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+export function validateResponsesCreateArgs(args) {
+    const unsupported = [];
+    for (const [path, alternative] of Object.entries(unsupportedAlternatives)) {
+        if (args[path] !== undefined) {
+            unsupported.push(apiOnlyField(path, alternative));
+        }
+    }
+    for (const path of Object.keys(args)) {
+        if (!acceptedTopLevelFields.has(path) && unsupportedAlternatives[path] === undefined) {
+            unsupported.push({
+                path,
+                reason: "This field is not part of the narrow ChatGPT browser-control Responses adapter.",
+                alternative: "Use chatgpt.runner.run(...) for lower-level browser-control options."
+            });
+        }
+    }
+    if (args.input === undefined) {
+        unsupported.push({
+            path: "input",
+            reason: "Responses adapter calls must include visible input text or input items.",
+            alternative: "Provide input: \"your visible prompt\"."
+        });
+    }
+    if (args.operationId !== undefined && (typeof args.operationId !== "string" || !operationIdPattern.test(args.operationId))) {
+        unsupported.push({
+            path: "operationId",
+            reason: "operationId must be a canonical UUID when provided.",
+            alternative: "Provide a caller-owned UUID, or omit operationId to retain the legacy runner path."
+        });
+    }
+    if (args.stream !== undefined && args.stream !== false) {
+        unsupported.push({
+            path: "stream",
+            reason: "This adapter stage supports only non-streaming calls.",
+            alternative: "Set stream: false, or use the runner milestone stream when enabled."
+        });
+    }
+    if (args.instructions !== undefined && args.instructionsMode !== "visible_prefix") {
+        unsupported.push({
+            path: "instructions",
+            reason: "Responses API instructions are hidden context, but ChatGPT browser control can only submit visible text.",
+            alternative: "Set instructionsMode: \"visible_prefix\" to send instructions visibly."
+        });
+    }
+    if (args.instructionsMode !== undefined && args.instructionsMode !== "visible_prefix") {
+        unsupported.push({
+            path: "instructionsMode",
+            reason: "Only explicit visible-prefix instructions are supported by this adapter.",
+            alternative: "Use instructionsMode: \"visible_prefix\" or omit instructionsMode."
+        });
+    }
+    if (isRecord(args.text)) {
+        const format = args.text.format;
+        if (format !== undefined && (typeof format !== "string" || !responseFormats.has(format))) {
+            unsupported.push({
+                path: "text.format",
+                reason: "The requested response text format is not supported by ChatGPT browser-control capture.",
+                alternative: "Use markdown, visible_text, normalized_text, html, blocks, or all."
+            });
+        }
+        for (const path of Object.keys(args.text)) {
+            if (path !== "format") {
+                unsupported.push({
+                    path: `text.${path}`,
+                    reason: "Only text.format is supported by the narrow Responses adapter.",
+                    alternative: "Use chatgpt.runner.run(...) for lower-level browser-control options."
+                });
+            }
+        }
+    }
+    return unsupported.length === 0 ? { ok: true, unsupported: [] } : { ok: false, unsupported };
+}
+export function responsesCreateArgsToRunInput(args) {
+    const runInput = {
+        input: args.input,
+        response: { format: args.text?.format ?? "markdown" }
+    };
+    if (args.operationId !== undefined)
+        runInput.operationId = args.operationId;
+    if (args.thread !== undefined)
+        runInput.thread = args.thread;
+    if (args.existingTab !== undefined)
+        runInput.existingTab = args.existingTab;
+    if (args.preferExistingTab !== undefined)
+        runInput.preferExistingTab = args.preferExistingTab;
+    if (args.experience !== undefined)
+        runInput.experience = args.experience;
+    if (args.configuration !== undefined)
+        runInput.configuration = args.configuration;
+    if (args.attachments !== undefined)
+        runInput.attachments = args.attachments;
+    if (args.mode !== undefined)
+        runInput.mode = args.mode;
+    if (args.tools !== undefined)
+        runInput.tools = args.tools;
+    if (args.report !== undefined)
+        runInput.report = args.report;
+    return runInput;
+}
+export function responseFromRunResult(result, now = new Date()) {
+    const id = responseId(now);
+    const browserControl = {
+        visibleUi: true,
+        resultStatus: result.status
+    };
+    if (result.data?.thread !== undefined)
+        browserControl.thread = result.data.thread;
+    const reportPath = result.data?.reportPath ?? result.reportPath;
+    if (reportPath !== undefined)
+        browserControl.reportPath = reportPath;
+    const submissionState = result.state.submissionState ?? result.data?.submissionState;
+    const completionState = result.state.completionState ?? result.data?.completionState;
+    const generationActive = result.data?.generationActive;
+    if (submissionState !== undefined)
+        browserControl.submissionState = submissionState;
+    if (completionState !== undefined)
+        browserControl.completionState = completionState;
+    if (generationActive !== undefined)
+        browserControl.generationActive = generationActive;
+    const operationId = result.data?.operationId;
+    if (operationId !== undefined)
+        browserControl.operationId = operationId;
+    const handle = result.data?.handle;
+    if (handle !== undefined)
+        browserControl.handle = handle;
+    if (result.output_text.length > 0) {
+        const envelopeArgs = {
+            outputText: result.output_text,
+            source: "chatgpt",
+            capturedAt: now.toISOString(),
+            metadata: {
+                response_id: id,
+                result_status: result.status,
+                report_path: reportPath
+            }
+        };
+        if (reportPath !== undefined)
+            envelopeArgs.outputPath = reportPath;
+        browserControl.untrustedOutput = renderUntrustedOutputReturnEnvelope(envelopeArgs);
+    }
+    return {
+        id,
+        object: "chatgpt.browser.response",
+        created_at: Math.floor(now.getTime() / 1000),
+        status: result.status,
+        output_text: result.output_text,
+        output: result.output,
+        browser_control: browserControl
+    };
+}
+export function unsupportedResponse(unsupported, now = new Date(), operationId) {
+    return {
+        id: responseId(now),
+        object: "chatgpt.browser.response",
+        created_at: Math.floor(now.getTime() / 1000),
+        status: "unsupported",
+        output_text: "",
+        output: [],
+        browser_control: {
+            visibleUi: true,
+            resultStatus: "unsupported",
+            ...(operationId === undefined ? {} : { operationId }),
+            unsupported
+        }
+    };
+}
+function apiOnlyField(path, alternative) {
+    return {
+        path,
+        reason: "This is an OpenAI API field that visible ChatGPT browser control cannot honestly support.",
+        alternative
+    };
+}
+function responseId(now) {
+    return `chatgpt-browser-${now.getTime().toString(36)}`;
+}
+function isRecord(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}

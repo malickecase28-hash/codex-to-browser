@@ -1,0 +1,56 @@
+import { parseConversationId } from "../browser/page-state.js";
+import { isChatGPTUrl, requireChatGPTUrl } from "../browser/chatgpt-url.js";
+import { countPageMessages, readLatestMessageText } from "../dom/messages.js";
+const CHATGPT_HOME = "https://chatgpt.com/";
+export async function ensureConversationTarget(page, target, options) {
+    const targetUrl = absoluteConversationUrl(target);
+    requireChatGPTUrl(targetUrl, "Conversation target URL");
+    const expectedConversationId = parseConversationId(targetUrl);
+    const currentUrl = typeof page.url === "function" ? await Promise.resolve(page.url()).catch(() => "") : "";
+    if (isChatGPTUrl(typeof currentUrl === "string" ? currentUrl : "")
+        &&
+            expectedConversationId !== undefined
+        && parseConversationId(typeof currentUrl === "string" ? currentUrl : "") === expectedConversationId) {
+        await waitForConversationHydrated(page, options.timeoutMs, expectedConversationId);
+        return ensureResult(false, targetUrl, expectedConversationId);
+    }
+    await page.goto?.(targetUrl, { waitUntil: "domcontentloaded", timeout: options.timeoutMs });
+    const navigatedUrl = typeof page.url === "function" ? await Promise.resolve(page.url()).catch(() => "") : "";
+    requireChatGPTUrl(typeof navigatedUrl === "string" ? navigatedUrl : "", "Conversation navigation result");
+    await waitForConversationHydrated(page, options.timeoutMs, expectedConversationId);
+    const finalUrl = typeof page.url === "function" ? await Promise.resolve(page.url()).catch(() => "") : "";
+    requireChatGPTUrl(typeof finalUrl === "string" ? finalUrl : "", "Hydrated conversation URL");
+    if (expectedConversationId !== undefined
+        && parseConversationId(typeof finalUrl === "string" ? finalUrl : "") !== expectedConversationId) {
+        throw new Error(`Visible Chat navigation did not reach conversation ${expectedConversationId}.`);
+    }
+    return ensureResult(true, targetUrl, expectedConversationId);
+}
+export async function waitForConversationHydrated(page, timeoutMs, expectedConversationId) {
+    const started = Date.now();
+    do {
+        const url = typeof page.url === "function" ? await Promise.resolve(page.url()).catch(() => "") : "";
+        const urlMatches = expectedConversationId === undefined || parseConversationId(typeof url === "string" ? url : "") === expectedConversationId;
+        const count = await countPageMessages(page).catch(() => 0);
+        const latestAssistantText = await readLatestMessageText(page, "assistant").catch(() => undefined);
+        const title = typeof page.title === "function" ? await page.title().catch(() => "") : "";
+        if (urlMatches && ((latestAssistantText?.trim().length ?? 0) > 0 || (count > 0 && title.length > 0 && title !== "ChatGPT"))) {
+            await page.waitForTimeout?.(250);
+            return;
+        }
+        await page.waitForTimeout?.(500);
+    } while (Date.now() - started < timeoutMs);
+}
+function absoluteConversationUrl(target) {
+    if (target.href !== undefined && target.href.startsWith("/")) {
+        return new URL(target.href, CHATGPT_HOME).toString();
+    }
+    return target.href ?? target.url;
+}
+function ensureResult(navigated, targetUrl, expectedConversationId) {
+    const result = { navigated, targetUrl };
+    if (expectedConversationId !== undefined) {
+        result.expectedConversationId = expectedConversationId;
+    }
+    return result;
+}

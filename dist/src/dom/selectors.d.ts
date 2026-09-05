@@ -1,0 +1,22 @@
+import type { LocatorLike, PageLike } from "../types.js";
+export declare const cssSelectors: {
+    readonly assistantMessages: "[data-message-author-role='assistant']";
+    readonly userMessages: "[data-message-author-role='user']";
+    readonly roleMessages: "[data-message-author-role]";
+    readonly conversationTurns: "[data-testid^='conversation-turn']";
+    readonly hiddenFileInputs: "input[type='file']";
+    readonly downloadControls: string;
+    readonly generatedArtifactDownloadControls: string;
+};
+export declare function composerTextbox(page: PageLike): LocatorLike;
+export declare function sendButton(page: PageLike): LocatorLike;
+export declare function stopGenerationButton(page: PageLike): LocatorLike;
+export declare function searchChatsButton(page: PageLike): LocatorLike;
+export declare function searchChatsInput(page: PageLike): LocatorLike;
+export declare function newChatButton(page: PageLike): LocatorLike;
+export declare function addFilesButton(page: PageLike): LocatorLike;
+export declare function copyResponseButtons(page: PageLike): LocatorLike;
+export declare function assistantMessageNodes(page: PageLike): LocatorLike;
+export declare function userMessageNodes(page: PageLike): LocatorLike;
+export declare function roleMessageNodes(page: PageLike): LocatorLike;
+export declare function requiredLocator(page: PageLike, selector: string): LocatorLike;

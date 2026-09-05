@@ -1,0 +1,9 @@
+/**
+ * Fixed CDP expression for one trusted user gesture on the unique file input
+ * owned by the unique visible ChatGPT composer. Local paths never enter this
+ * expression; the sanctioned file-chooser capability performs the handoff.
+ *
+ * Keep this shared by the ordinary files command and the transactional
+ * attachment provider so their target-selection safety contract cannot drift.
+ */
+export declare const ACTIVE_COMPOSER_FILE_INPUT_CLICK_EXPRESSION = "(() => {\n  const visible = element => {\n    if (element.hidden || element.closest(\"[hidden], [inert], [aria-hidden='true']\")) return false;\n    const style = getComputedStyle(element);\n    const rect = element.getBoundingClientRect();\n    return style.display !== \"none\" && style.visibility !== \"hidden\" && style.opacity !== \"0\"\n      && (rect.width > 0 || rect.height > 0);\n  };\n  const textboxes = [...document.querySelectorAll(\"textarea, [contenteditable='true'], [role='textbox']\")].filter(visible);\n  const composers = [...new Set(textboxes.map(textbox =>\n    textbox.closest(\"form\")\n      ?? textbox.closest(\"[data-testid*='composer' i]\")\n      ?? textbox.closest(\"[aria-label*='composer' i]\")\n      ?? textbox.closest(\"[class*='composer' i]\")\n  ).filter(Boolean))];\n  if (composers.length !== 1) return { ok: false, reason: \"active composer was not unique\" };\n  const all = [...composers[0].querySelectorAll(\"input[type='file']\")]\n    .filter(input => !input.disabled && input.getAttribute(\"aria-disabled\") !== \"true\");\n  const preferred = all.filter(input => input.id === \"upload-files\");\n  const nonImage = all.filter(input => input.getAttribute(\"accept\") !== \"image/*\");\n  const candidates = preferred.length ? preferred : nonImage.length ? nonImage : all;\n  if (candidates.length !== 1) return { ok: false, reason: \"active composer file input was not unique\" };\n  candidates[0].click();\n  return { ok: true };\n})()";

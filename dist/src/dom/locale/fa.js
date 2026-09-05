@@ -1,0 +1,56 @@
+/**
+ * Persian (fa). Captured 2026-06-09 against a live chatgpt.com session
+ * (html lang=fa, Google Translate confirmed off).
+ *
+ * Some non-Intelligence surfaces may still fall back to English + `selector_drift`.
+ *
+ * Intelligence picker labels updated 2026-06-10, stop-control labels updated 2026-06-15, Chat/Work surface labels updated 2026-07-17, and Power/Advanced selector labels updated 2026-08-08 from visible ChatGPT sessions.
+ */
+export const fa = {
+    configurationAxes: {
+        power: ["توان"],
+        model: ["مدل"],
+        effort: ["سطح تلاش", "میزان استدلال"],
+        speed: ["سرعت"],
+        advanced: ["پیشرفته"],
+    },
+    configurationOptions: {
+        instant: ["فوری"],
+        light: ["سبک"],
+        medium: ["متوسط"],
+        high: ["بالا"],
+        extraHigh: ["بسیار بالا"],
+        max: ["حداکثر"],
+        fast: ["سریع"],
+    },
+    composerTextbox: ["گفتگو با ChatGPT"],
+    sendButton: ["ارسال دستور"],
+    searchChatsButton: ["جست‌وجوی چت‌ها"],
+    searchChatsPlaceholder: ["جستجوی گفتگوها..."],
+    newChat: ["گفتگوی جدید"],
+    addFilesButton: ["افزودن فایل‌ها و موارد بیشتر"],
+    addFilesOpenerCandidates: ["افزودن فایل‌ها و موارد بیشتر"],
+    addPhotosFilesMenuItem: ["افزودن تصاویر و فایل‌ها"],
+    copyResponse: ["کپی کردن پاسخ"],
+    modeLabels: ["فوری", "متوسط", "بالا", "بسیار زیاد", "حرفه‌ای", "بسیار بالا"],
+    modeOptions: {
+        instant: ["فوری"],
+        medium: ["متوسط"],
+        high: ["بالا"],
+        extraHigh: ["بسیار زیاد", "بسیار بالا"],
+        pro: ["حرفه‌ای"],
+    },
+    modeOpenerExtra: ["پیکربندی..."],
+    experienceOptions: {
+        chat: ["چت"],
+        work: ["کار"],
+    },
+    tools: {
+        web_search: ["جستجوی وب"],
+        deep_research: ["پژوهش عمیق"],
+        create_image: ["ایجاد تصویر"],
+    },
+    signedInMarkers: ["گفتگوی جدید", "جست‌وجوی چت‌ها", "موارد اخیر", "تاریخچه گفتگو", "پروژه‌ها", "گفتگو با ChatGPT"],
+    responseActions: ["کپی کردن پاسخ"],
+    stopControl: ["توقف پاسخ گویی"],
+};

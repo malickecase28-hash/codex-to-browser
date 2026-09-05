@@ -1,0 +1,31 @@
+import type { ResponseAction, ResponseBlock, ResponseBranchState, ResponseCaptureLimit, ResponseCaptureFidelity, ResponseCaptureSource, ResponseCitation, ResponseCodeBlock, ResponseFormat, ResponseTable } from "../types.js";
+export type NormalizedResponseFormat = Exclude<ResponseFormat, "text">;
+export type FormattedMessageContent = {
+    text: string;
+    format: NormalizedResponseFormat;
+    source?: ResponseCaptureSource;
+    fidelity?: ResponseCaptureFidelity;
+    captureLimit?: ResponseCaptureLimit;
+    warnings?: string[];
+    markdown?: string;
+    visibleText?: string;
+    normalizedText?: string;
+    html?: string;
+    blocks?: ResponseBlock[];
+    citations?: ResponseCitation[];
+    codeBlocks?: ResponseCodeBlock[];
+    tables?: ResponseTable[];
+    branch?: ResponseBranchState;
+    actions?: ResponseAction[];
+    thoughtDurationText?: string;
+    sourcesAvailable?: boolean;
+};
+export type RoleMessageHtml = {
+    role: "user" | "assistant";
+    html: string;
+    metadataHtml?: string;
+};
+export declare function normalizeResponseFormat(format: ResponseFormat | undefined): NormalizedResponseFormat;
+export declare function extractRoleMessageHtml(html: string): RoleMessageHtml[];
+export declare function formatMessageHtml(html: string, requestedFormat?: ResponseFormat | undefined, maxChars?: number, metadataHtml?: string): FormattedMessageContent;
+export declare function formatClipboardMarkdown(text: string, maxChars?: number, requestedFormat?: ResponseFormat | undefined): FormattedMessageContent;

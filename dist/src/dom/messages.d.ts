@@ -1,0 +1,41 @@
+import type { PageLike, ResponseAction, ResponseBlock, ResponseBranchState, ResponseCaptureLimit, ResponseCaptureFidelity, ResponseCaptureSource, ResponseCitation, ResponseCodeBlock, ResponseFormat, ResponseTable } from "../types.js";
+export type MessageRole = "user" | "assistant";
+export type ExtractedMessage = {
+    role: MessageRole;
+    text: string;
+    format: Exclude<ResponseFormat, "text">;
+    source?: ResponseCaptureSource;
+    fidelity?: ResponseCaptureFidelity;
+    captureLimit?: ResponseCaptureLimit;
+    warnings?: string[];
+    markdown?: string;
+    visibleText?: string;
+    normalizedText?: string;
+    html?: string;
+    blocks?: ResponseBlock[];
+    citations?: ResponseCitation[];
+    codeBlocks?: ResponseCodeBlock[];
+    tables?: ResponseTable[];
+    branch?: ResponseBranchState;
+    actions?: ResponseAction[];
+    thoughtDurationText?: string;
+    sourcesAvailable?: boolean;
+};
+export type ReadMessagesArgs = {
+    role?: MessageRole;
+    scope?: "visible" | "loaded";
+    format?: ResponseFormat;
+    maxChars?: number;
+};
+export type LatestMessageTextSnapshot = {
+    latestText?: string;
+    turnCount: number;
+};
+export declare function extractMessagesFromHtml(html: string, args?: ReadMessagesArgs): ExtractedMessage[];
+export declare function readMessages(page: PageLike, args?: ReadMessagesArgs): Promise<ExtractedMessage[]>;
+export declare function readLatestMessage(page: PageLike, role?: MessageRole, format?: ResponseFormat, maxChars?: number): Promise<ExtractedMessage | undefined>;
+export declare function readLatestMessageText(page: PageLike, role?: MessageRole): Promise<string | undefined>;
+export declare function readLatestMessageTextSnapshot(page: PageLike, role: MessageRole): Promise<LatestMessageTextSnapshot>;
+export declare function isTransientAssistantText(text: string): boolean;
+export declare function countMessages(messages: ExtractedMessage[], role?: MessageRole): number;
+export declare function countPageMessages(page: PageLike, role?: MessageRole): Promise<number>;

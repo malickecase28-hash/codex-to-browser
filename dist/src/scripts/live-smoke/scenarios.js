@@ -1,0 +1,1375 @@
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { attachAskRead, attachFiles, configurationMatchesSelection, askMessage, bootstrap, composeMessage, createChatGPT, copyResponse, detectExperience, downloadLatestAttachment, messageStatus, newThread, openExperience, openThread, readLatest, runSequence, searchThreads, selectTool, setMode, stopGeneration, submitMessage, twoTurnExchange, waitAndRead, waitForMessage } from "../../index.js";
+import { createConversationManager } from "../../conversations/manager.js";
+import { EMPTY_GENERATION_STATE, readAssistantGenerationState } from "../../dom/generation-state.js";
+import { contextEnvFlag, contextEnvText } from "./harness.js";
+export async function restoreChatExperience(experience, options = {}) {
+    const attempts = Math.max(1, Math.min(5, options.attempts ?? 3));
+    const delayMs = Math.max(0, Math.min(5000, options.delayMs ?? 750));
+    const timeoutMs = Math.max(1000, Math.min(120000, options.timeoutMs ?? 60000));
+    const sleep = options.sleep ?? (async (milliseconds) => {
+        await new Promise(resolve => setTimeout(resolve, milliseconds));
+    });
+    let terminal;
+    let observedExperience;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        const detectedBefore = await experience.detect({ timeoutMs });
+        terminal = asCommand(detectedBefore);
+        observedExperience = detectedBefore.data?.experience;
+        if (detectedBefore.ok && observedExperience === "chat") {
+            return { command: terminal, verified: true, attempts: attempt, observedExperience };
+        }
+        const opened = await experience.open({ experience: "chat", timeoutMs });
+        terminal = asCommand(opened);
+        if (opened.ok && opened.data?.experience === "chat") {
+            const detectedAfter = await experience.detect({ timeoutMs });
+            terminal = asCommand(detectedAfter);
+            observedExperience = detectedAfter.data?.experience;
+            if (detectedAfter.ok && observedExperience === "chat") {
+                return { command: terminal, verified: true, attempts: attempt, observedExperience };
+            }
+        }
+        if (attempt < attempts) {
+            await sleep(delayMs);
+        }
+    }
+    return {
+        command: terminal,
+        verified: false,
+        attempts,
+        ...(observedExperience === undefined ? {} : { observedExperience })
+    };
+}
+export async function restoreWorkEffort(configuration, effort, options = {}) {
+    const attempts = Math.max(1, Math.min(5, options.attempts ?? 3));
+    const delayMs = Math.max(0, Math.min(5000, options.delayMs ?? 750));
+    const timeoutMs = Math.max(1000, Math.min(120000, options.timeoutMs ?? 60000));
+    const sleep = options.sleep ?? (async (milliseconds) => {
+        await new Promise(resolve => setTimeout(resolve, milliseconds));
+    });
+    let terminal;
+    let observedEffort;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        const applied = await configuration.apply({
+            experience: "work",
+            desired: { effort },
+            strict: true,
+            timeoutMs
+        });
+        terminal = asCommand(applied);
+        if (applied.ok && applied.data?.verified === true) {
+            const inspected = await configuration.inspect({
+                experience: "work",
+                includeOptions: false,
+                timeoutMs
+            });
+            terminal = asCommand(inspected);
+            observedEffort = inspected.data?.active.effort;
+            if (inspected.ok
+                && inspected.data !== undefined
+                && configurationMatchesSelection(inspected.data, { effort })) {
+                return {
+                    command: terminal,
+                    verified: true,
+                    attempts: attempt,
+                    ...(observedEffort === undefined ? {} : { observedEffort })
+                };
+            }
+        }
+        if (attempt < attempts) {
+            await sleep(delayMs);
+        }
+    }
+    return {
+        command: terminal,
+        verified: false,
+        attempts,
+        ...(observedEffort === undefined ? {} : { observedEffort })
+    };
+}
+export const requiredScenarios = [
+    scenario("bootstrap-new-tab", true, () => true, async (context, meta) => {
+        const env = envFor(context);
+        const result = await bootstrap(env, { preferExistingTab: false, timeoutMs: 60000 });
+        return result.ok && result.context.url?.includes("chatgpt.com") === true
+            ? pass(meta, result)
+            : fail(meta, result);
+    }),
+    scenario("bootstrap-reuse-tab", true, () => true, async (context, meta) => {
+        const env = envFor(context);
+        const created = await bootstrap(env, { preferExistingTab: false, timeoutMs: 60000 });
+        if (!created.ok)
+            return fail(meta, created);
+        const reused = await bootstrap(env, { preferExistingTab: true, timeoutMs: 60000 });
+        return reused.ok && reused.context.tabId === created.context.tabId
+            ? pass(meta, reused, { createdTabId: created.context.tabId, reusedTabId: reused.context.tabId })
+            : fail(meta, reused, { createdTabId: created.context.tabId, reusedTabId: reused.context.tabId });
+    }),
+    scenario("new-ask-read", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const result = await askMessage(env, {
+            text: "reply with the word hi",
+            wait: { timeoutMs: 120000, stableMs: 2000 },
+            read: true
+        });
+        return textEquals(okText(result), "hi") ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("compose-submit-wait-read", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const text = "reply with the word hi";
+        const composed = await composeMessage(env, { text });
+        if (!composed.ok)
+            return fail(meta, composed);
+        const submitted = await submitMessage(env, { text, timeoutMs: 30000 });
+        if (!submitted.ok)
+            return fail(meta, submitted);
+        const waited = await waitForMessage(env, { timeoutMs: 120000, stableMs: 2000 });
+        if (!waited.ok)
+            return fail(meta, waited);
+        const read = await readLatest(env, { role: "assistant", format: "normalized_text" });
+        return textEquals(read.data?.text, "hi") ? pass(meta, read) : fail(meta, read);
+    }),
+    scenario("wait-and-read", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const asked = await askMessage(env, { text: "reply with the word hi", wait: false, read: false });
+        if (!asked.ok)
+            return fail(meta, asked);
+        const result = await waitAndRead(env, { timeoutMs: 120000, stableMs: 2000, role: "assistant", format: "normalized_text" });
+        return textEquals(okText(result), "hi") ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("format-fidelity-markdown-default", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const prompt = [
+            "Respond with exactly this Markdown structure and no extra prose:",
+            "",
+            "## Format Fidelity",
+            "",
+            "- Markdown default",
+            "- Structure preserved",
+            "",
+            "```ts",
+            "const format = \"markdown\";",
+            "```",
+            "",
+            "| Format | Purpose |",
+            "| --- | --- |",
+            "| markdown | reports |"
+        ].join("\n");
+        const asked = await askMessage(env, {
+            text: prompt,
+            wait: { timeoutMs: 120000, stableMs: 2000 },
+            read: false
+        });
+        if (!asked.ok)
+            return fail(meta, asked);
+        const result = await readLatest(env, { role: "assistant" });
+        const markdown = result.data?.markdown ?? result.data?.text ?? "";
+        if (!(result.ok
+            && result.data?.format === "markdown"
+            && markdown.includes("## Format Fidelity")
+            && markdown.includes("- Markdown default")
+            && markdown.includes("```")
+            && markdown.includes("| Format | Purpose |"))) {
+            return fail(meta, result, { markdownPreview: markdown.slice(0, 500), format: result.data?.format });
+        }
+        const copied = await copyResponse(env, { prefer: "clipboard", format: "markdown" });
+        const copiedMarkdown = copied.data?.markdown ?? copied.data?.text ?? "";
+        const copySourceOk = copied.data?.source === "clipboard"
+            || (copied.data?.source === "dom" && copied.warnings.some(warning => warning.includes("clipboard") || warning.includes("DOM-derived")));
+        return copied.ok
+            && copySourceOk
+            && copiedMarkdown.includes("## Format Fidelity")
+            && copiedMarkdown.includes("- Markdown default")
+            && copiedMarkdown.includes("```")
+            && copiedMarkdown.includes("| Format | Purpose |")
+            ? pass(meta, copied, { readSource: result.data?.source, copySource: copied.data?.source })
+            : fail(meta, copied, { copiedPreview: copiedMarkdown.slice(0, 500), copySource: copied.data?.source });
+    }),
+    scenario("sdk-doctor", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const result = await chatgpt.doctor({ check: ["bridge", "login", "upload"] });
+        const uploadRemediation = result.data?.checks.upload?.remediation?.join(" ") ?? "";
+        return result.ok
+            && result.data?.checks.bridge?.status === "ok"
+            && result.data?.checks.login?.status !== "blocked"
+            && uploadRemediation.includes("Codex Settings > Computer Use > Chrome")
+            && uploadRemediation.includes("Allow access to file URLs")
+            ? pass(meta, result)
+            : fail(meta, result, { uploadRemediation });
+    }),
+    scenario("chat-work-expansion", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const details = {};
+        let booted = false;
+        let terminal = syntheticCommand(meta.startedAt);
+        let failure;
+        try {
+            const boot = await chatgpt.session.bootstrap({ preferExistingTab: false, timeoutMs: 60000 });
+            terminal = asCommand(boot);
+            requireLiveCommand("session.bootstrap", boot);
+            booted = true;
+            const openedChat = await chatgpt.experience.open({ experience: "chat", timeoutMs: 60000 });
+            terminal = asCommand(openedChat);
+            requireLiveCommand("experience.open.chat", openedChat, openedChat.ok && openedChat.data?.experience === "chat");
+            const chatConfiguration = await chatgpt.configuration.inspect({
+                experience: "chat",
+                includeOptions: true,
+                timeoutMs: 60000
+            });
+            terminal = asCommand(chatConfiguration);
+            requireLiveCommand("configuration.inspect.chat", chatConfiguration, chatConfiguration.ok
+                && chatConfiguration.data?.experience === "chat"
+                && chatConfiguration.data.verified === true);
+            const chatDesired = chatActiveSelection(chatConfiguration.data);
+            requireLiveCommand("configuration.inspect.chat.active", chatConfiguration, Object.keys(chatDesired).length > 0);
+            const verifiedChatConfiguration = await chatgpt.configuration.apply({
+                experience: "chat",
+                desired: chatDesired,
+                strict: true,
+                timeoutMs: 60000
+            });
+            terminal = asCommand(verifiedChatConfiguration);
+            requireLiveCommand("configuration.apply.chat.noop", verifiedChatConfiguration, verifiedChatConfiguration.ok && verifiedChatConfiguration.data?.verified === true);
+            const openedWork = await chatgpt.experience.open({ experience: "work", timeoutMs: 60000 });
+            terminal = asCommand(openedWork);
+            requireLiveCommand("experience.open.work", openedWork, openedWork.ok && openedWork.data?.experience === "work");
+            const workConfiguration = await chatgpt.configuration.inspect({
+                experience: "work",
+                includeOptions: true,
+                timeoutMs: 60000
+            });
+            terminal = asCommand(workConfiguration);
+            requireLiveCommand("configuration.inspect.work", workConfiguration, workConfiguration.ok
+                && workConfiguration.data?.experience === "work"
+                && workConfiguration.data.verified === true
+                && hasAxes(workConfiguration.data, ["model", "effort", "speed"]));
+            const workDesired = activeSelection(workConfiguration.data, ["model", "effort", "speed"]);
+            requireLiveCommand("configuration.inspect.work.active", workConfiguration, hasSelectionAxes(workDesired, ["model", "effort", "speed"]));
+            const verifiedWorkConfiguration = await chatgpt.configuration.apply({
+                experience: "work",
+                desired: workDesired,
+                strict: true,
+                timeoutMs: 60000
+            });
+            terminal = asCommand(verifiedWorkConfiguration);
+            requireLiveCommand("configuration.apply.work.noop", verifiedWorkConfiguration, verifiedWorkConfiguration.ok && verifiedWorkConfiguration.data?.verified === true);
+            const started = await chatgpt.work.start({
+                prompt: "Reply with exactly WORK_EXPANSION_START_OK.",
+                newTask: true,
+                wait: { timeoutMs: 180000, stableMs: 1500, pollMs: 750 },
+                read: { format: "normalized_text" },
+                timeoutMs: 60000
+            });
+            terminal = asCommand(started);
+            const startedText = started.data?.response?.text ?? started.output_text;
+            requireLiveCommand("work.start", started, started.ok && textEquals(startedText, "WORK_EXPANSION_START_OK"));
+            const status = await chatgpt.work.status({ includeArtifacts: true, maxPreviewChars: 200 });
+            terminal = asCommand(status);
+            requireLiveCommand("work.status", status, status.ok && status.data?.experience === "work");
+            const waited = await chatgpt.work.wait({
+                timeoutMs: 30000,
+                stableMs: 1000,
+                pollMs: 500,
+                responseContent: "metadata"
+            });
+            terminal = asCommand(waited);
+            requireLiveCommand("work.wait", waited, waited.ok && waited.data?.complete === true);
+            const read = await chatgpt.work.readLatest({ format: "normalized_text" });
+            terminal = asCommand(read);
+            requireLiveCommand("work.readLatest", read, read.ok && textEquals(read.data?.text, "WORK_EXPANSION_START_OK"));
+            const artifacts = await chatgpt.work.artifacts.listLatest({});
+            terminal = asCommand(artifacts);
+            requireLiveCommand("work.artifacts.listLatest", artifacts, artifacts.ok);
+            const steered = await chatgpt.work.steer({
+                prompt: "Reply with exactly WORK_EXPANSION_STEER_OK.",
+                wait: { timeoutMs: 180000, stableMs: 1500, pollMs: 750 },
+                read: { format: "normalized_text" },
+                timeoutMs: 60000
+            });
+            terminal = asCommand(steered);
+            requireLiveCommand("work.steer", steered, steered.ok && textEquals(okText(steered), "WORK_EXPANSION_STEER_OK"));
+            const workAgent = chatgpt.agent({
+                name: "live-smoke-work-runner",
+                defaults: {
+                    wait: { timeoutMs: 180000, stableMs: 1500, pollMs: 750 },
+                    read: { format: "normalized_text" }
+                }
+            });
+            const runner = await chatgpt.runner.run(workAgent, {
+                input: "Reply with exactly WORK_EXPANSION_RUNNER_OK.",
+                thread: { type: "current" },
+                experience: "work",
+                configuration: workDesired,
+                response: { format: "normalized_text" }
+            });
+            terminal = asCommand(runner);
+            requireLiveCommand("runner.run.work", runner, runner.ok && textEquals(runner.output_text, "WORK_EXPANSION_RUNNER_OK"));
+            const response = await chatgpt.responses.create({
+                input: "Reply with exactly WORK_EXPANSION_RESPONSES_OK.",
+                thread: { type: "current" },
+                experience: "work",
+                configuration: workDesired,
+                text: { format: "normalized_text" },
+                stream: false
+            });
+            const responseResult = responseCommand(response);
+            terminal = responseResult;
+            requireLiveCommand("responses.create.work", responseResult, response.object === "chatgpt.browser.response"
+                && response.status === "ok"
+                && textEquals(response.output_text, "WORK_EXPANSION_RESPONSES_OK"));
+            details.chat = configurationDetails(chatConfiguration.data);
+            details.work = configurationDetails(workConfiguration.data);
+            details.workLifecycle = {
+                start: true,
+                status: true,
+                wait: true,
+                read: true,
+                steer: true,
+                artifacts: true,
+                runner: true,
+                responses: true
+            };
+        }
+        catch (error) {
+            if (error instanceof LiveSmokeCommandFailure) {
+                failure = error;
+            }
+            else {
+                throw error;
+            }
+        }
+        finally {
+            if (booted) {
+                const restored = await restoreChatExperience(chatgpt.experience);
+                terminal = restored.command;
+                details.experienceRestoreAttempts = restored.attempts;
+                if (!restored.verified) {
+                    failure = new LiveSmokeCommandFailure("experience.restore.chat", restored.command);
+                }
+                else {
+                    details.restoredExperience = "chat";
+                }
+            }
+        }
+        return failure === undefined
+            ? pass(meta, terminal, details)
+            : fail(meta, failure.command, { ...details, failedStage: failure.stage });
+    }),
+    scenario("redacted-run-report", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const command = {
+            ok: true,
+            status: "ok",
+            data: {
+                responseText: "private@example.com /example/user/private token_12345678901234567890123456789012"
+            },
+            warnings: [],
+            context: { timestamp: meta.startedAt, url: "https://chatgpt.com/c/redacted-smoke" }
+        };
+        const result = await chatgpt.createReport(command, { destDir: context.reportDir, basename: "redacted-run-report" });
+        const path = result.data?.path;
+        const body = path === undefined ? "" : await readFile(path, "utf8").catch(() => "");
+        return result.ok
+            && body.includes("[redacted:")
+            && !body.includes("private@example.com")
+            && !body.includes("/example/user/private")
+            ? pass(meta, result, { path })
+            : fail(meta, result, { path, bodyPreview: body.slice(0, 500) });
+    }),
+    scenario("runner-new-ask-read", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const agent = chatgpt.agent({
+            name: "live-smoke-runner",
+            defaults: {
+                wait: { timeoutMs: 120000, stableMs: 2000 },
+                read: { format: "normalized_text" }
+            }
+        });
+        const result = await chatgpt.runner.run(agent, {
+            input: "reply with the word hi",
+            thread: { type: "new" },
+            response: { format: "normalized_text" }
+        });
+        return textEquals(result.output_text, "hi") ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("runner-attach-ask-read", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const agent = chatgpt.agent({
+            name: "live-smoke-runner-attach",
+            defaults: {
+                wait: { timeoutMs: 180000, stableMs: 2000 },
+                read: { format: "normalized_text" }
+            }
+        });
+        const file = await tempFile("chatgpt-live-smoke-runner-attach.txt", "Runner attachment fixture.\n");
+        const result = await chatgpt.runner.run(agent, {
+            input: "Reply with the attached filename only.",
+            thread: { type: "new" },
+            attachments: [{ path: file }],
+            response: { format: "normalized_text" }
+        });
+        return includesUploadedFilename(result.output_text, "chatgpt-live-smoke-runner-attach.txt") ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("runner-search-open-ask-read", true, () => true, async (context, meta) => {
+        const query = requireInput(context.knownThreadQuery, "CHATGPT_SMOKE_QUERY");
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const agent = chatgpt.agent({
+            name: "live-smoke-runner-search",
+            defaults: {
+                wait: { timeoutMs: 120000, stableMs: 2000 },
+                read: { format: "normalized_text" }
+            }
+        });
+        const result = await chatgpt.runner.run(agent, {
+            input: "reply with the word hi",
+            thread: { type: "search", query, select: "first" },
+            response: { format: "normalized_text" }
+        });
+        return textEquals(result.output_text, "hi") ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("runner-two-turn", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const agent = chatgpt.agent({
+            name: "live-smoke-runner-two-turn",
+            defaults: {
+                wait: { timeoutMs: 120000, stableMs: 2000 },
+                read: { format: "normalized_text" }
+            }
+        });
+        const first = await chatgpt.runner.run(agent, {
+            input: "Reply with exactly alpha.",
+            thread: { type: "new" },
+            response: { format: "normalized_text" }
+        });
+        if (!textEquals(first.output_text, "alpha"))
+            return fail(meta, first, { first: first.output_text });
+        const second = await chatgpt.runner.run(agent, {
+            input: "Reply with exactly beta.",
+            thread: { type: "current" },
+            response: { format: "normalized_text" }
+        });
+        return textEquals(second.output_text, "beta")
+            ? pass(meta, second, { first: first.output_text, second: second.output_text })
+            : fail(meta, second, { first: first.output_text, second: second.output_text });
+    }),
+    scenario("runner-report-redacted", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const agent = chatgpt.agent({
+            name: "live-smoke-runner-report",
+            defaults: {
+                wait: { timeoutMs: 120000, stableMs: 2000 },
+                read: { format: "normalized_text" }
+            }
+        });
+        const secret = "runnerreportsecret";
+        const result = await chatgpt.runner.run(agent, {
+            input: `reply with the word ${secret}`,
+            thread: { type: "new" },
+            response: { format: "normalized_text" },
+            report: { enabled: true, destDir: context.reportDir, basename: "runner-report-redacted", includeContent: false }
+        });
+        const path = result.data?.reportPath ?? result.reportPath;
+        const body = path === undefined ? "" : await readFile(path, "utf8").catch(() => "");
+        return result.ok
+            && path !== undefined
+            && body.includes("[redacted:")
+            && !body.includes(secret)
+            ? pass(meta, result, { path })
+            : fail(meta, result, { path, bodyPreview: body.slice(0, 500), output: result.output_text });
+    }),
+    scenario("runner-mode-unavailable", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const agent = chatgpt.agent({ name: "live-smoke-runner-mode" });
+        const result = await chatgpt.runner.run(agent, {
+            input: "reply with hi",
+            thread: { type: "new" },
+            mode: { model: "definitely-not-a-visible-chatgpt-mode", timeoutMs: 30000 },
+            response: { format: "normalized_text" }
+        });
+        const interruption = result.interruptions[0];
+        return !result.ok
+            && interruption?.type === "selector_drift"
+            && (interruption.blocker?.candidates?.length ?? 0) > 0
+            ? pass(meta, result, { candidates: interruption.blocker?.candidates })
+            : fail(meta, result, { interruptions: result.interruptions });
+    }),
+    scenario("responses-create-basic", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const response = await chatgpt.responses.create({
+            input: "reply with the word hi",
+            thread: { type: "new" },
+            text: { format: "normalized_text" },
+            stream: false
+        });
+        const command = responseCommand(response);
+        return response.object === "chatgpt.browser.response" && textEquals(response.output_text, "hi")
+            ? pass(meta, command)
+            : fail(meta, command);
+    }),
+    scenario("responses-unsupported-temperature", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const response = await chatgpt.responses.create({
+            input: "hi",
+            temperature: 0.2
+        });
+        const command = responseCommand(response);
+        const unsupported = response.browser_control.unsupported ?? [];
+        return response.status === "unsupported" && unsupported.some(field => field.path === "temperature")
+            ? pass(meta, command)
+            : fail(meta, command);
+    }),
+    scenario("responses-unsupported-previous-response-id", true, () => true, async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const response = await chatgpt.responses.create({
+            input: "hi",
+            previous_response_id: "resp_123"
+        });
+        const command = responseCommand(response);
+        const unsupported = response.browser_control.unsupported ?? [];
+        return response.status === "unsupported"
+            && unsupported.some(field => field.path === "previous_response_id" && field.alternative?.includes("thread") === true)
+            ? pass(meta, command)
+            : fail(meta, command);
+    }),
+    scenario("two-turn-exchange", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const result = await twoTurnExchange({
+            thread: {},
+            text: "Reply with exactly alpha.",
+            followupText: "Reply with exactly beta."
+        }, env);
+        const first = stepPreviewText(result.steps, "ask1");
+        const second = okText(result);
+        return result.ok && includesText(first, "alpha") && includesText(second, "beta")
+            ? pass(meta, result, { firstPreview: first, secondPreview: second })
+            : fail(meta, result, { firstPreview: first, secondPreview: second });
+    }),
+    scenario("search-open-read", true, () => true, async (context, meta) => {
+        const query = requireInput(context.knownThreadQuery, "CHATGPT_SMOKE_QUERY");
+        const env = await boot(context, meta);
+        if ("status" in env)
+            return env;
+        const search = await searchThreads(env, { query, limit: 5 });
+        if (!search.ok || search.data?.results[0] === undefined)
+            return fail(meta, search);
+        const opened = await openThread(env, { fromStep: "find", select: "first" }, new Map([["find", search]]));
+        if (!opened.ok)
+            return fail(meta, opened);
+        const read = await readLatest(env, { role: "assistant", format: "normalized_text" });
+        return read.ok && (read.data?.text.trim().length ?? 0) > 0 ? pass(meta, read) : fail(meta, read);
+    }),
+    scenario("open-by-url", true, () => true, async (context, meta) => {
+        const url = requireInput(context.knownThreadUrl, "CHATGPT_SMOKE_THREAD_URL");
+        const env = await boot(context, meta);
+        if ("status" in env)
+            return env;
+        const opened = await openThread(env, { url, timeoutMs: 60000 });
+        if (!opened.ok)
+            return fail(meta, opened);
+        const read = await readLatest(env, { role: "assistant", format: "normalized_text" });
+        return read.ok && opened.context.url?.includes(url) === true && (read.data?.text.trim().length ?? 0) > 0
+            ? pass(meta, read, { openedUrl: opened.context.url })
+            : fail(meta, read, { openedUrl: opened.context.url });
+    }),
+    scenario("open-by-conversation-id", true, () => true, async (context, meta) => {
+        const conversationId = requireInput(context.knownConversationId, "CHATGPT_SMOKE_CONVERSATION_ID");
+        const env = await boot(context, meta);
+        if ("status" in env)
+            return env;
+        const opened = await openThread(env, { conversationId, timeoutMs: 60000 });
+        if (!opened.ok)
+            return fail(meta, opened);
+        const read = await readLatest(env, { role: "assistant", format: "normalized_text" });
+        return read.ok && opened.context.url?.includes(conversationId) === true && (read.data?.text.trim().length ?? 0) > 0
+            ? pass(meta, read, { openedUrl: opened.context.url })
+            : fail(meta, read, { openedUrl: opened.context.url });
+    }),
+    scenario("sequence-variable-open", true, () => true, async (context, meta) => {
+        const query = requireInput(context.knownThreadQuery, "CHATGPT_SMOKE_QUERY");
+        const env = envFor(context);
+        const plan = {
+            name: "live-smoke-sequence-variable-open",
+            steps: [
+                { id: "bootstrap", command: "session.bootstrap", args: { preferExistingTab: false, timeoutMs: 60000 } },
+                { id: "find", command: "threads.search", args: { query, limit: 5 } },
+                { id: "open", command: "threads.open", args: { conversationId: "${find.data.results[0].conversationId}", timeoutMs: 60000 } },
+                { id: "read", command: "messages.readLatest", args: { role: "assistant", format: "normalized_text" } }
+            ]
+        };
+        const result = await runSequence(plan, env);
+        return result.ok && includesStep(result.steps, "read") && okText(result).trim().length > 0
+            ? pass(meta, result)
+            : fail(meta, result);
+    }),
+    scenario("copy-latest", true, () => true, async (context, meta) => {
+        const url = requireInput(context.knownThreadUrl, "CHATGPT_SMOKE_THREAD_URL");
+        const env = await boot(context, meta);
+        if ("status" in env)
+            return env;
+        const opened = await openThread(env, { url, timeoutMs: 60000 });
+        if (!opened.ok)
+            return fail(meta, opened);
+        const result = await copyResponse(env, { which: "latest", timeoutMs: 5000 });
+        return result.ok && (result.data?.text.trim().length ?? 0) > 0
+            ? pass(meta, result, { source: result.data?.source })
+            : fail(meta, result);
+    }),
+    scenario("attach-one-file", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const file = await tempFile("chatgpt-live-smoke-single.txt", "Single file fixture.\n");
+        const attached = await attachFiles(env, { paths: [file], timeoutMs: 180000 });
+        if (!attached.ok)
+            return fail(meta, attached);
+        const result = await askMessage(env, {
+            text: "Reply with the attached filename only.",
+            wait: { timeoutMs: 180000, stableMs: 2000 },
+            read: true
+        });
+        return includesUploadedFilename(okText(result), "chatgpt-live-smoke-single.txt") ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("attach-two-files", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const first = await tempFile("chatgpt-live-smoke-a.txt", "File A fixture.\n");
+        const second = await tempFile("chatgpt-live-smoke-b.txt", "File B fixture.\n");
+        const attached = await attachFiles(env, { paths: [first, second], timeoutMs: 180000 });
+        if (!attached.ok)
+            return fail(meta, attached);
+        const result = await askMessage(env, {
+            text: "Reply with both attached filenames only.",
+            wait: { timeoutMs: 180000, stableMs: 2000 },
+            read: true
+        });
+        const text = okText(result);
+        return includesUploadedFilename(text, "chatgpt-live-smoke-a.txt") && includesUploadedFilename(text, "chatgpt-live-smoke-b.txt")
+            ? pass(meta, result)
+            : fail(meta, result);
+    }),
+    scenario("attach-ask-read", true, () => true, async (context, meta) => {
+        const env = envFor(context);
+        const file = await tempFile("chatgpt-live-smoke-helper.txt", "Helper fixture.\n");
+        const result = await attachAskRead({
+            thread: {},
+            files: [file],
+            text: "Reply with the attached filename only.",
+            wait: { timeoutMs: 180000, stableMs: 2000 },
+            read: true
+        }, env);
+        return includesUploadedFilename(okText(result), "chatgpt-live-smoke-helper.txt") ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("wait-timeout", true, () => true, async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const result = await waitForMessage(env, { timeoutMs: 1000, stableMs: 500, pollMs: 250 });
+        return !result.ok && result.status === "timeout" ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("missing-thread", true, () => true, async (context, meta) => {
+        const env = await boot(context, meta);
+        if ("status" in env)
+            return env;
+        const title = `chatgpt-live-smoke-missing-${Date.now()}`;
+        const result = await openThread(env, { title, timeoutMs: 30000 });
+        return !result.ok && result.status === "not_found"
+            ? pass(meta, result, { title })
+            : fail(meta, result, { title });
+    })
+];
+export const optionalScenarios = [
+    scenario("initial-affinity-persistence", false, context => contextEnvFlag(context, "CHATGPT_E2E_INITIAL_AFFINITY"), async (context, meta) => {
+        const conversationId = context.knownConversationId;
+        const conversationUrl = context.knownThreadUrl;
+        if (conversationId === undefined && conversationUrl === undefined) {
+            return skipped(meta, "blocked: missing conversation identity input");
+        }
+        const user = context.browser?.user;
+        const openTabs = user?.openTabs;
+        if (typeof openTabs !== "function") {
+            return skipped(meta, "blocked: exact tab inventory unavailable");
+        }
+        let tabs;
+        try {
+            tabs = await openTabs.call(user);
+        }
+        catch {
+            return skipped(meta, "blocked: exact tab inventory failed");
+        }
+        const matches = tabs.filter(tab => conversationMatches(tab.url, conversationId, conversationUrl));
+        if (matches.length !== 1) {
+            return skipped(meta, `blocked: expected one exact conversation tab, found ${matches.length}`);
+        }
+        const exactTab = matches[0];
+        const stateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-state-"));
+        const affinityStateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-root-"));
+        const key = "live-smoke-initial-affinity";
+        try {
+            const chatgpt = createChatGPT(clientOptionsFor(context));
+            const manager = createConversationManager(chatgpt, { stateRoot, affinityStateRoot });
+            await manager.remember({
+                key,
+                surface: "chat",
+                ...(conversationId === undefined ? {} : { conversationId }),
+                ...(conversationUrl === undefined ? {} : { url: conversationUrl })
+            });
+            await manager.affinity.remember({
+                key,
+                tabId: exactTab.id,
+                surface: "chat",
+                ...(conversationId === undefined ? {} : { conversationId }),
+                ...(conversationUrl === undefined ? {} : { url: conversationUrl })
+            });
+            const result = await manager.readLatest({ key });
+            const affinity = await manager.affinity.get(key);
+            const after = typeof openTabs === "function" ? await openTabs.call(user) : [];
+            const exactTabVerified = result.ok && result.context.tabId === exactTab.id;
+            const unchangedTabCount = after.length === tabs.length;
+            const persisted = affinity?.tabId === exactTab.id
+                && (conversationId === undefined || affinity.conversationId === conversationId)
+                && (conversationUrl === undefined || conversationMatches(affinity.url, conversationId, conversationUrl));
+            const details = {
+                exactTabVerified,
+                persisted,
+                unchangedTabCount,
+                tabCountBefore: tabs.length,
+                tabCountAfter: after.length
+            };
+            return exactTabVerified && persisted && unchangedTabCount
+                ? pass(meta, result, details)
+                : skipped(meta, "blocked: exact-tab ownership or persistence was not proven", details);
+        }
+        catch {
+            return skipped(meta, "blocked: initial affinity proof failed");
+        }
+        finally {
+            await Promise.all([
+                rm(stateRoot, { recursive: true, force: true }),
+                rm(affinityStateRoot, { recursive: true, force: true })
+            ]);
+        }
+    }),
+    scenario("affinity-duplicate-stale-owner-recovery", false, context => contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY")
+        && contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY_ALLOW_MUTATIONS")
+        && contextEnvText(context, "CHATGPT_E2E_AFFINITY_RECOVERY_OWNER_TAB_ID") !== undefined, async (context, meta) => {
+        if (!contextEnvFlag(context, "CHATGPT_E2E_AFFINITY_RECOVERY_ALLOW_MUTATIONS")) {
+            return skipped(meta, "blocked: explicit tab mutation authorization is required");
+        }
+        const ownerTabId = contextEnvText(context, "CHATGPT_E2E_AFFINITY_RECOVERY_OWNER_TAB_ID");
+        if (ownerTabId === undefined)
+            return skipped(meta, "blocked: exact owner tab fixture is required");
+        const conversationId = context.knownConversationId;
+        const conversationUrl = context.knownThreadUrl;
+        if (conversationId === undefined && conversationUrl === undefined) {
+            return skipped(meta, "blocked: missing conversation identity input");
+        }
+        const user = context.browser?.user;
+        const tabsApi = context.browser?.tabs;
+        const openTabs = user?.openTabs;
+        const createTab = tabsApi?.new ?? tabsApi?.create;
+        const getTab = tabsApi?.get;
+        if (user === undefined || tabsApi === undefined || typeof openTabs !== "function" || typeof createTab !== "function" || typeof getTab !== "function") {
+            return skipped(meta, "blocked: exact tab mutation APIs are unavailable");
+        }
+        let baseline;
+        try {
+            baseline = await openTabs.call(user);
+        }
+        catch {
+            return skipped(meta, "blocked: exact tab inventory failed");
+        }
+        const ownerMatches = baseline.filter(tab => tab.id === ownerTabId
+            && conversationMatches(tab.url, conversationId, conversationUrl));
+        const conversationMatchesBefore = baseline.filter(tab => conversationMatches(tab.url, conversationId, conversationUrl));
+        if (ownerMatches.length !== 1 || conversationMatchesBefore.length !== 1) {
+            return skipped(meta, "blocked: exact owner identity is unavailable or ambiguous");
+        }
+        const owner = ownerMatches[0];
+        const targetUrl = conversationUrl ?? owner.url;
+        if (targetUrl === undefined || !conversationMatches(targetUrl, conversationId, conversationUrl)) {
+            return skipped(meta, "blocked: exact conversation URL is unavailable");
+        }
+        const stateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-recovery-state-"));
+        const affinityStateRoot = await mkdtemp(join(tmpdir(), "chatgpt-affinity-recovery-root-"));
+        const key = "live-smoke-affinity-recovery";
+        let duplicateTabId;
+        try {
+            const chatgpt = createChatGPT(clientOptionsFor(context));
+            const manager = createConversationManager(chatgpt, { stateRoot, affinityStateRoot });
+            await manager.remember({
+                key,
+                surface: "chat",
+                ...(conversationId === undefined ? {} : { conversationId }),
+                ...(targetUrl === undefined ? {} : { url: targetUrl })
+            });
+            const initial = await manager.readLatest({ key });
+            const initialAffinity = await manager.affinity.get(key);
+            if (!initial.ok || initial.context.tabId !== ownerTabId || initialAffinity?.tabId !== ownerTabId) {
+                return skipped(meta, "blocked: exact owner affinity was not proven");
+            }
+            await createTab.call(tabsApi, targetUrl);
+            const afterCreate = await openTabs.call(user);
+            const newConversationTabs = afterCreate.filter(tab => !baseline.some(before => before.id === tab.id)
+                && conversationMatches(tab.url, conversationId, conversationUrl));
+            if (newConversationTabs.length !== 1) {
+                return skipped(meta, "blocked: duplicate tab identity is unavailable or ambiguous");
+            }
+            duplicateTabId = newConversationTabs[0].id;
+            const duplicateCheck = await createConversationManager(chatgpt, { stateRoot, affinityStateRoot }).readLatest({ key });
+            const duplicateAffinity = await manager.affinity.get(key);
+            if (!duplicateCheck.ok || duplicateCheck.context.tabId !== ownerTabId || duplicateAffinity?.tabId !== ownerTabId) {
+                return skipped(meta, "blocked: duplicate recovery did not preserve owner A");
+            }
+            if (!await closeExactTab(getTab, tabsApi, openTabs, user, duplicateTabId)) {
+                return skipped(meta, "blocked: exact duplicate tab closure failed");
+            }
+            duplicateTabId = undefined;
+            if (!await closeExactTab(getTab, tabsApi, openTabs, user, ownerTabId)) {
+                return skipped(meta, "blocked: exact owner tab closure failed");
+            }
+            const staleCheck = await createConversationManager(chatgpt, { stateRoot, affinityStateRoot }).readLatest({ key });
+            const persistedOwner = await manager.affinity.get(key);
+            const staleBlocked = !staleCheck.ok && staleCheck.status === "blocked";
+            const preserved = persistedOwner?.tabId === ownerTabId;
+            return staleBlocked && preserved
+                ? pass(meta, staleCheck, { duplicatePreservedOwner: true, staleOwnerBlocked: true, persistedOwner: true })
+                : skipped(meta, "blocked: stale-owner recovery was not fail-closed", { staleBlocked, preserved });
+        }
+        catch {
+            return skipped(meta, "blocked: affinity recovery proof failed");
+        }
+        finally {
+            if (duplicateTabId !== undefined) {
+                await closeExactTab(getTab, tabsApi, openTabs, user, duplicateTabId).catch(() => false);
+            }
+            await Promise.all([
+                rm(stateRoot, { recursive: true, force: true }),
+                rm(affinityStateRoot, { recursive: true, force: true })
+            ]);
+        }
+    }),
+    scenario("configuration-mutate-restore", false, context => contextEnvFlag(context, "CHATGPT_E2E_CONFIGURATION_MUTATION"), async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const details = {};
+        let booted = false;
+        let restoreNeeded = false;
+        let originalEffort;
+        let terminal = syntheticCommand(meta.startedAt);
+        let failure;
+        try {
+            const boot = await chatgpt.session.bootstrap({ preferExistingTab: false, timeoutMs: 60000 });
+            terminal = asCommand(boot);
+            requireLiveCommand("session.bootstrap", boot);
+            booted = true;
+            const opened = await chatgpt.experience.open({ experience: "work", timeoutMs: 60000 });
+            terminal = asCommand(opened);
+            requireLiveCommand("experience.open.work", opened, opened.ok && opened.data?.experience === "work");
+            const inspected = await chatgpt.configuration.inspect({
+                experience: "work",
+                includeOptions: true,
+                timeoutMs: 60000
+            });
+            terminal = asCommand(inspected);
+            requireLiveCommand("configuration.inspect.work", inspected, inspected.ok && inspected.data?.verified === true);
+            originalEffort = inspected.data?.active.effort;
+            const alternative = inspected.data?.options.effort?.find(option => !option.selected && option.disabled !== true)?.label;
+            requireLiveCommand("configuration.inspect.work.alternative", inspected, originalEffort !== undefined && alternative !== undefined);
+            restoreNeeded = true;
+            const changed = await chatgpt.configuration.apply({
+                experience: "work",
+                desired: { effort: alternative },
+                strict: true,
+                timeoutMs: 60000
+            });
+            terminal = asCommand(changed);
+            requireLiveCommand("configuration.apply.work.mutate", changed, changed.ok && changed.data?.verified === true);
+            details.axis = "effort";
+            details.changedFrom = originalEffort;
+            details.changedTo = alternative;
+        }
+        catch (error) {
+            if (error instanceof LiveSmokeCommandFailure) {
+                failure = error;
+            }
+            else {
+                throw error;
+            }
+        }
+        finally {
+            if (booted && restoreNeeded && originalEffort !== undefined) {
+                const restoredConfiguration = await restoreWorkEffort(chatgpt.configuration, originalEffort);
+                terminal = restoredConfiguration.command;
+                details.configurationRestoreAttempts = restoredConfiguration.attempts;
+                if (restoredConfiguration.observedEffort !== undefined) {
+                    details.restoredEffort = restoredConfiguration.observedEffort;
+                }
+                if (!restoredConfiguration.verified) {
+                    failure = new LiveSmokeCommandFailure("configuration.restore.work", restoredConfiguration.command);
+                }
+                else {
+                    details.configurationRestored = true;
+                }
+            }
+            if (booted) {
+                const restoredExperience = await restoreChatExperience(chatgpt.experience);
+                terminal = restoredExperience.command;
+                details.experienceRestoreAttempts = restoredExperience.attempts;
+                if (!restoredExperience.verified) {
+                    failure = new LiveSmokeCommandFailure("experience.restore.chat", restoredExperience.command);
+                }
+                else {
+                    details.restoredExperience = "chat";
+                }
+            }
+        }
+        return failure === undefined
+            ? pass(meta, terminal, details)
+            : fail(meta, failure.command, { ...details, failedStage: failure.stage });
+    }),
+    scenario("long-response-partial-short-timeout", false, context => contextEnvFlag(context, "CHATGPT_E2E_LONG_PARTIAL"), async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const result = await askMessage(env, {
+            text: [
+                "Live capture stress test. Write exactly 180 numbered items.",
+                "Each item should be a complete sentence. Continue until item 180."
+            ].join("\n"),
+            wait: { timeoutMs: 30000, stableMs: 2000, pollMs: 750 },
+            read: { format: "markdown" }
+        });
+        const output = result.output_text ?? "";
+        const details = partialCaptureDetails(result, output);
+        return !result.ok && result.status === "partial" && result.data?.complete === false
+            ? pass(meta, result, details)
+            : fail(meta, result, details);
+    }),
+    scenario("stop-control-detection", false, context => contextEnvFlag(context, "CHATGPT_E2E_STOP_CONTROL"), async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const asked = await askMessage(env, {
+            text: [
+                "Live stop-control stress test. Write exactly 400 numbered items.",
+                "Each item should be a complete sentence. Continue until item 400."
+            ].join("\n"),
+            wait: false,
+            read: false
+        });
+        if (!asked.ok)
+            return fail(meta, asked);
+        const generation = await waitForGenerationSignal(env, 30000);
+        const waited = await waitForMessage(env, { timeoutMs: 1000, stableMs: 0, pollMs: 250 });
+        await stopGenerationIfVisible(env);
+        const output = waited.output_text ?? "";
+        const details = {
+            generationActive: generation.active,
+            generationStopped: generation.stopped,
+            generationSignals: generation.signals,
+            waitStatus: waited.status,
+            outputChars: output.length,
+            outputHash: hashPreview(output)
+        };
+        return generation.active && !(waited.ok && waited.data?.complete === true)
+            ? pass(meta, waited, details)
+            : fail(meta, waited, details);
+    }),
+    scenario("running-status-detection", false, context => contextEnvFlag(context, "CHATGPT_E2E_RUNNING_STATUS"), async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        let status;
+        try {
+            const asked = await askMessage(env, {
+                text: [
+                    "Live running-status stress test. Write exactly 500 numbered items.",
+                    "Each item should be a complete sentence. Continue until item 500."
+                ].join("\n"),
+                wait: false,
+                read: false
+            });
+            if (!asked.ok)
+                return fail(meta, asked);
+            await waitForGenerationSignal(env, 30000);
+            status = await messageStatus(env, { maxPreviewChars: 400 });
+            const data = status.data;
+            const details = {
+                completionState: data?.completionState,
+                generationActive: data?.generationActive,
+                latestAssistantTextLength: data?.latestAssistantTextLength,
+                status: status.status
+            };
+            return status.ok && (data?.completionState === "generating" || data?.generationActive === true)
+                ? pass(meta, status, details)
+                : fail(meta, status, details);
+        }
+        finally {
+            await stopGenerationIfVisible(env);
+        }
+    }),
+    scenario("download-generated-file", false, context => contextEnvFlag(context, "CHATGPT_E2E_DOWNLOAD"), async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const chat = await openExperience(env, { experience: "chat", timeoutMs: 60000 });
+        if (!chat.ok || chat.data?.experience !== "chat") {
+            return fail(meta, chat, { failedStage: "experience.open.chat" });
+        }
+        const asked = await askMessage(env, {
+            text: "Create a tiny CSV file named chatgpt-live-smoke.csv containing one row with columns name,value and values smoke,1. Provide it as a downloadable file.",
+            wait: { timeoutMs: 180000, stableMs: 3000 },
+            read: true
+        });
+        if (!generatedFileAskCanProceed(asked))
+            return fail(meta, asked);
+        const result = await downloadLatestAttachment({
+            destDir: context.reportDir,
+            filenamePattern: "^chatgpt-live-smoke\\.csv$",
+            timeoutMs: 120000
+        }, env);
+        const download = typeof result.data === "object" && result.data !== null
+            ? result.data
+            : undefined;
+        const path = download?.path;
+        const bytes = path === undefined ? 0 : (await stat(path).catch(() => undefined))?.size ?? 0;
+        const content = path === undefined ? "" : await readFile(path, "utf8").catch(() => "");
+        const rows = content.replace(/^\uFEFF/, "").trim().split(/\r?\n/).map(row => row.trim());
+        const exactFile = download?.suggestedFilename === "chatgpt-live-smoke.csv";
+        const exactContent = rows[0] === "name,value" && rows[1] === "smoke,1" && rows.length === 2;
+        const details = { path, bytes, suggestedFilename: download?.suggestedFilename, exactFile, exactContent, askStatus: asked.status };
+        return result.ok && bytes > 0 && exactFile && exactContent
+            ? pass(meta, result, details)
+            : fail(meta, result, details);
+    }),
+    scenario("set-mode-visible", false, context => contextEnvText(context, "CHATGPT_E2E_MODE_LABEL") !== undefined, async (context, meta) => {
+        const label = requireInput(contextEnvText(context, "CHATGPT_E2E_MODE_LABEL"), "CHATGPT_E2E_MODE_LABEL");
+        const env = await boot(context, meta);
+        if ("status" in env)
+            return env;
+        const result = await setMode(env, { model: label, timeoutMs: 30000 });
+        return result.ok || result.status === "unsupported" ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("select-web-search", false, context => contextEnvFlag(context, "CHATGPT_E2E_WEB_SEARCH"), async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const selected = await selectTool(env, { tool: "web_search", timeoutMs: 30000 });
+        if (!selected.ok && selected.status !== "unsupported")
+            return fail(meta, selected);
+        const asked = selected.ok
+            ? await askMessage(env, { text: "reply with the word hi", wait: { timeoutMs: 120000, stableMs: 2000 }, read: true })
+            : selected;
+        return selected.status === "unsupported" || textEquals(okText(asked), "hi") ? pass(meta, asked) : fail(meta, asked);
+    }),
+    scenario("select-deep-research", false, context => contextEnvFlag(context, "CHATGPT_E2E_DEEP_RESEARCH"), async (context, meta) => selectToolScenario(context, meta, "deep_research")),
+    scenario("select-create-image", false, context => contextEnvFlag(context, "CHATGPT_E2E_CREATE_IMAGE"), async (context, meta) => selectToolScenario(context, meta, "create_image")),
+    scenario("login-required-manual", false, context => contextEnvFlag(context, "CHATGPT_E2E_LOGIN_PROFILE"), async (context, meta) => {
+        const env = envFor(context);
+        const result = await bootstrap(env, { preferExistingTab: false, timeoutMs: 60000 });
+        return !result.ok && result.blocker?.kind === "login_required" ? pass(meta, result) : fail(meta, result);
+    }),
+    scenario("upload-permission-manual", false, context => contextEnvFlag(context, "CHATGPT_E2E_UPLOAD_PERMISSION_MANUAL"), async (context, meta) => {
+        const env = await bootNewThread(context, meta);
+        if ("status" in env)
+            return env;
+        const file = await tempFile("chatgpt-live-smoke-upload-blocker.txt", "Upload blocker fixture.\n");
+        const result = await attachFiles(env, { paths: [file], timeoutMs: 60000 });
+        return !result.ok && result.blocker?.kind === "permission" && /Uploads|Allow access to file URLs/i.test(result.blocker.message)
+            ? pass(meta, result)
+            : fail(meta, result);
+    }),
+    scenario("stream-milestones", false, context => contextEnvFlag(context, "CHATGPT_E2E_STREAM"), async (context, meta) => {
+        const chatgpt = createChatGPT(clientOptionsFor(context));
+        const agent = chatgpt.agent({
+            name: "live-smoke-stream",
+            defaults: {
+                wait: { timeoutMs: 120000, stableMs: 2000 },
+                read: { format: "normalized_text" }
+            }
+        });
+        const stream = chatgpt.runner.run(agent, {
+            input: "reply with the word hi",
+            thread: { type: "new" },
+            response: { format: "normalized_text" }
+        }, { stream: true });
+        const events = [];
+        for await (const event of stream) {
+            events.push(event.name);
+        }
+        const result = await stream.completed;
+        return textEquals(result.output_text, "hi") && events.includes("message_completed")
+            ? pass(meta, result, { events })
+            : fail(meta, result, { events });
+    })
+];
+export function generatedFileAskCanProceed(result) {
+    return result.ok
+        || (result.status === "partial" && result.data?.generationActive !== true);
+}
+function scenario(name, required, enabled, run) {
+    return {
+        name,
+        required,
+        enabled,
+        run: context => {
+            const startedAt = new Date().toISOString();
+            return run(context, { name, required, startedAt, startedMs: Date.now() });
+        }
+    };
+}
+async function selectToolScenario(context, meta, tool) {
+    const env = await boot(context, meta);
+    if ("status" in env)
+        return env;
+    const result = await selectTool(env, { tool, timeoutMs: 30000 });
+    return result.ok || result.status === "unsupported" ? pass(meta, result) : fail(meta, result);
+}
+async function boot(context, meta) {
+    const env = envFor(context);
+    const booted = await bootstrap(env, { preferExistingTab: false, timeoutMs: 60000 });
+    return booted.ok ? env : fail(meta, booted);
+}
+async function bootNewThread(context, meta) {
+    const env = await boot(context, meta);
+    if ("status" in env)
+        return env;
+    const chat = await restoreChatExperience({
+        detect: args => detectExperience(env, args),
+        open: args => openExperience(env, args)
+    });
+    if (!chat.verified) {
+        return fail(meta, chat.command, { failedStage: "experience.open.chat" });
+    }
+    const created = await newThread(env);
+    return created.ok ? env : fail(meta, created);
+}
+function envFor(context) {
+    const env = { agent: context.agent };
+    if (context.browser !== undefined) {
+        env.browser = context.browser;
+    }
+    return env;
+}
+function clientOptionsFor(context) {
+    return envFor(context);
+}
+function pass(meta, command, details) {
+    return finish(meta, "pass", command, details);
+}
+function fail(meta, command, details) {
+    return finish(meta, "fail", command, details);
+}
+function skipped(meta, reason, details) {
+    return {
+        name: meta.name,
+        status: "skip",
+        required: meta.required,
+        startedAt: meta.startedAt,
+        endedAt: new Date().toISOString(),
+        durationMs: Date.now() - meta.startedMs,
+        details: { reason, ...(details ?? {}) }
+    };
+}
+function conversationMatches(value, conversationId, conversationUrl) {
+    if (value === undefined)
+        return false;
+    try {
+        const actual = new URL(value);
+        if (!isConversationUrl(actual))
+            return false;
+        if (conversationId !== undefined && actual.pathname !== `/c/${encodeURIComponent(conversationId)}`)
+            return false;
+        if (conversationUrl !== undefined)
+            return actual.pathname === new URL(conversationUrl).pathname;
+        return conversationId !== undefined;
+    }
+    catch {
+        return false;
+    }
+}
+function isConversationUrl(url) {
+    return ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"].includes(url.hostname) && url.pathname.startsWith("/c/");
+}
+async function closeExactTab(getTab, tabs, openTabs, user, tabId) {
+    const page = await Promise.resolve(getTab.call(tabs, tabId)).catch(() => undefined);
+    if (page === undefined || typeof page.close !== "function")
+        return false;
+    await page.close();
+    const remaining = await Promise.resolve(openTabs.call(user)).catch(() => undefined);
+    return remaining !== undefined && !remaining.some(tab => tab.id === tabId);
+}
+function finish(meta, status, command, details) {
+    const result = {
+        name: meta.name,
+        status,
+        required: meta.required,
+        startedAt: meta.startedAt,
+        endedAt: new Date().toISOString(),
+        durationMs: Date.now() - meta.startedMs,
+        command
+    };
+    if (details !== undefined) {
+        result.details = details;
+    }
+    return result;
+}
+function requireInput(value, name) {
+    if (value === undefined || value.trim().length === 0) {
+        throw new Error(`Harness configuration missing ${name}. Set ${name} before running the required live smoke matrix.`);
+    }
+    return value;
+}
+function okText(result) {
+    const data = result.data;
+    return data?.responseText ?? data?.text ?? "";
+}
+function textEquals(actual, expected) {
+    return normalize(actual) === normalize(expected);
+}
+function includesText(actual, expected) {
+    return normalize(actual).includes(normalize(expected));
+}
+function includesUploadedFilename(actual, expected) {
+    const normalizedActual = normalize(actual);
+    const extensionIndex = expected.lastIndexOf(".");
+    if (extensionIndex === -1) {
+        return normalizedActual.includes(normalize(expected));
+    }
+    const stem = escapeRegExp(expected.slice(0, extensionIndex).toLowerCase());
+    const extension = escapeRegExp(expected.slice(extensionIndex).toLowerCase());
+    return new RegExp(`${stem}(?:\\(\\d+\\))?${extension}`).test(normalizedActual);
+}
+function normalize(text) {
+    return (text ?? "").trim().toLowerCase().replace(/[.!?]+$/g, "");
+}
+function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function stepPreviewText(steps, id) {
+    const preview = steps?.find(step => step.id === id)?.dataPreview;
+    if (preview !== undefined && typeof preview === "object" && preview !== null) {
+        const data = preview;
+        if (typeof data.responseText === "string")
+            return data.responseText;
+        if (typeof data.text === "string")
+            return data.text;
+    }
+    return "";
+}
+function includesStep(steps, id) {
+    return steps?.some(step => step.id === id && step.ok) === true;
+}
+function responseCommand(response) {
+    return {
+        ok: response.status === "ok",
+        status: response.status,
+        data: response,
+        warnings: [],
+        context: { timestamp: new Date(response.created_at * 1000).toISOString() }
+    };
+}
+class LiveSmokeCommandFailure extends Error {
+    stage;
+    command;
+    constructor(stage, command) {
+        super(`Live smoke command failed at ${stage}`);
+        this.stage = stage;
+        this.command = command;
+        this.name = "LiveSmokeCommandFailure";
+    }
+}
+function requireLiveCommand(stage, command, condition = command.ok) {
+    if (!condition) {
+        throw new LiveSmokeCommandFailure(stage, asCommand(command));
+    }
+}
+function asCommand(command) {
+    return command;
+}
+function syntheticCommand(timestamp) {
+    return {
+        ok: true,
+        status: "ok",
+        warnings: [],
+        context: { timestamp }
+    };
+}
+function activeSelection(inspection, axes) {
+    const selection = {};
+    for (const axis of axes) {
+        const value = inspection.active[axis];
+        if (value !== undefined) {
+            selection[axis] = value;
+        }
+    }
+    return selection;
+}
+export function chatActiveSelection(inspection) {
+    return activeSelection(inspection, ["intelligence", "model", "modelVersion", "effort"]);
+}
+function hasAxes(inspection, axes) {
+    return axes.every(axis => inspection.availableAxes.includes(axis));
+}
+function hasSelectionAxes(selection, axes) {
+    return axes.every(axis => selection[axis] !== undefined);
+}
+function configurationDetails(inspection) {
+    return {
+        experience: inspection.experience,
+        selectorProfile: inspection.selectorProfile,
+        verified: inspection.verified,
+        availableAxes: inspection.availableAxes,
+        active: inspection.active,
+        optionCounts: Object.fromEntries(Object.entries(inspection.options).map(([axis, options]) => [axis, options?.length ?? 0]))
+    };
+}
+function partialCaptureDetails(result, output) {
+    return {
+        resultStatus: result.status,
+        complete: result.data?.complete,
+        outputChars: output.length,
+        outputHash: hashPreview(output)
+    };
+}
+async function waitForGenerationSignal(env, timeoutMs) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+        if (env.page !== undefined) {
+            const state = await readAssistantGenerationState(env.page).catch(() => EMPTY_GENERATION_STATE);
+            if (state.active || state.stopped) {
+                return state;
+            }
+        }
+        await env.page?.waitForTimeout?.(500);
+    }
+    return EMPTY_GENERATION_STATE;
+}
+async function stopGenerationIfVisible(env) {
+    await stopGeneration(env, { confirmStop: true, timeoutMs: 5_000 }).catch(() => undefined);
+}
+function hashPreview(text) {
+    let hash = 0;
+    for (const char of text) {
+        hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+    }
+    return Math.abs(hash).toString(16);
+}
+async function tempFile(name, body) {
+    const dir = await mkdtemp(join(tmpdir(), "chatgpt-live-smoke-"));
+    const file = join(dir, name);
+    await writeFile(file, body, "utf8");
+    return file;
+}

@@ -1,0 +1,11 @@
+import type { LiveSmokeContext, LiveSmokeRunResult, LiveSmokeScenario, LiveSmokeScenarioResult } from "./types.js";
+export declare function envFlag(name: string): boolean;
+export declare function envText(name: string): string | undefined;
+export declare function contextEnvFlag(context: LiveSmokeContext, name: string): boolean;
+export declare function contextEnvText(context: LiveSmokeContext, name: string): string | undefined;
+export declare function runScenario(scenario: LiveSmokeScenario, context: LiveSmokeContext): Promise<LiveSmokeScenarioResult>;
+export declare function runLiveSmoke(context: LiveSmokeContext, scenarios: LiveSmokeScenario[]): Promise<LiveSmokeRunResult>;
+export declare function writeReport(reportDir: string, results: LiveSmokeScenarioResult[]): Promise<string>;
+export declare function redactLiveSmokeResult(result: LiveSmokeScenarioResult): LiveSmokeScenarioResult;
+export declare function requiredFailures(results: LiveSmokeScenarioResult[]): LiveSmokeScenarioResult[];
+export declare function filterScenarios(scenarios: LiveSmokeScenario[], namesCsv: string | undefined): LiveSmokeScenario[];

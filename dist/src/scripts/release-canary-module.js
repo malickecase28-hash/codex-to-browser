@@ -1,0 +1,99 @@
+import { mkdir } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { resolveChatGPTBrowser } from "../browser/attach.js";
+import { main as captureSurfaceProfile } from "./capture-surface-profile.js";
+import { filterScenarios, runLiveSmoke } from "./live-smoke/harness.js";
+import { optionalScenarios, requiredScenarios } from "./live-smoke/scenarios.js";
+const CORE_SCENARIOS = [
+    "chat-work-expansion",
+    "configuration-mutate-restore",
+    "download-generated-file",
+];
+export async function runReleaseCanary(runtime, options) {
+    if (runtime.agent === undefined || runtime.agent === null) {
+        throw new Error("runReleaseCanary must run in a Codex bridge-hosted JavaScript context.");
+    }
+    if (options.tabId.trim().length === 0) {
+        throw new Error("runReleaseCanary requires an exact dedicated ChatGPT tab id.");
+    }
+    // Acquire through the agent once so bridge capability proxies are normalized
+    // before coordination. Passing globalThis.browser back through RuntimeEnv
+    // bypasses that acquisition boundary and can lose user-open-tab visibility
+    // or private-field receiver bindings on Chrome bridge methods.
+    const managedBrowser = await resolveChatGPTBrowser({ agent: runtime.agent });
+    const reportDir = resolve(options.reportDir ?? join(process.cwd(), "reports", "release-canary"));
+    const profileDir = join(reportDir, "surface-profiles");
+    await mkdir(profileDir, { recursive: true });
+    const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
+    const profilePaths = [
+        join(profileDir, `${stamp}-chat.json`),
+        join(profileDir, `${stamp}-work.json`),
+    ];
+    try {
+        for (const [index, experience] of ["chat", "work"].entries()) {
+            const exitCode = await captureSurfaceProfile([
+                "--id", `release-canary-${experience}`,
+                "--experience", experience,
+                "--tab-id", options.tabId,
+                "--if-missing", "block",
+                "--out", profilePaths[index],
+                "--provenance", "Sanitized release canary capture from a dedicated visible ChatGPT tab."
+            ], { agent: runtime.agent });
+            if (exitCode !== 0) {
+                return {
+                    ok: false,
+                    profilePaths: profilePaths.slice(0, index),
+                    results: [],
+                    failures: [`surface-profile-${experience}`]
+                };
+            }
+        }
+    }
+    finally {
+        await closeDedicatedProfileTab(managedBrowser, options.tabId);
+    }
+    const names = options.includeUpload === true
+        ? [...CORE_SCENARIOS, "attach-one-file"]
+        : CORE_SCENARIOS;
+    const context = {
+        agent: runtime.agent,
+        browser: managedBrowser,
+        // The agent-acquired browser is authoritative for tab discovery and page
+        // behavior. The bridge-hosted global browser separately owns finalize(),
+        // which closes only this tool call's temporary tabs after each scenario.
+        ...(runtime.browser === undefined ? {} : { cleanupBrowser: runtime.browser }),
+        reportDir: join(reportDir, "live-smoke"),
+        env: {
+            CHATGPT_E2E_CONFIGURATION_MUTATION: "1",
+            CHATGPT_E2E_DOWNLOAD: "1",
+        }
+    };
+    const scenarios = filterScenarios([...requiredScenarios, ...optionalScenarios], names.join(","));
+    if (scenarios.length !== names.length) {
+        throw new Error(`Release canary scenario registration drift: expected ${names.length}, found ${scenarios.length}.`);
+    }
+    const smoke = await runLiveSmoke(context, scenarios);
+    const failures = smoke.results.flatMap(result => [
+        ...(result.status === "pass" ? [] : [result.name]),
+        ...(result.cleanup?.ok === true ? [] : [`${result.name}:cleanup`])
+    ]);
+    return {
+        ok: failures.length === 0,
+        profilePaths,
+        reportPath: smoke.reportPath,
+        results: smoke.results,
+        failures
+    };
+}
+async function closeDedicatedProfileTab(browser, tabId) {
+    const tabs = browser?.tabs;
+    const get = tabs?.get;
+    if (tabs === undefined || typeof get !== "function") {
+        throw new Error("Release canary requires browser.tabs.get so its dedicated profile tab can be closed before behavior tests.");
+    }
+    const tab = await get.call(tabs, tabId);
+    if (typeof tab.close !== "function") {
+        throw new Error("Release canary dedicated profile tab does not expose close().");
+    }
+    await tab.close();
+}

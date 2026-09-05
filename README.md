@@ -1,0 +1,316 @@
+# codex-chatgpt-control
+
+TypeScript runtime for controlling visible ChatGPT Chat and Work through a compatible browser bridge.
+
+Unofficial project: not affiliated with, endorsed by, or sponsored by OpenAI. This is not an OpenAI API wrapper and does not call hidden or private ChatGPT endpoints. Browser-required calls need a visible session and should fail with a clear machine-readable reason when the bridge is unavailable.
+
+## Install the compiled fork from GitHub
+
+This repository publishes an already-compiled Node package to the `npm-dist` branch only after the full `main` parity gate succeeds. You do not need a local TypeScript, Python, or Rust compiler to install that distribution.
+
+For a private repository, authenticate Git first:
+
+```bash
+gh auth login
+gh auth setup-git
+```
+
+Install into a project:
+
+```bash
+npm install "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
+```
+
+Or install the command-line tools globally:
+
+```bash
+npm install -g "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
+chatgpt-thread --help
+```
+
+The package also installs `codex-chatgpt-control-backend`. Browser-required operations still need a visible signed-in ChatGPT session and a compatible browser bridge; installation does not bypass login, captcha, rate limits, permissions, confirmations, or visible-UI safety checks.
+
+Tagged GitHub releases also attach the verified npm tarball and Python wheel/source distribution. Publishing the fork to npmjs or PyPI is optional. See `docs/github-install.md` in the source repository for the complete distribution and Codespaces workflow.
+
+## Usage
+
+```ts
+import { createChatGPT } from "codex-chatgpt-control";
+
+const chatgpt = createChatGPT({ agent: globalThis.agent });
+const reviewer = chatgpt.agent({
+  name: "reviewer",
+  instructions: "Review carefully and return Markdown."
+});
+
+const result = await chatgpt.runner.run(reviewer, {
+  input: "Review this design.",
+  thread: { type: "new" },
+  experience: "chat",
+  response: { format: "markdown" }
+});
+```
+
+## Autonomous repository development with Codex CLI
+
+Install and sign in to the official Codex CLI when you want the packaged local implementation/test adapter:
+
+```bash
+npm install -g @openai/codex
+codex
+```
+
+Opt in explicitly when creating the enhanced client:
+
+```ts
+const chatgpt = createChatGPT({
+  agent: globalThis.agent,
+  dev: {
+    autonomous: {
+      localCodex: {
+        repositoryRoot: process.cwd(),
+        allowPush: true
+      }
+    }
+  }
+});
+```
+
+`localCodex` is not enabled implicitly. `allowPush: true` is a second explicit opt-in because Git push is a network mutation. The adapter uses owned Git worktrees, direct executable invocation without a shell, Codex `workspace-write` sandboxing, separate implementation and independent-test sessions, candidate-digest verification, and non-force pushes. It never enables Codex's dangerous approval/sandbox bypass flags.
+
+Project and Planner deletion likewise requires explicit `confirmMutation: true`; unconfirmed destructive calls stop with `needs_confirmation` before the browser adapter touches a delete control. Planner controls that cannot be positively verified in the live visible UI remain `ui_unsupported` rather than using guessed selectors or hidden endpoints.
+
+See `docs/github-install.md` in the source repository for the complete install, autonomous workflow, Python parity, and distribution instructions.
+
+## Connected Browser transport
+
+The plugin uses the connected `@Browser` extension bridge. Browser Harness,
+Chrome DevTools, CDP, and remote debugging are not selected by the plugin.
+They remain explicit SDK-level terminal providers only.
+
+## Explicit terminal browser transports
+
+Terminal runs first discover the installed Codex/Browser bridge. A persistent
+Browser Harness daemon or Chrome DevTools CLI is available only as an explicit
+terminal provider:
+
+```powershell
+uv tool install --python 3.12 --upgrade --force browser-harness
+$env:CODEX_BROWSER_PROVIDER = "browser-harness"
+npm run smoke:terminal-browser
+```
+
+The smoke command bootstraps an existing visible ChatGPT tab and reads the
+latest assistant response; it does not send a message. For an already-running
+Chrome, enable remote debugging at `chrome://inspect/#remote-debugging` first.
+Use `CODEX_BROWSER_NAME` to select a Browser Harness browser name.
+
+Chrome DevTools is an interchangeable provider:
+
+```powershell
+npm install -g chrome-devtools-mcp@latest
+chrome-devtools start --autoConnect
+$env:CODEX_BROWSER_PROVIDER = "chrome-devtools"
+npm run smoke:terminal-browser
+```
+
+Applications can select either provider explicitly with
+`createTerminalBrowserTransport(...)`, or let
+`createTerminalBrowserFromEnv()` read `CODEX_BROWSER_PROVIDER`. The terminal
+providers use only visible browser controls; terminal finalization does not close user-owned tabs.
+
+Run the workflow directly from the repository root:
+
+```powershell
+$env:CODEX_BROWSER_PROVIDER = "browser-harness"
+npm --prefix packages/node run thread -- --existing selected --prompt "Read the current chat and continue carrying out its instructions."
+npm --prefix packages/node run thread -- --new --prompt "Create X, Y, and Z."
+npm --prefix packages/node run thread -- "<ChatGPT thread URL or history search query>" --prompt "Continue from the latest answer."
+```
+
+The first command continues the visible selected ChatGPT tab; `--new` starts
+a new visible thread. The CLI accepts the natural-language prompt, while
+Codex Terminal remains the local orchestration layer for any resulting file
+or shell work.
+
+For direct construction:
+
+```ts
+import { createBrowserHarnessBrowser, createChatGPT } from "codex-chatgpt-control";
+
+const chatgpt = createChatGPT({ browser: createBrowserHarnessBrowser() });
+await chatgpt.session.bootstrap({ preferExistingTab: true });
+```
+
+Remember logical conversation names without changing the default behavior of
+`chatgpt.ask()`:
+
+```ts
+import { createChatGPT, createConversationManager } from "codex-chatgpt-control";
+
+const conversations = createConversationManager(createChatGPT({ agent: globalThis.agent }));
+await conversations.remember({ key: "architecture-review", conversationId: "<conversation-id>" });
+
+await conversations.ask({
+  conversation: { key: "architecture-review" },
+  prompt: "Continue the review.",
+  wait: true,
+  read: true
+});
+```
+
+Use `policy: "new"` or `policy: "current"` for explicit new/current chats;
+unremembered keys search ChatGPT history by default. The registry stores
+conversation metadata only. Inspect it from a terminal with
+`npm run conversations -- list` or bind a known thread with
+`npm run conversations -- remember <key> --conversation-id <id>`.
+
+## Transactional operation preview
+
+Supported Chat, Work, Runner, and Responses workflows accept an optional
+caller-owned canonical UUID `operationId`. Supplying it opts that invocation
+into durable submit-once recovery and exact-turn collection; omitting it keeps
+the compatibility path.
+
+```ts
+const result = await chatgpt.ask({
+  operationId: "123e4567-e89b-42d3-a456-426614174000",
+  prompt: "Summarize the visible thread.",
+  thread: { type: "conversationId", conversationId: "caller-owned-conversation-id" },
+  wait: false,
+  read: false
+});
+```
+
+The direct `chatgpt.operations` surface exposes `submit`, `collect`, `inspect`,
+`control`, and SDK-composed `run`. Persist and reuse the fresh returned handle
+after partial or uncertain results; never retry the same logical Send under a
+new ID. `operations.inspect` is browser-free. Browser-touching calls fail
+closed when bridge access, target evidence, or a required provider primitive
+is unavailable. See
+[Transactional browser operations](references/2026-08-16-transactional-operations.md)
+for request schemas, concurrency, recovery, privacy, transport bounds, and the
+stricter transactional artifact-provider capability matrix.
+
+Inspect the visible surface and apply verified configuration:
+
+```ts
+const surface = await chatgpt.experience.detect();
+const capabilities = await chatgpt.configuration.inspect();
+
+await chatgpt.configuration.apply({
+  experience: "work",
+  desired: {
+    model: "GPT-5.6 Sol",
+    effort: "High",
+    speed: "Standard"
+  },
+  strict: true
+});
+```
+
+Start a fresh Work task once, then poll or steer it:
+
+```ts
+await chatgpt.work.start({
+  prompt: "Produce a decision-ready implementation brief.",
+  newTask: true,
+  wait: false,
+  read: false
+});
+
+await chatgpt.work.status({ includeArtifacts: true });
+await chatgpt.work.steer({
+  prompt: "Add a prioritized migration sequence.",
+  wait: false,
+  read: false
+});
+```
+
+Legacy `mode` inputs and `modes.set/get` remain supported. New code should use
+`experience` and strict `configuration` because Chat and Work expose different
+nested axes.
+
+Reuse a user-open ChatGPT thread without replacing the tab:
+
+```ts
+await chatgpt.askInThread({
+  thread: { type: "url", url: "https://chatgpt.com/c/<conversation-id>" },
+  existingTab: true,
+  prompt: "Continue from the latest answer.",
+  wait: true,
+  read: { format: "markdown" }
+});
+```
+
+Attach local files with host-local absolute paths:
+
+```ts
+const preflight = await chatgpt.files.preflight({
+  paths: ["/absolute/host/path/to/report.pdf"]
+});
+
+await chatgpt.askWithFiles({
+  files: ["/absolute/host/path/to/report.pdf"],
+  prompt: "Summarize this report.",
+  wait: true,
+  read: { format: "markdown" }
+});
+
+await chatgpt.askWithFiles({
+  files: [String.raw`C:\Users\you\Documents\report.pdf`],
+  prompt: "Summarize this report.",
+  wait: true,
+  read: { format: "markdown" }
+});
+```
+
+Use the second example only when the backend process itself is running on Windows. If the backend runs in WSL/Linux, pass the WSL/Linux path, such as `/home/you/Documents/report.pdf`.
+
+Plan append-only ChatGPT Project Sources changes before mutating a project:
+
+```ts
+const plan = await chatgpt.projects.sources.planAdd({
+  projectUrl: "https://chatgpt.com/g/g-p-example/project",
+  files: ["/absolute/host/path/to/source.md"]
+});
+
+const added = await chatgpt.projects.sources.add({
+  projectUrl: "https://chatgpt.com/g/g-p-example/project",
+  files: ["/absolute/host/path/to/source.md"],
+  confirmMutation: true
+});
+```
+
+`planAdd` validates explicit local file metadata without reading file contents or opening ChatGPT. `add` is append-only and returns `needs_confirmation` unless `confirmMutation: true` is supplied.
+
+Explain structured blockers before deciding whether to retry:
+
+```ts
+const result = await chatgpt.session.bootstrap({ existingTab: true });
+if (!result.ok) {
+  const explanation = chatgpt.explainBlocker(result, { command: "session.bootstrap" });
+  console.log(explanation.markdown);
+}
+```
+
+`explainBlocker` preserves the original `result.blocker` fields and adds conservative retry/resume guidance. Existing-tab blockers include metadata such as requested target, candidate tab IDs, URLs, titles, conversation IDs, and mismatch reason; they do not include page text or chat content.
+
+## Validation
+
+Run deterministic gates:
+
+```bash
+npm test
+npm run build
+npm run bundle
+npm run bundle:backend
+npm run contract:validate
+npm run docs:drift
+npm run parity:fixtures
+npm run parity:suite
+npm run smoke:terminal-browser
+```
+
+The terminal smoke is an opt-in environment check and requires the selected
+daemon plus a visible signed-in browser session; deterministic tests do not.
