@@ -16,6 +16,7 @@ import {
   DevAutonomousStoreError,
   FileDevAutonomousWorkflowStore
 } from "./autonomous-store.js";
+import { FileDevAutonomousPlanningSpecStore } from "./autonomous-planning-store.js";
 import type { DevAutonomousWorkflow, DevWorkflowPlan } from "./autonomous-workflow.js";
 
 export type DevAutonomousRunOptions = DevAutonomousAdvanceOptions & Readonly<{
@@ -43,6 +44,7 @@ export type DevAutonomousApiOptions = DevAutonomousEngineOptions & Readonly<{
   store: FileDevAutonomousWorkflowStore;
   chat: DevAutonomousChatPort;
   planner?: DevAutonomousPlannerPort;
+  planningStore?: FileDevAutonomousPlanningSpecStore;
   local?: DevAutonomousLocalPort;
 }>;
 
@@ -58,6 +60,9 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
     options.maxParallelTasks === undefined ? {} : { maxParallelTasks: options.maxParallelTasks }
   );
   const planner = options.planner;
+  const planningStore = options.planningStore ?? new FileDevAutonomousPlanningSpecStore({
+    stateRoot: `${options.store.stateRoot}-planning-specs`
+  });
   const requirePlanner = (): DevAutonomousPlannerPort => {
     if (planner === undefined) {
       throw new DevAutonomousPortError(
@@ -69,10 +74,23 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
     return planner;
   };
   return Object.freeze({
-    plan: async (spec, planningOptions) => requirePlanner().planWorkflow(spec, planningOptions),
+    plan: async (spec, planningOptions) => {
+      const plannerPort = requirePlanner();
+      await planningStore.claim(spec);
+      return plannerPort.planWorkflow(spec, planningOptions);
+    },
     bootstrap: async (spec, planningOptions) => {
       try {
         const existing = await engine.get(spec.workflowId);
+        const identity = await planningStore.get(spec.workflowId);
+        if (identity === undefined) {
+          throw new DevAutonomousPortError(
+            "workflow_identity_mismatch",
+            false,
+            "The existing workflow has no immutable master-planning identity. Use a new workflow ID instead of retroactively binding an objective."
+          );
+        }
+        await planningStore.claim(spec);
         if (
           existing.projectKey !== spec.projectKey
           || existing.plannerConversationKey !== spec.plannerConversationKey
@@ -87,7 +105,9 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
       } catch (error) {
         if (!(error instanceof DevAutonomousStoreError) || error.code !== "workflow_not_found") throw error;
       }
-      const plan = await requirePlanner().planWorkflow(spec, planningOptions);
+      const plannerPort = requirePlanner();
+      await planningStore.claim(spec);
+      const plan = await plannerPort.planWorkflow(spec, planningOptions);
       try {
         return await engine.create(plan);
       } catch (error) {

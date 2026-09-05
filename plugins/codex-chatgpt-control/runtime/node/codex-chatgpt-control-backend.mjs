@@ -4,10 +4,10 @@
 import { TextDecoder } from "node:util";
 
 // src/backend/session.ts
-import { randomUUID as randomUUID13 } from "node:crypto";
+import { randomUUID as randomUUID14 } from "node:crypto";
 
 // src/dev/client.ts
-import { join as join15, resolve as resolve12 } from "node:path";
+import { join as join16, resolve as resolve13 } from "node:path";
 
 // src/client.ts
 import { randomUUID as randomUUID5 } from "node:crypto";
@@ -3770,9 +3770,9 @@ async function readLatestImageDataUrl(page, timeoutMs) {
         if (/^(blob:|https?:)/i.test(src)) {
           const response = await fetch(src);
           const blob = await response.blob();
-          const dataUrl = await new Promise((resolve14, reject) => {
+          const dataUrl = await new Promise((resolve15, reject) => {
             const reader = new FileReader();
-            reader.onload = () => resolve14(String(reader.result));
+            reader.onload = () => resolve15(String(reader.result));
             reader.onerror = () => reject(reader.error ?? new Error("FileReader failed."));
             reader.readAsDataURL(blob);
           });
@@ -5204,8 +5204,8 @@ var BrowserGate = class {
     waiter.context = context2;
     if (waiter.kind === "exclusive") this.pushStartedExclusive(waiter);
     else this.startedShared.add(waiter);
-    waiter.promise = new Promise((resolve14, reject) => {
-      waiter.resolve = resolve14;
+    waiter.promise = new Promise((resolve15, reject) => {
+      waiter.resolve = resolve15;
       waiter.reject = reject;
     });
     const onAbort = () => {
@@ -5404,12 +5404,12 @@ var ResourceActor = class {
       this.notifyIfIdle();
       return Promise.reject(new CoordinatorQueueFullError(this.snapshot()));
     }
-    return new Promise((resolve14, reject) => {
+    return new Promise((resolve15, reject) => {
       const pending2 = {
         ...request,
         ...externalSignal === void 0 ? {} : { externalSignal },
         sequence: ++this.sequence,
-        resolve: (value) => resolve14(value),
+        resolve: (value) => resolve15(value),
         reject,
         started: false,
         settled: false,
@@ -8056,7 +8056,7 @@ async function sleep(page, ms2) {
     await page.waitForTimeout(ms2);
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, ms2));
+  await new Promise((resolve15) => setTimeout(resolve15, ms2));
 }
 
 // src/commands/files.ts
@@ -9050,7 +9050,7 @@ async function attachmentDelay(_page, deadline, requestedMs) {
     if (requestedMs > 0) throw new AttachmentDeadlineError("Attachment settling delay");
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, delayMs));
+  await new Promise((resolve15) => setTimeout(resolve15, delayMs));
 }
 async function attachmentContext(page, _deadline) {
   return contextFromPage(page, {}, { minimal: true });
@@ -9306,7 +9306,7 @@ async function waitForPreviewDownloadControl(page, previews, timeoutMs) {
     if (typeof page.waitForTimeout === "function") {
       await page.waitForTimeout(100);
     } else {
-      await new Promise((resolve14) => setTimeout(resolve14, 100));
+      await new Promise((resolve15) => setTimeout(resolve15, 100));
     }
   }
   return void 0;
@@ -10021,8 +10021,8 @@ async function settleChooserBeforeMutation(chooserWait, deadline) {
     let timer;
     const registered = await Promise.race([
       chooserWait.registration.then(() => true),
-      new Promise((resolve14) => {
-        timer = setTimeout(() => resolve14(false), remainingMs3);
+      new Promise((resolve15) => {
+        timer = setTimeout(() => resolve15(false), remainingMs3);
       })
     ]).finally(() => {
       if (timer !== void 0) clearTimeout(timer);
@@ -10031,7 +10031,7 @@ async function settleChooserBeforeMutation(chooserWait, deadline) {
   }
   if (chooserWait.outcome !== void 0) return chooserWait.outcome;
   if (deadline <= Date.now()) return { kind: "timeout" };
-  await new Promise((resolve14) => setTimeout(resolve14, 0));
+  await new Promise((resolve15) => setTimeout(resolve15, 0));
   if (chooserWait.outcome !== void 0) return chooserWait.outcome;
   return deadline <= Date.now() ? { kind: "timeout" } : void 0;
 }
@@ -10043,13 +10043,13 @@ async function awaitFileChooserOutcome(chooserWait, deadline) {
   if (remainingMs3 === 0) {
     return { kind: "timeout" };
   }
-  return new Promise((resolve14) => {
+  return new Promise((resolve15) => {
     let finished = false;
     const finish = (outcome) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      resolve14(outcome);
+      resolve15(outcome);
     };
     const timer = setTimeout(() => finish({ kind: "timeout" }), remainingMs3);
     void chooserWait.promise.then((outcome) => finish(outcome));
@@ -10144,7 +10144,7 @@ async function waitForProjectSourceTransitionTick(page, waitMs) {
     await page.waitForTimeout(waitMs);
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, waitMs));
+  await new Promise((resolve15) => setTimeout(resolve15, waitMs));
 }
 async function clickProjectSourceControlLocator(page, locator, deadline) {
   if (typeof locator.click !== "function") {
@@ -10354,7 +10354,7 @@ async function waitForClipboardChange(before, timeoutMs, pollMs = 150) {
     if (current !== void 0 && current.length > 0 && current !== before) {
       return current;
     }
-    await new Promise((resolve14) => setTimeout(resolve14, pollMs));
+    await new Promise((resolve15) => setTimeout(resolve15, pollMs));
   }
   return void 0;
 }
@@ -11863,7 +11863,7 @@ function isNativeBrowserTimeout(error) {
 async function sleepWithinDeadline(_page, deadline, requestedMs) {
   const waitMs = Math.min(requestedMs, Math.max(0, remainingMs(deadline) - 1));
   if (waitMs <= 0) return;
-  await new Promise((resolve14) => setTimeout(resolve14, waitMs));
+  await new Promise((resolve15) => setTimeout(resolve15, waitMs));
 }
 async function stopContext(page, _deadline) {
   return contextFromPage(page, {}, { minimal: true });
@@ -12549,7 +12549,7 @@ async function sleep2(page, ms2) {
     await page.waitForTimeout(ms2);
     return;
   }
-  await new Promise((resolve14) => setTimeout(resolve14, ms2));
+  await new Promise((resolve15) => setTimeout(resolve15, ms2));
 }
 function submitData(userTurnText, turnCount, submissionState, generation) {
   const data = { submitted: true };
@@ -15367,14 +15367,14 @@ function sha256Text(text) {
 async function sha256File(path3) {
   const hash = createHash3("sha256");
   let bytes = 0;
-  await new Promise((resolve14, reject) => {
+  await new Promise((resolve15, reject) => {
     const stream = createReadStream(path3);
     stream.on("data", (chunk) => {
       bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.byteLength;
       hash.update(chunk);
     });
     stream.on("error", reject);
-    stream.on("end", resolve14);
+    stream.on("end", resolve15);
   });
   return {
     path: path3,
@@ -17997,8 +17997,8 @@ function createMilestoneStream(run) {
           yield next;
           continue;
         }
-        await new Promise((resolve14) => {
-          resolveNext = resolve14;
+        await new Promise((resolve15) => {
+          resolveNext = resolve15;
         });
       }
     }
@@ -26377,14 +26377,14 @@ async function observeAttachmentsAfterHandoff(ports, request, manifest, options)
 }
 async function waitForPostHandoffObservation(milliseconds, signal) {
   if (milliseconds <= 0 || signal?.aborted) return;
-  await new Promise((resolve14) => {
+  await new Promise((resolve15) => {
     let settled = false;
     const finish = () => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", finish);
-      resolve14();
+      resolve15();
     };
     const timer = setTimeout(finish, milliseconds);
     signal?.addEventListener("abort", finish, { once: true });
@@ -28004,15 +28004,15 @@ async function waitForPostconditionRetry(normalized, milliseconds) {
   if (remaining <= 0) return false;
   const delay2 = Math.min(milliseconds, remaining);
   if (delay2 === 0) return true;
-  return await new Promise((resolve14) => {
+  return await new Promise((resolve15) => {
     const timer = setTimeout(() => {
       normalized.signal.removeEventListener("abort", onAbort);
-      resolve14(true);
+      resolve15(true);
     }, delay2);
     const onAbort = () => {
       clearTimeout(timer);
       normalized.signal.removeEventListener("abort", onAbort);
-      resolve14(false);
+      resolve15(false);
     };
     normalized.signal.addEventListener("abort", onAbort, { once: true });
   });
@@ -33485,7 +33485,7 @@ async function settleChooserBeforeMutation2(waiter, deadlineAt, signal) {
     if (registration === "timeout") return { kind: "timeout" };
     if (waiter.outcome !== void 0) return waiter.outcome;
     if (remainingBudget(deadlineAt) <= 0) return { kind: "timeout" };
-    await new Promise((resolve14) => setTimeout(resolve14, 0));
+    await new Promise((resolve15) => setTimeout(resolve15, 0));
   } else {
     await flushMicrotasks();
   }
@@ -33494,7 +33494,7 @@ async function settleChooserBeforeMutation2(waiter, deadlineAt, signal) {
   return remainingBudget(deadlineAt) <= 0 ? { kind: "timeout" } : void 0;
 }
 async function awaitRegistration(value, timeoutMs, signal) {
-  return await new Promise((resolve14) => {
+  return await new Promise((resolve15) => {
     let settled = false;
     const timer = setTimeout(() => finish("timeout"), timeoutMs);
     const onAbort = () => finish("aborted");
@@ -33503,7 +33503,7 @@ async function awaitRegistration(value, timeoutMs, signal) {
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
-      resolve14(result4);
+      resolve15(result4);
     };
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) {
@@ -33515,7 +33515,7 @@ async function awaitRegistration(value, timeoutMs, signal) {
 }
 async function awaitChooser(waiter, timeoutMs, signal) {
   if (waiter.outcome !== void 0) return waiter.outcome;
-  return await new Promise((resolve14) => {
+  return await new Promise((resolve15) => {
     let settled = false;
     const onAbort = () => finish({ kind: "aborted" });
     const finish = (outcome) => {
@@ -33523,7 +33523,7 @@ async function awaitChooser(waiter, timeoutMs, signal) {
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
-      resolve14(outcome);
+      resolve15(outcome);
     };
     const timer = setTimeout(() => finish({ kind: "timeout" }), timeoutMs);
     if (signal !== void 0) {
@@ -33567,9 +33567,9 @@ async function boundedCallback(value, timeoutMs) {
   if (isObjectLike3(value) && !isNativePromise(value)) throw new Error("provider promise is not native");
   if (!isNativePromise(value)) return value;
   let timer;
-  const promise = new Promise((resolve14, reject) => {
+  const promise = new Promise((resolve15, reject) => {
     timer = setTimeout(() => reject(new Error("provider callback timed out")), timeoutMs);
-    value.then(resolve14, reject);
+    value.then(resolve15, reject);
   });
   try {
     return await promise;
@@ -34844,11 +34844,11 @@ async function boundedNative(value, timeoutMs) {
     if (value !== null && typeof value === "object") throw new Error("provider callback promise is not native");
     return value;
   }
-  return await new Promise((resolve14, reject) => {
+  return await new Promise((resolve15, reject) => {
     const timer = setTimeout(() => reject(new Error("provider callback timed out")), timeoutMs);
     value.then((result4) => {
       clearTimeout(timer);
-      resolve14(result4);
+      resolve15(result4);
     }, (error) => {
       clearTimeout(timer);
       reject(error);
@@ -36769,10 +36769,10 @@ async function observeCollector(request, page, target, context2, evidenceDigest,
 async function sleepOutsideBrowser(milliseconds, signal) {
   if (!Number.isSafeInteger(milliseconds) || milliseconds < 0 || milliseconds > 6e4) throw new ProductionPrimitiveError("invalid_sleep");
   if (signal.aborted) throw new ProductionPrimitiveError("operation_cancelled");
-  await new Promise((resolve14, reject) => {
+  await new Promise((resolve15, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
-      resolve14();
+      resolve15();
     }, milliseconds);
     const onAbort = () => {
       clearTimeout(timer);
@@ -38124,7 +38124,7 @@ async function sleepOutsideActor(observers, milliseconds, signal) {
     await observers.sleep(milliseconds, signal);
     return;
   }
-  await new Promise((resolve14, reject) => {
+  await new Promise((resolve15, reject) => {
     if (signal.aborted) {
       reject(new Error("operation cancelled"));
       return;
@@ -38138,7 +38138,7 @@ async function sleepOutsideActor(observers, milliseconds, signal) {
     signal.addEventListener("abort", onAbort, { once: true });
     timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
-      resolve14();
+      resolve15();
     }, milliseconds);
   });
 }
@@ -39029,8 +39029,8 @@ function armProviderBoundary(runtime, fallbackTimeoutMs) {
   let resolveBoundary;
   let timer;
   let cancelled = false;
-  const promise = new Promise((resolve14) => {
-    resolveBoundary = resolve14;
+  const promise = new Promise((resolve15) => {
+    resolveBoundary = resolve15;
   });
   const listener = () => trigger("aborted");
   const removeListener = () => {
@@ -39173,8 +39173,8 @@ async function closeAsyncIterator(iterator, runtime) {
   if (runtime.deadlineAt !== void 0 && runtime.lastNow !== void 0 && runtime.lastNow >= runtime.deadlineAt) {
     let tick;
     const closeSettled = operation.then(() => true, () => true);
-    const grace = new Promise((resolve14) => {
-      tick = setTimeout(() => resolve14(false), 0);
+    const grace = new Promise((resolve15) => {
+      tick = setTimeout(() => resolve15(false), 0);
     });
     const settled = await Promise.race([closeSettled, grace]);
     if (tick !== void 0) clearTimeout(tick);
@@ -40061,8 +40061,8 @@ function armProviderBoundary2(prepared, fallbackTimeoutMs) {
   let resolveBoundary;
   let timer;
   let cancelled = false;
-  const promise = new Promise((resolve14) => {
-    resolveBoundary = resolve14;
+  const promise = new Promise((resolve15) => {
+    resolveBoundary = resolve15;
   });
   const listener = () => trigger("aborted");
   const removeListener = () => {
@@ -42977,10 +42977,10 @@ function sleepOutsideCoordinator(milliseconds, signal) {
     return Promise.reject(new OperationBrowserAdapterError("adapter_incomplete"));
   }
   if (signal.aborted) return Promise.reject(new OperationBrowserAdapterError("browser_bridge_unavailable"));
-  return new Promise((resolve14, reject) => {
+  return new Promise((resolve15, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
-      resolve14();
+      resolve15();
     }, milliseconds);
     const onAbort = () => {
       clearTimeout(timer);
@@ -50412,6 +50412,329 @@ async function sleep3(milliseconds) {
   await new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
 }
 
+// src/dev/autonomous-planning-store.ts
+import { randomUUID as randomUUID9 } from "node:crypto";
+import {
+  link as link3,
+  lstat as lstat5,
+  mkdir as mkdir7,
+  open as open6,
+  readFile as readFile5,
+  unlink as unlink4
+} from "node:fs/promises";
+import { join as join8, resolve as resolve9 } from "node:path";
+
+// src/dev/autonomous-planner.ts
+import { createHash as createHash10 } from "node:crypto";
+var MAX_OBJECTIVE_CHARS = 65536;
+var MAX_REPOSITORY_URL_CHARS = 4096;
+var MAX_CONSTRAINTS = 128;
+var MAX_CONSTRAINT_CHARS = 8192;
+var MAX_TASKS = 256;
+var DevAutonomousPlannerError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = "DevAutonomousPlannerError";
+  }
+  code;
+};
+function validateDevAutonomousPlanningSpec(spec) {
+  boundedId(spec.workflowId, "workflowId");
+  boundedText(spec.projectKey, "projectKey", 512);
+  boundedText(spec.plannerConversationKey, "plannerConversationKey", 512);
+  boundedText(spec.objective, "objective", MAX_OBJECTIVE_CHARS);
+  if (spec.repositoryUrl !== void 0) {
+    boundedText(spec.repositoryUrl, "repositoryUrl", MAX_REPOSITORY_URL_CHARS);
+    let parsed;
+    try {
+      parsed = new URL(spec.repositoryUrl);
+    } catch {
+      throw invalidSpec();
+    }
+    if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") {
+      throw invalidSpec();
+    }
+  }
+  if (spec.defaultBranch !== void 0) boundedText(spec.defaultBranch, "defaultBranch", 512);
+  if (spec.constraints !== void 0) {
+    if (!Array.isArray(spec.constraints) || spec.constraints.length > MAX_CONSTRAINTS) throw invalidSpec();
+    for (const constraint of spec.constraints) boundedText(constraint, "constraint", MAX_CONSTRAINT_CHARS);
+  }
+  if (spec.maxTasks !== void 0) {
+    if (!Number.isSafeInteger(spec.maxTasks) || spec.maxTasks < 1 || spec.maxTasks > MAX_TASKS) throw invalidSpec();
+  }
+}
+function devAutonomousPlanningDigest(spec) {
+  validateDevAutonomousPlanningSpec(spec);
+  const canonical = JSON.stringify({
+    workflowId: spec.workflowId,
+    projectKey: spec.projectKey,
+    plannerConversationKey: spec.plannerConversationKey,
+    objective: spec.objective,
+    repositoryUrl: spec.repositoryUrl ?? null,
+    defaultBranch: spec.defaultBranch ?? null,
+    constraints: [...spec.constraints ?? []],
+    maxTasks: spec.maxTasks ?? null
+  });
+  return createHash10("sha256").update(canonical, "utf8").digest("hex");
+}
+function devAutonomousPlannerPrompt(spec) {
+  validateDevAutonomousPlanningSpec(spec);
+  const maxTasks = spec.maxTasks ?? 64;
+  const lines = [
+    "You are the master planner for an autonomous software-development workflow.",
+    "Do not implement code. Produce the task graph that separate worker conversations and local Codex implementation agents will execute.",
+    "Inspect the repository evidence available to you. If the repository URL is inaccessible, plan conservatively from the objective and explicitly supplied constraints rather than inventing repository facts.",
+    "Tasks must be independently reviewable, have precise acceptance criteria, and declare dependency task IDs. Mark parallel-safe work by leaving dependencies empty when it genuinely has none.",
+    `Return no more than ${maxTasks} tasks.`,
+    "Return ONLY one JSON object. Do not wrap it in Markdown or commentary.",
+    "The object must have exactly this shape:",
+    '{"workflowId":"...","projectKey":"...","plannerConversationKey":"...","tasks":[{"taskId":"TASK-001","title":"...","summary":"...","dependencies":[],"acceptanceCriteria":["..."],"branch":"optional-branch-name"}]}',
+    `workflowId: ${spec.workflowId}`,
+    `projectKey: ${spec.projectKey}`,
+    `plannerConversationKey: ${spec.plannerConversationKey}`,
+    `objective: ${spec.objective}`
+  ];
+  if (spec.repositoryUrl !== void 0) lines.push(`repositoryUrl: ${spec.repositoryUrl}`);
+  if (spec.defaultBranch !== void 0) lines.push(`defaultBranch: ${spec.defaultBranch}`);
+  if ((spec.constraints?.length ?? 0) > 0) {
+    lines.push("constraints:");
+    for (const constraint of spec.constraints) lines.push(`- ${constraint}`);
+  }
+  return lines.join("\n");
+}
+function parseDevAutonomousPlannerResponse(text, spec) {
+  validateDevAutonomousPlanningSpec(spec);
+  if (typeof text !== "string" || text.length === 0 || text.length > 2 * 1024 * 1024) {
+    throw invalidPlannerResponse();
+  }
+  let value;
+  try {
+    value = JSON.parse(text.trim());
+  } catch {
+    throw invalidPlannerResponse();
+  }
+  if (!isRecord14(value)) throw invalidPlannerResponse();
+  const allowedRoot = /* @__PURE__ */ new Set(["workflowId", "projectKey", "plannerConversationKey", "tasks"]);
+  if (Object.keys(value).some((key) => !allowedRoot.has(key))) throw invalidPlannerResponse();
+  if (value.workflowId !== spec.workflowId || value.projectKey !== spec.projectKey || value.plannerConversationKey !== spec.plannerConversationKey) {
+    throw new DevAutonomousPlannerError(
+      "planner_identity_mismatch",
+      "The master planner response changed the caller-owned workflow or Project identity."
+    );
+  }
+  if (!Array.isArray(value.tasks)) throw invalidPlannerResponse();
+  const limit = spec.maxTasks ?? 64;
+  if (value.tasks.length < 1 || value.tasks.length > limit || value.tasks.length > MAX_TASKS) {
+    throw new DevAutonomousPlannerError(
+      "planner_task_limit_exceeded",
+      "The master planner response exceeded the bounded task-plan size."
+    );
+  }
+  const tasks = value.tasks.map((task) => parseTask(task));
+  const plan = Object.freeze({
+    workflowId: spec.workflowId,
+    projectKey: spec.projectKey,
+    plannerConversationKey: spec.plannerConversationKey,
+    tasks: Object.freeze(tasks)
+  });
+  try {
+    createAutonomousWorkflow(plan);
+  } catch {
+    throw invalidPlannerResponse();
+  }
+  return plan;
+}
+function parseTask(value) {
+  if (!isRecord14(value)) throw invalidPlannerResponse();
+  const allowed = /* @__PURE__ */ new Set(["taskId", "title", "summary", "dependencies", "acceptanceCriteria", "branch"]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) throw invalidPlannerResponse();
+  const taskId = boundedTaskString(value.taskId, "taskId", 128);
+  const title = boundedTaskString(value.title, "title", 1024);
+  const summary = boundedTaskString(value.summary, "summary", 16384);
+  if (!Array.isArray(value.acceptanceCriteria) || value.acceptanceCriteria.length < 1 || value.acceptanceCriteria.length > 128) {
+    throw invalidPlannerResponse();
+  }
+  const acceptanceCriteria = value.acceptanceCriteria.map((item) => boundedTaskString(item, "acceptanceCriteria", 8192));
+  const dependencies = value.dependencies === void 0 ? [] : Array.isArray(value.dependencies) ? value.dependencies.map((item) => boundedTaskString(item, "dependency", 128)) : (() => {
+    throw invalidPlannerResponse();
+  })();
+  if (dependencies.length > 128) throw invalidPlannerResponse();
+  const branch = value.branch === void 0 ? void 0 : boundedTaskString(value.branch, "branch", 512);
+  return Object.freeze({
+    taskId,
+    title,
+    summary,
+    dependencies: Object.freeze(dependencies),
+    acceptanceCriteria: Object.freeze(acceptanceCriteria),
+    ...branch === void 0 ? {} : { branch }
+  });
+}
+function boundedId(value, _label) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)) throw invalidSpec();
+  return value;
+}
+function boundedText(value, _label, max) {
+  if (typeof value !== "string" || value.length === 0 || value.length > max || value.trim() !== value || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw invalidSpec();
+  }
+  return value;
+}
+function boundedTaskString(value, _label, max) {
+  if (typeof value !== "string" || value.length === 0 || value.length > max || value.trim() !== value || /\u0000/u.test(value)) {
+    throw invalidPlannerResponse();
+  }
+  return value;
+}
+function isRecord14(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function invalidSpec() {
+  return new DevAutonomousPlannerError("invalid_planning_spec", "The autonomous master-planning specification is invalid.");
+}
+function invalidPlannerResponse() {
+  return new DevAutonomousPlannerError("planner_response_invalid", "The master planner response did not match the required workflow-plan schema.");
+}
+
+// src/dev/autonomous-planning-store.ts
+var DEV_AUTONOMOUS_PLANNING_STORE_SCHEMA_VERSION = "chatgpt.browser_control.dev_autonomous_planning_store.v1";
+var WORKFLOW_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+var DevAutonomousPlanningStoreError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+    this.name = "DevAutonomousPlanningStoreError";
+  }
+  code;
+};
+var FileDevAutonomousPlanningSpecStore = class {
+  stateRoot;
+  now;
+  constructor(options = {}) {
+    this.stateRoot = resolve9(
+      options.stateRoot ?? join8(process.cwd(), ".chatgpt-dev", "state", "planning-specs")
+    );
+    this.now = options.now ?? (() => /* @__PURE__ */ new Date());
+  }
+  async claim(spec) {
+    validateDevAutonomousPlanningSpec(spec);
+    const expected = freezeRecord2({
+      schemaVersion: DEV_AUTONOMOUS_PLANNING_STORE_SCHEMA_VERSION,
+      workflowId: spec.workflowId,
+      projectKey: spec.projectKey,
+      plannerConversationKey: spec.plannerConversationKey,
+      planningDigest: devAutonomousPlanningDigest(spec),
+      createdAt: this.now().toISOString()
+    });
+    await mkdir7(this.stateRoot, { recursive: true, mode: 448 });
+    const target = this.path(spec.workflowId);
+    const temporary = join8(this.stateRoot, `${randomUUID9()}.tmp`);
+    let handle;
+    try {
+      handle = await open6(temporary, "wx", 384);
+      await handle.writeFile(`${JSON.stringify(expected, null, 2)}
+`, "utf8");
+      await handle.sync();
+      await handle.close();
+      handle = void 0;
+      try {
+        await link3(temporary, target);
+        return expected;
+      } catch (error) {
+        if (nodeErrorCode(error) !== "EEXIST") throw error;
+        const existing = await this.readRequired(spec.workflowId);
+        assertSamePlanningIdentity(existing, expected);
+        return existing;
+      }
+    } catch (error) {
+      if (error instanceof DevAutonomousPlannerError) throw error;
+      if (error instanceof DevAutonomousPlanningStoreError) throw error;
+      throw new DevAutonomousPlanningStoreError(
+        "state_write_failed",
+        "Autonomous planning identity could not be committed safely."
+      );
+    } finally {
+      await handle?.close().catch(() => void 0);
+      await unlink4(temporary).catch(() => void 0);
+    }
+  }
+  async get(workflowId) {
+    validateWorkflowId2(workflowId);
+    const path3 = this.path(workflowId);
+    try {
+      const metadata = await lstat5(path3);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) {
+        throw corrupt2();
+      }
+      return parseRecord(JSON.parse(await readFile5(path3, "utf8")), workflowId);
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") return void 0;
+      if (error instanceof DevAutonomousPlanningStoreError) throw error;
+      throw corrupt2();
+    }
+  }
+  async readRequired(workflowId) {
+    const record = await this.get(workflowId);
+    if (record === void 0) {
+      throw new DevAutonomousPlanningStoreError(
+        "state_corrupt",
+        "Autonomous planning identity disappeared during a no-clobber claim."
+      );
+    }
+    return record;
+  }
+  path(workflowId) {
+    validateWorkflowId2(workflowId);
+    const digest4 = Buffer.from(workflowId, "utf8").toString("base64url");
+    return join8(this.stateRoot, `${digest4}.json`);
+  }
+};
+function parseRecord(value, workflowId) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw corrupt2();
+  const record = value;
+  const allowed = [
+    "schemaVersion",
+    "workflowId",
+    "projectKey",
+    "plannerConversationKey",
+    "planningDigest",
+    "createdAt"
+  ];
+  if (Object.keys(record).sort().join(",") !== [...allowed].sort().join(",")) throw corrupt2();
+  if (record.schemaVersion !== DEV_AUTONOMOUS_PLANNING_STORE_SCHEMA_VERSION || record.workflowId !== workflowId || typeof record.projectKey !== "string" || record.projectKey.length === 0 || typeof record.plannerConversationKey !== "string" || record.plannerConversationKey.length === 0 || typeof record.planningDigest !== "string" || !/^[0-9a-f]{64}$/u.test(record.planningDigest) || typeof record.createdAt !== "string" || !Number.isFinite(Date.parse(record.createdAt))) {
+    throw corrupt2();
+  }
+  return freezeRecord2({
+    schemaVersion: DEV_AUTONOMOUS_PLANNING_STORE_SCHEMA_VERSION,
+    workflowId,
+    projectKey: record.projectKey,
+    plannerConversationKey: record.plannerConversationKey,
+    planningDigest: record.planningDigest,
+    createdAt: record.createdAt
+  });
+}
+function assertSamePlanningIdentity(existing, expected) {
+  if (existing.workflowId !== expected.workflowId || existing.projectKey !== expected.projectKey || existing.plannerConversationKey !== expected.plannerConversationKey || existing.planningDigest !== expected.planningDigest) {
+    throw new DevAutonomousPlannerError(
+      "planner_identity_mismatch",
+      "This autonomous workflow ID is already bound to a different master-planning specification. Use a new workflow ID for a changed objective or planning context."
+    );
+  }
+}
+function validateWorkflowId2(workflowId) {
+  if (typeof workflowId !== "string" || !WORKFLOW_ID_PATTERN.test(workflowId)) throw corrupt2();
+}
+function freezeRecord2(record) {
+  return Object.freeze({ ...record });
+}
+function corrupt2() {
+  return new DevAutonomousPlanningStoreError(
+    "state_corrupt",
+    "Autonomous planning identity state is corrupt or unsafe to follow."
+  );
+}
+
 // src/dev/autonomous-api.ts
 var DEFAULT_MAX_STEPS = 128;
 var MAX_STEPS = 1e4;
@@ -50424,6 +50747,9 @@ function createDevAutonomousApi(options) {
     options.maxParallelTasks === void 0 ? {} : { maxParallelTasks: options.maxParallelTasks }
   );
   const planner = options.planner;
+  const planningStore = options.planningStore ?? new FileDevAutonomousPlanningSpecStore({
+    stateRoot: `${options.store.stateRoot}-planning-specs`
+  });
   const requirePlanner = () => {
     if (planner === void 0) {
       throw new DevAutonomousPortError(
@@ -50435,10 +50761,23 @@ function createDevAutonomousApi(options) {
     return planner;
   };
   return Object.freeze({
-    plan: async (spec, planningOptions) => requirePlanner().planWorkflow(spec, planningOptions),
+    plan: async (spec, planningOptions) => {
+      const plannerPort = requirePlanner();
+      await planningStore.claim(spec);
+      return plannerPort.planWorkflow(spec, planningOptions);
+    },
     bootstrap: async (spec, planningOptions) => {
       try {
         const existing = await engine.get(spec.workflowId);
+        const identity = await planningStore.get(spec.workflowId);
+        if (identity === void 0) {
+          throw new DevAutonomousPortError(
+            "workflow_identity_mismatch",
+            false,
+            "The existing workflow has no immutable master-planning identity. Use a new workflow ID instead of retroactively binding an objective."
+          );
+        }
+        await planningStore.claim(spec);
         if (existing.projectKey !== spec.projectKey || existing.plannerConversationKey !== spec.plannerConversationKey) {
           throw new DevAutonomousPortError(
             "workflow_identity_mismatch",
@@ -50450,7 +50789,9 @@ function createDevAutonomousApi(options) {
       } catch (error) {
         if (!(error instanceof DevAutonomousStoreError) || error.code !== "workflow_not_found") throw error;
       }
-      const plan = await requirePlanner().planWorkflow(spec, planningOptions);
+      const plannerPort = requirePlanner();
+      await planningStore.claim(spec);
+      const plan = await plannerPort.planWorkflow(spec, planningOptions);
       try {
         return await engine.create(plan);
       } catch (error) {
@@ -50526,17 +50867,17 @@ function unavailableLocalPort() {
 }
 
 // src/dev/codex-cli-local-port.ts
-import { createHash as createHash10 } from "node:crypto";
+import { createHash as createHash11 } from "node:crypto";
 import { spawn } from "node:child_process";
 import {
-  lstat as lstat5,
-  mkdir as mkdir7,
-  readFile as readFile5,
+  lstat as lstat6,
+  mkdir as mkdir8,
+  readFile as readFile6,
   realpath as realpath3,
   rm as rm2,
   writeFile as writeFile4
 } from "node:fs/promises";
-import { isAbsolute as isAbsolute5, join as join8, relative as relative2, resolve as resolve9 } from "node:path";
+import { isAbsolute as isAbsolute5, join as join9, relative as relative2, resolve as resolve10 } from "node:path";
 var DEFAULT_TIMEOUT_MS3 = 30 * 6e4;
 var MAX_TIMEOUT_MS7 = 4 * 60 * 6e4;
 var DEFAULT_OUTPUT_BYTES = 2 * 1024 * 1024;
@@ -50558,8 +50899,8 @@ var CodexCliAutonomousLocalPort = class {
   maxOutputBytes;
   runProcess;
   constructor(options = {}) {
-    this.repositoryRoot = resolve9(options.repositoryRoot ?? process.cwd());
-    this.stateRoot = resolve9(options.stateRoot ?? join8(this.repositoryRoot, ".chatgpt-dev", "local"));
+    this.repositoryRoot = resolve10(options.repositoryRoot ?? process.cwd());
+    this.stateRoot = resolve10(options.stateRoot ?? join9(this.repositoryRoot, ".chatgpt-dev", "local"));
     this.codexExecutable = boundedExecutable(options.codexExecutable ?? "codex", "codexExecutable");
     this.gitExecutable = boundedExecutable(options.gitExecutable ?? "git", "gitExecutable");
     this.baseRef = boundedToken(options.baseRef ?? "HEAD", "baseRef", 512);
@@ -50747,7 +51088,7 @@ var CodexCliAutonomousLocalPort = class {
     if (observedReal !== root) {
       throw blocked5("repository_root_mismatch", "The configured autonomous repository root must be the exact Git worktree root.");
     }
-    await mkdir7(this.stateRoot, { recursive: true, mode: 448 });
+    await mkdir8(this.stateRoot, { recursive: true, mode: 448 });
     return root;
   }
   async taskBranch(workflow2, task) {
@@ -50760,13 +51101,13 @@ var CodexCliAutonomousLocalPort = class {
     return branch;
   }
   async ensureWorktree(repositoryRoot, branch, key) {
-    const worktreesRoot = resolve9(this.stateRoot, "worktrees");
-    const path3 = resolve9(worktreesRoot, createHash10("sha256").update(key, "utf8").digest("hex").slice(0, 32));
+    const worktreesRoot = resolve10(this.stateRoot, "worktrees");
+    const path3 = resolve10(worktreesRoot, createHash11("sha256").update(key, "utf8").digest("hex").slice(0, 32));
     if (!inside(worktreesRoot, path3)) throw blocked5("state_path_invalid", "Owned worktree path escaped the autonomous state root.");
-    await mkdir7(worktreesRoot, { recursive: true, mode: 448 });
+    await mkdir8(worktreesRoot, { recursive: true, mode: 448 });
     let pathState = "missing";
     try {
-      pathState = (await lstat5(path3)).isDirectory() ? "directory" : "occupied";
+      pathState = (await lstat6(path3)).isDirectory() ? "directory" : "occupied";
     } catch {
       pathState = "missing";
     }
@@ -50776,7 +51117,7 @@ var CodexCliAutonomousLocalPort = class {
     if (pathState === "directory") {
       const existing = await this.gitRaw(path3, ["rev-parse", "--show-toplevel"]);
       if (existing.exitCode === 0) {
-        const observed = resolve9(existing.stdout.trim());
+        const observed = resolve10(existing.stdout.trim());
         if (observed !== path3) throw blocked5("worktree_mismatch", "An existing autonomous worktree has an unexpected Git root.");
         const currentBranch = await this.gitText(path3, ["branch", "--show-current"]);
         if (currentBranch !== branch) throw blocked5("worktree_mismatch", "An existing autonomous worktree is bound to a different branch.");
@@ -50792,7 +51133,7 @@ var CodexCliAutonomousLocalPort = class {
     } else {
       throw gitFailed();
     }
-    const observedRoot = resolve9(await this.gitText(path3, ["rev-parse", "--show-toplevel"]));
+    const observedRoot = resolve10(await this.gitText(path3, ["rev-parse", "--show-toplevel"]));
     if (observedRoot !== path3) throw blocked5("worktree_mismatch", "Created autonomous worktree could not be verified.");
     return path3;
   }
@@ -50809,14 +51150,14 @@ var CodexCliAutonomousLocalPort = class {
   }
   async independentTest(worktree, prompt, key) {
     boundedPrompt(prompt);
-    const schemaRoot = resolve9(this.stateRoot, "schemas");
-    const reportsRoot = resolve9(this.stateRoot, "reports");
-    await mkdir7(schemaRoot, { recursive: true, mode: 448 });
-    await mkdir7(reportsRoot, { recursive: true, mode: 448 });
-    const schemaPath = resolve9(schemaRoot, "independent-test-result.json");
-    const reportPath = resolve9(
+    const schemaRoot = resolve10(this.stateRoot, "schemas");
+    const reportsRoot = resolve10(this.stateRoot, "reports");
+    await mkdir8(schemaRoot, { recursive: true, mode: 448 });
+    await mkdir8(reportsRoot, { recursive: true, mode: 448 });
+    const schemaPath = resolve10(schemaRoot, "independent-test-result.json");
+    const reportPath = resolve10(
       reportsRoot,
-      `${createHash10("sha256").update(key, "utf8").digest("hex").slice(0, 40)}.json`
+      `${createHash11("sha256").update(key, "utf8").digest("hex").slice(0, 40)}.json`
     );
     if (!inside(schemaRoot, schemaPath) || !inside(reportsRoot, reportPath)) throw blocked5("state_path_invalid", "Test evidence path escaped the autonomous state root.");
     await writeFile4(schemaPath, JSON.stringify(TEST_RESULT_SCHEMA), { encoding: "utf8", mode: 384 });
@@ -50842,7 +51183,7 @@ var CodexCliAutonomousLocalPort = class {
     if (result4.exitCode !== 0) throw blocked5("codex_test_failed", "The independent Codex tester process did not complete successfully.");
     let raw;
     try {
-      raw = await readFile5(reportPath, "utf8");
+      raw = await readFile6(reportPath, "utf8");
     } catch {
       throw blocked5("tester_output_invalid", "The independent tester did not produce its required structured result.");
     }
@@ -50853,23 +51194,23 @@ var CodexCliAutonomousLocalPort = class {
     } catch {
       throw blocked5("tester_output_invalid", "The independent tester result was not valid JSON.");
     }
-    if (!isRecord14(value) || value.status !== "passed" && value.status !== "failed" || typeof value.summary !== "string") {
+    if (!isRecord15(value) || value.status !== "passed" && value.status !== "failed" || typeof value.summary !== "string") {
       throw blocked5("tester_output_invalid", "The independent tester result did not match its required schema.");
     }
     await rm2(reportPath, { force: true });
     return Object.freeze({ status: value.status, raw });
   }
   async candidateDigest(worktree) {
-    const hash = createHash10("sha256");
+    const hash = createHash11("sha256");
     const diff = await this.gitText(worktree, ["diff", "--binary", "HEAD", "--", "."], false);
     hash.update(diff, "utf8");
     const untracked = await this.gitText(worktree, ["ls-files", "--others", "--exclude-standard", "-z"], false);
     let total = 0;
     for (const entry of untracked.split("\0")) {
       if (entry.length === 0) continue;
-      const file = resolve9(worktree, entry);
+      const file = resolve10(worktree, entry);
       if (!inside(worktree, file)) throw blocked5("candidate_path_invalid", "An untracked candidate file escaped the owned worktree.");
-      const stat8 = await lstat5(file);
+      const stat8 = await lstat6(file);
       if (!stat8.isFile() || stat8.size > MAX_UNTRACKED_FILE_BYTES) {
         throw blocked5("candidate_unbounded", "An untracked candidate entry is not a bounded regular file.");
       }
@@ -50877,7 +51218,7 @@ var CodexCliAutonomousLocalPort = class {
       if (total > MAX_UNTRACKED_TOTAL_BYTES) throw blocked5("candidate_unbounded", "Untracked candidate content exceeds the bounded evidence limit.");
       hash.update(entry, "utf8");
       hash.update("\0", "utf8");
-      hash.update(await readFile5(file));
+      hash.update(await readFile6(file));
     }
     return `sha256:${hash.digest("hex")}`;
   }
@@ -51102,7 +51443,7 @@ function boundedPrompt(value) {
 }
 function safeRefPart(value) {
   const safe2 = value.replace(/[^A-Za-z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80);
-  return safe2.length > 0 ? safe2 : createHash10("sha256").update(value, "utf8").digest("hex").slice(0, 16);
+  return safe2.length > 0 ? safe2 : createHash11("sha256").update(value, "utf8").digest("hex").slice(0, 16);
 }
 function integrationBranch(workflow2) {
   return `codex/${safeRefPart(workflow2.workflowId)}-integration-r${workflow2.revision}`;
@@ -51119,28 +51460,28 @@ function requireCommitSha(value) {
   }
 }
 function digestText(value) {
-  return `sha256:${createHash10("sha256").update(value, "utf8").digest("hex")}`;
+  return `sha256:${createHash11("sha256").update(value, "utf8").digest("hex")}`;
 }
 function inside(root, candidate) {
-  const rel = relative2(resolve9(root), resolve9(candidate));
+  const rel = relative2(resolve10(root), resolve10(candidate));
   return rel === "" || !rel.startsWith("..") && !isAbsolute5(rel);
 }
-function isRecord14(value) {
+function isRecord15(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 // src/dev/autonomous-chatgpt-port.ts
 import { createHash as createHash16 } from "node:crypto";
-import { join as join14, resolve as resolve11 } from "node:path";
+import { join as join15, resolve as resolve12 } from "node:path";
 
 // src/conversations/manager.ts
-import { join as join11 } from "node:path";
+import { join as join12 } from "node:path";
 
 // src/conversations/registry.ts
-import { createHash as createHash11, randomUUID as randomUUID9 } from "node:crypto";
-import { mkdir as mkdir8, readFile as readFile6, readdir, rename as rename4, unlink as unlink4, writeFile as writeFile5 } from "node:fs/promises";
+import { createHash as createHash12, randomUUID as randomUUID10 } from "node:crypto";
+import { mkdir as mkdir9, readFile as readFile7, readdir, rename as rename4, unlink as unlink5, writeFile as writeFile5 } from "node:fs/promises";
 import { homedir as homedir2, platform as platform2 } from "node:os";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 var writeQueues = /* @__PURE__ */ new Map();
 var ConversationRegistry = class {
   stateRoot;
@@ -51153,7 +51494,7 @@ var ConversationRegistry = class {
     const normalizedKey = normalizeKey(key);
     const path3 = this.recordPath(normalizedKey);
     try {
-      const parsed = JSON.parse(await readFile6(path3, "utf8"));
+      const parsed = JSON.parse(await readFile7(path3, "utf8"));
       if (!isConversationRecord(parsed)) throw new Error(`Invalid conversation registry record: ${path3}`);
       if (parsed.key !== normalizedKey) throw new Error(`Conversation registry key mismatch: ${path3}`);
       return parsed;
@@ -51240,8 +51581,8 @@ var ConversationRegistry = class {
     for (const name of names) {
       if (!name.endsWith(".json")) continue;
       try {
-        const parsed = JSON.parse(await readFile6(join9(this.stateRoot, name), "utf8"));
-        if (!isConversationRecord(parsed)) throw new Error(`Invalid conversation registry record: ${join9(this.stateRoot, name)}`);
+        const parsed = JSON.parse(await readFile7(join10(this.stateRoot, name), "utf8"));
+        if (!isConversationRecord(parsed)) throw new Error(`Invalid conversation registry record: ${join10(this.stateRoot, name)}`);
         records.push(parsed);
       } catch (error) {
         if (!isNodeError5(error, "ENOENT")) throw error;
@@ -51254,7 +51595,7 @@ var ConversationRegistry = class {
     const normalizedKey = normalizeKey(key);
     return this.withMutationLock(async () => {
       try {
-        await unlink4(this.recordPath(normalizedKey));
+        await unlink5(this.recordPath(normalizedKey));
         return true;
       } catch (error) {
         if (isNodeError5(error, "ENOENT")) return false;
@@ -51263,8 +51604,8 @@ var ConversationRegistry = class {
     });
   }
   recordPath(key) {
-    const digest4 = createHash11("sha256").update(key, "utf8").digest("hex");
-    return join9(this.stateRoot, `${digest4}.json`);
+    const digest4 = createHash12("sha256").update(key, "utf8").digest("hex");
+    return join10(this.stateRoot, `${digest4}.json`);
   }
   async withMutationLock(action) {
     const target = this.stateRoot;
@@ -51278,8 +51619,8 @@ var ConversationRegistry = class {
     }
   }
   async writeRecordFile(record, target) {
-    await mkdir8(this.stateRoot, { recursive: true, mode: 448 });
-    const temporary = join9(this.stateRoot, `${randomUUID9()}.tmp`);
+    await mkdir9(this.stateRoot, { recursive: true, mode: 448 });
+    const temporary = join10(this.stateRoot, `${randomUUID10()}.tmp`);
     try {
       await writeFile5(temporary, `${JSON.stringify(record, null, 2)}
 `, { encoding: "utf8", mode: 384 });
@@ -51289,22 +51630,22 @@ var ConversationRegistry = class {
           break;
         } catch (error) {
           if (attempt >= 2 || !(isNodeError5(error, "EPERM") || isNodeError5(error, "EBUSY"))) throw error;
-          await new Promise((resolve14) => setTimeout(resolve14, 10));
+          await new Promise((resolve15) => setTimeout(resolve15, 10));
         }
       }
     } finally {
-      await unlink4(temporary).catch(() => void 0);
+      await unlink5(temporary).catch(() => void 0);
     }
   }
 };
 function defaultConversationStateRoot() {
-  if (platform2() === "darwin") return join9(homedir2(), "Library", "Application Support", "codex-chatgpt-control", "conversations-v1");
+  if (platform2() === "darwin") return join10(homedir2(), "Library", "Application Support", "codex-chatgpt-control", "conversations-v1");
   if (platform2() === "win32") {
     const localAppData = process.env.LOCALAPPDATA;
-    return join9(localAppData?.trim() || join9(homedir2(), "AppData", "Local"), "codex-chatgpt-control", "conversations-v1");
+    return join10(localAppData?.trim() || join10(homedir2(), "AppData", "Local"), "codex-chatgpt-control", "conversations-v1");
   }
   const xdgStateHome = process.env.XDG_STATE_HOME;
-  return join9(xdgStateHome?.trim() || join9(homedir2(), ".local", "state"), "codex-chatgpt-control", "conversations-v1");
+  return join10(xdgStateHome?.trim() || join10(homedir2(), ".local", "state"), "codex-chatgpt-control", "conversations-v1");
 }
 function normalizeKey(key) {
   const normalized = key.trim();
@@ -51339,10 +51680,10 @@ function isNodeError5(error, code) {
 }
 
 // src/conversations/browser-affinity.ts
-import { createHash as createHash12, randomUUID as randomUUID10 } from "node:crypto";
-import { chmod as chmod2, mkdir as mkdir9, readFile as readFile7, readdir as readdir2, rename as rename5, unlink as unlink5, writeFile as writeFile6 } from "node:fs/promises";
+import { createHash as createHash13, randomUUID as randomUUID11 } from "node:crypto";
+import { chmod as chmod2, mkdir as mkdir10, readFile as readFile8, readdir as readdir2, rename as rename5, unlink as unlink6, writeFile as writeFile6 } from "node:fs/promises";
 import { homedir as homedir3, platform as platform3 } from "node:os";
-import { dirname as dirname5, join as join10 } from "node:path";
+import { dirname as dirname5, join as join11 } from "node:path";
 var writeQueues2 = /* @__PURE__ */ new Map();
 var BrowserAffinityRegistry = class {
   stateRoot;
@@ -51354,7 +51695,7 @@ var BrowserAffinityRegistry = class {
   async get(key) {
     const normalizedKey = normalizeKey2(key);
     try {
-      const parsed = JSON.parse(await readFile7(this.recordPath(normalizedKey), "utf8"));
+      const parsed = JSON.parse(await readFile8(this.recordPath(normalizedKey), "utf8"));
       if (!isBrowserAffinityRecord(parsed) || parsed.key !== normalizedKey) throw new Error("Invalid browser affinity record.");
       return parsed;
     } catch (error) {
@@ -51395,8 +51736,8 @@ var BrowserAffinityRegistry = class {
     const records = [];
     for (const name of names) {
       if (!name.endsWith(".json")) continue;
-      const path3 = join10(this.stateRoot, name);
-      const parsed = JSON.parse(await readFile7(path3, "utf8"));
+      const path3 = join11(this.stateRoot, name);
+      const parsed = JSON.parse(await readFile8(path3, "utf8"));
       if (!isBrowserAffinityRecord(parsed)) throw new Error(`Invalid browser affinity record: ${path3}`);
       records.push(parsed);
     }
@@ -51405,7 +51746,7 @@ var BrowserAffinityRegistry = class {
   async forget(key) {
     return this.withMutationLock(async () => {
       try {
-        await unlink5(this.recordPath(normalizeKey2(key)));
+        await unlink6(this.recordPath(normalizeKey2(key)));
         return true;
       } catch (error) {
         if (isNodeError6(error, "ENOENT")) return false;
@@ -51414,7 +51755,7 @@ var BrowserAffinityRegistry = class {
     });
   }
   recordPath(key) {
-    return join10(this.stateRoot, `${createHash12("sha256").update(key, "utf8").digest("hex")}.json`);
+    return join11(this.stateRoot, `${createHash13("sha256").update(key, "utf8").digest("hex")}.json`);
   }
   async withMutationLock(action) {
     const previous = writeQueues2.get(this.stateRoot) ?? Promise.resolve();
@@ -51427,9 +51768,9 @@ var BrowserAffinityRegistry = class {
     }
   }
   async writeRecordFile(record, target) {
-    await mkdir9(this.stateRoot, { recursive: true, mode: 448 });
+    await mkdir10(this.stateRoot, { recursive: true, mode: 448 });
     await chmod2(this.stateRoot, 448);
-    const temporary = join10(this.stateRoot, `${randomUUID10()}.tmp`);
+    const temporary = join11(this.stateRoot, `${randomUUID11()}.tmp`);
     try {
       await writeFile6(temporary, `${JSON.stringify(record, null, 2)}
 `, { encoding: "utf8", mode: 384 });
@@ -51440,18 +51781,18 @@ var BrowserAffinityRegistry = class {
           break;
         } catch (error) {
           if (attempt >= 2 || !(isNodeError6(error, "EPERM") || isNodeError6(error, "EBUSY"))) throw error;
-          await new Promise((resolve14) => setTimeout(resolve14, 10));
+          await new Promise((resolve15) => setTimeout(resolve15, 10));
         }
       }
     } finally {
-      await unlink5(temporary).catch(() => void 0);
+      await unlink6(temporary).catch(() => void 0);
     }
   }
 };
 function defaultBrowserAffinityStateRoot() {
-  if (platform3() === "darwin") return join10(homedir3(), "Library", "Application Support", "codex-chatgpt-control", "browser-affinity-v1");
-  if (platform3() === "win32") return join10(process.env.LOCALAPPDATA?.trim() || join10(homedir3(), "AppData", "Local"), "codex-chatgpt-control", "browser-affinity-v1");
-  return join10(process.env.XDG_STATE_HOME?.trim() || join10(homedir3(), ".local", "state"), "codex-chatgpt-control", "browser-affinity-v1");
+  if (platform3() === "darwin") return join11(homedir3(), "Library", "Application Support", "codex-chatgpt-control", "browser-affinity-v1");
+  if (platform3() === "win32") return join11(process.env.LOCALAPPDATA?.trim() || join11(homedir3(), "AppData", "Local"), "codex-chatgpt-control", "browser-affinity-v1");
+  return join11(process.env.XDG_STATE_HOME?.trim() || join11(homedir3(), ".local", "state"), "codex-chatgpt-control", "browser-affinity-v1");
 }
 function normalizeKey2(key) {
   const value = key.trim();
@@ -51485,7 +51826,7 @@ var ConversationManager = class {
     this.client = client;
     this.registry = new ConversationRegistry(options);
     this.affinity = new BrowserAffinityRegistry({
-      stateRoot: options.affinityStateRoot ?? (options.stateRoot === void 0 ? defaultBrowserAffinityStateRoot() : join11(this.registry.stateRoot, "browser-affinity-v1")),
+      stateRoot: options.affinityStateRoot ?? (options.stateRoot === void 0 ? defaultBrowserAffinityStateRoot() : join12(this.registry.stateRoot, "browser-affinity-v1")),
       ...options.now === void 0 ? {} : { now: options.now }
     });
   }
@@ -51691,10 +52032,10 @@ function isConversationUrl(value) {
 }
 
 // src/response-watchers.ts
-import { createHash as createHash13, randomUUID as randomUUID11 } from "node:crypto";
-import { mkdir as mkdir10, readFile as readFile8, readdir as readdir3, rename as rename6, unlink as unlink6, writeFile as writeFile7 } from "node:fs/promises";
+import { createHash as createHash14, randomUUID as randomUUID12 } from "node:crypto";
+import { mkdir as mkdir11, readFile as readFile9, readdir as readdir3, rename as rename6, unlink as unlink7, writeFile as writeFile7 } from "node:fs/promises";
 import { homedir as homedir4, platform as platform4 } from "node:os";
-import { join as join12 } from "node:path";
+import { join as join13 } from "node:path";
 var ResponseWatcherIdentityError = class extends Error {
   constructor() {
     super("Response watcher identity does not match the existing operation.");
@@ -51752,9 +52093,9 @@ var ResponseWatcherRegistry = class {
     const record = await this.store.get(watcherId);
     if (record === void 0) throw new ResponseWatcherNotFoundError();
     if (record.state !== "pending") return record;
-    return await new Promise((resolve14, reject) => {
+    return await new Promise((resolve15, reject) => {
       const current = this.waiters.get(watcherId) ?? [];
-      current.push({ resolve: resolve14, reject });
+      current.push({ resolve: resolve15, reject });
       this.waiters.set(watcherId, current);
     });
   }
@@ -51801,8 +52142,8 @@ var ResponseWatcherRegistry = class {
   async serial(action) {
     const previous = this.mutation;
     let release;
-    this.mutation = new Promise((resolve14) => {
-      release = resolve14;
+    this.mutation = new Promise((resolve15) => {
+      release = resolve15;
     });
     await previous;
     try {
@@ -51820,8 +52161,8 @@ var FileResponseWatcherStore = class {
   }
   async get(watcherId) {
     try {
-      const value = JSON.parse(await readFile8(this.path(watcherId), "utf8"));
-      return parseRecord(value);
+      const value = JSON.parse(await readFile9(this.path(watcherId), "utf8"));
+      return parseRecord2(value);
     } catch (error) {
       if (isCode(error, "ENOENT")) return void 0;
       throw error;
@@ -51838,21 +52179,21 @@ var FileResponseWatcherStore = class {
     const records = [];
     for (const name of names) {
       if (!name.endsWith(".json")) continue;
-      records.push(parseRecord(JSON.parse(await readFile8(join12(this.stateRoot, name), "utf8"))));
+      records.push(parseRecord2(JSON.parse(await readFile9(join13(this.stateRoot, name), "utf8"))));
     }
     return records;
   }
   async put(record) {
     const previous = storeQueues.get(this.stateRoot) ?? Promise.resolve();
     const queued = previous.catch(() => void 0).then(async () => {
-      await mkdir10(this.stateRoot, { recursive: true, mode: 448 });
-      const temporary = join12(this.stateRoot, `${randomUUID11()}.tmp`);
+      await mkdir11(this.stateRoot, { recursive: true, mode: 448 });
+      const temporary = join13(this.stateRoot, `${randomUUID12()}.tmp`);
       try {
         await writeFile7(temporary, `${JSON.stringify(record, null, 2)}
 `, { encoding: "utf8", mode: 384 });
         await rename6(temporary, this.path(record.watcherId));
       } finally {
-        await unlink6(temporary).catch(() => void 0);
+        await unlink7(temporary).catch(() => void 0);
       }
     });
     storeQueues.set(this.stateRoot, queued);
@@ -51863,13 +52204,13 @@ var FileResponseWatcherStore = class {
     }
   }
   path(watcherId) {
-    return join12(this.stateRoot, `${createHash13("sha256").update(watcherId, "utf8").digest("hex")}.json`);
+    return join13(this.stateRoot, `${createHash14("sha256").update(watcherId, "utf8").digest("hex")}.json`);
   }
 };
 function defaultResponseWatcherStateRoot() {
-  if (platform4() === "win32") return join12(process.env.LOCALAPPDATA?.trim() || join12(homedir4(), "AppData", "Local"), "codex-chatgpt-control", "response-watchers-v1");
-  if (platform4() === "darwin") return join12(homedir4(), "Library", "Application Support", "codex-chatgpt-control", "response-watchers-v1");
-  return join12(process.env.XDG_STATE_HOME?.trim() || join12(homedir4(), ".local", "state"), "codex-chatgpt-control", "response-watchers-v1");
+  if (platform4() === "win32") return join13(process.env.LOCALAPPDATA?.trim() || join13(homedir4(), "AppData", "Local"), "codex-chatgpt-control", "response-watchers-v1");
+  if (platform4() === "darwin") return join13(homedir4(), "Library", "Application Support", "codex-chatgpt-control", "response-watchers-v1");
+  return join13(process.env.XDG_STATE_HOME?.trim() || join13(homedir4(), ".local", "state"), "codex-chatgpt-control", "response-watchers-v1");
 }
 function sameRegistration(left, right) {
   return left.watcherId === right.watcherId && left.logicalConversationKey === right.logicalConversationKey && left.conversationId === right.conversationId && left.providerId === right.providerId && left.browserId === right.browserId && left.tabId === right.tabId && left.operationId === right.operationId && left.targetBindingDigest === right.targetBindingDigest && left.baselineAssistantTurnCount === right.baselineAssistantTurnCount && left.baselineSnapshotDigest === right.baselineSnapshotDigest && JSON.stringify(left.baselineAssistantTurnIds) === JSON.stringify(right.baselineAssistantTurnIds);
@@ -51887,7 +52228,7 @@ function validateRegistration(value) {
 function validateCompletion(value) {
   if (typeof value.assistantTurnId !== "string" || value.assistantTurnId.trim().length === 0 || !Number.isSafeInteger(value.assistantTurnCount) || value.assistantTurnCount < 1) throw new TypeError("Invalid response watcher completion.");
 }
-function parseRecord(value) {
+function parseRecord2(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Invalid response watcher record.");
   const record = value;
   const allowed = /* @__PURE__ */ new Set(["watcherId", "logicalConversationKey", "conversationId", "providerId", "browserId", "tabId", "operationId", "targetBindingDigest", "baselineAssistantTurnIds", "baselineAssistantTurnCount", "baselineSnapshotDigest", "state", "registeredAt", "updatedAt", "completion"]);
@@ -51912,183 +52253,10 @@ function isCode(error, code) {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
-// src/dev/autonomous-planner.ts
-import { createHash as createHash14 } from "node:crypto";
-var MAX_OBJECTIVE_CHARS = 65536;
-var MAX_REPOSITORY_URL_CHARS = 4096;
-var MAX_CONSTRAINTS = 128;
-var MAX_CONSTRAINT_CHARS = 8192;
-var MAX_TASKS = 256;
-var DevAutonomousPlannerError = class extends Error {
-  constructor(code, message) {
-    super(message);
-    this.code = code;
-    this.name = "DevAutonomousPlannerError";
-  }
-  code;
-};
-function validateDevAutonomousPlanningSpec(spec) {
-  boundedId(spec.workflowId, "workflowId");
-  boundedText(spec.projectKey, "projectKey", 512);
-  boundedText(spec.plannerConversationKey, "plannerConversationKey", 512);
-  boundedText(spec.objective, "objective", MAX_OBJECTIVE_CHARS);
-  if (spec.repositoryUrl !== void 0) {
-    boundedText(spec.repositoryUrl, "repositoryUrl", MAX_REPOSITORY_URL_CHARS);
-    let parsed;
-    try {
-      parsed = new URL(spec.repositoryUrl);
-    } catch {
-      throw invalidSpec();
-    }
-    if (parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") {
-      throw invalidSpec();
-    }
-  }
-  if (spec.defaultBranch !== void 0) boundedText(spec.defaultBranch, "defaultBranch", 512);
-  if (spec.constraints !== void 0) {
-    if (!Array.isArray(spec.constraints) || spec.constraints.length > MAX_CONSTRAINTS) throw invalidSpec();
-    for (const constraint of spec.constraints) boundedText(constraint, "constraint", MAX_CONSTRAINT_CHARS);
-  }
-  if (spec.maxTasks !== void 0) {
-    if (!Number.isSafeInteger(spec.maxTasks) || spec.maxTasks < 1 || spec.maxTasks > MAX_TASKS) throw invalidSpec();
-  }
-}
-function devAutonomousPlanningDigest(spec) {
-  validateDevAutonomousPlanningSpec(spec);
-  const canonical = JSON.stringify({
-    workflowId: spec.workflowId,
-    projectKey: spec.projectKey,
-    plannerConversationKey: spec.plannerConversationKey,
-    objective: spec.objective,
-    repositoryUrl: spec.repositoryUrl ?? null,
-    defaultBranch: spec.defaultBranch ?? null,
-    constraints: [...spec.constraints ?? []],
-    maxTasks: spec.maxTasks ?? null
-  });
-  return createHash14("sha256").update(canonical, "utf8").digest("hex");
-}
-function devAutonomousPlannerPrompt(spec) {
-  validateDevAutonomousPlanningSpec(spec);
-  const maxTasks = spec.maxTasks ?? 64;
-  const lines = [
-    "You are the master planner for an autonomous software-development workflow.",
-    "Do not implement code. Produce the task graph that separate worker conversations and local Codex implementation agents will execute.",
-    "Inspect the repository evidence available to you. If the repository URL is inaccessible, plan conservatively from the objective and explicitly supplied constraints rather than inventing repository facts.",
-    "Tasks must be independently reviewable, have precise acceptance criteria, and declare dependency task IDs. Mark parallel-safe work by leaving dependencies empty when it genuinely has none.",
-    `Return no more than ${maxTasks} tasks.`,
-    "Return ONLY one JSON object. Do not wrap it in Markdown or commentary.",
-    "The object must have exactly this shape:",
-    '{"workflowId":"...","projectKey":"...","plannerConversationKey":"...","tasks":[{"taskId":"TASK-001","title":"...","summary":"...","dependencies":[],"acceptanceCriteria":["..."],"branch":"optional-branch-name"}]}',
-    `workflowId: ${spec.workflowId}`,
-    `projectKey: ${spec.projectKey}`,
-    `plannerConversationKey: ${spec.plannerConversationKey}`,
-    `objective: ${spec.objective}`
-  ];
-  if (spec.repositoryUrl !== void 0) lines.push(`repositoryUrl: ${spec.repositoryUrl}`);
-  if (spec.defaultBranch !== void 0) lines.push(`defaultBranch: ${spec.defaultBranch}`);
-  if ((spec.constraints?.length ?? 0) > 0) {
-    lines.push("constraints:");
-    for (const constraint of spec.constraints) lines.push(`- ${constraint}`);
-  }
-  return lines.join("\n");
-}
-function parseDevAutonomousPlannerResponse(text, spec) {
-  validateDevAutonomousPlanningSpec(spec);
-  if (typeof text !== "string" || text.length === 0 || text.length > 2 * 1024 * 1024) {
-    throw invalidPlannerResponse();
-  }
-  let value;
-  try {
-    value = JSON.parse(text.trim());
-  } catch {
-    throw invalidPlannerResponse();
-  }
-  if (!isRecord15(value)) throw invalidPlannerResponse();
-  const allowedRoot = /* @__PURE__ */ new Set(["workflowId", "projectKey", "plannerConversationKey", "tasks"]);
-  if (Object.keys(value).some((key) => !allowedRoot.has(key))) throw invalidPlannerResponse();
-  if (value.workflowId !== spec.workflowId || value.projectKey !== spec.projectKey || value.plannerConversationKey !== spec.plannerConversationKey) {
-    throw new DevAutonomousPlannerError(
-      "planner_identity_mismatch",
-      "The master planner response changed the caller-owned workflow or Project identity."
-    );
-  }
-  if (!Array.isArray(value.tasks)) throw invalidPlannerResponse();
-  const limit = spec.maxTasks ?? 64;
-  if (value.tasks.length < 1 || value.tasks.length > limit || value.tasks.length > MAX_TASKS) {
-    throw new DevAutonomousPlannerError(
-      "planner_task_limit_exceeded",
-      "The master planner response exceeded the bounded task-plan size."
-    );
-  }
-  const tasks = value.tasks.map((task) => parseTask(task));
-  const plan = Object.freeze({
-    workflowId: spec.workflowId,
-    projectKey: spec.projectKey,
-    plannerConversationKey: spec.plannerConversationKey,
-    tasks: Object.freeze(tasks)
-  });
-  try {
-    createAutonomousWorkflow(plan);
-  } catch {
-    throw invalidPlannerResponse();
-  }
-  return plan;
-}
-function parseTask(value) {
-  if (!isRecord15(value)) throw invalidPlannerResponse();
-  const allowed = /* @__PURE__ */ new Set(["taskId", "title", "summary", "dependencies", "acceptanceCriteria", "branch"]);
-  if (Object.keys(value).some((key) => !allowed.has(key))) throw invalidPlannerResponse();
-  const taskId = boundedTaskString(value.taskId, "taskId", 128);
-  const title = boundedTaskString(value.title, "title", 1024);
-  const summary = boundedTaskString(value.summary, "summary", 16384);
-  if (!Array.isArray(value.acceptanceCriteria) || value.acceptanceCriteria.length < 1 || value.acceptanceCriteria.length > 128) {
-    throw invalidPlannerResponse();
-  }
-  const acceptanceCriteria = value.acceptanceCriteria.map((item) => boundedTaskString(item, "acceptanceCriteria", 8192));
-  const dependencies = value.dependencies === void 0 ? [] : Array.isArray(value.dependencies) ? value.dependencies.map((item) => boundedTaskString(item, "dependency", 128)) : (() => {
-    throw invalidPlannerResponse();
-  })();
-  if (dependencies.length > 128) throw invalidPlannerResponse();
-  const branch = value.branch === void 0 ? void 0 : boundedTaskString(value.branch, "branch", 512);
-  return Object.freeze({
-    taskId,
-    title,
-    summary,
-    dependencies: Object.freeze(dependencies),
-    acceptanceCriteria: Object.freeze(acceptanceCriteria),
-    ...branch === void 0 ? {} : { branch }
-  });
-}
-function boundedId(value, _label) {
-  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)) throw invalidSpec();
-  return value;
-}
-function boundedText(value, _label, max) {
-  if (typeof value !== "string" || value.length === 0 || value.length > max || value.trim() !== value || /[\u0000-\u001f\u007f]/u.test(value)) {
-    throw invalidSpec();
-  }
-  return value;
-}
-function boundedTaskString(value, _label, max) {
-  if (typeof value !== "string" || value.length === 0 || value.length > max || value.trim() !== value || /\u0000/u.test(value)) {
-    throw invalidPlannerResponse();
-  }
-  return value;
-}
-function isRecord15(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function invalidSpec() {
-  return new DevAutonomousPlannerError("invalid_planning_spec", "The autonomous master-planning specification is invalid.");
-}
-function invalidPlannerResponse() {
-  return new DevAutonomousPlannerError("planner_response_invalid", "The master planner response did not match the required workflow-plan schema.");
-}
-
 // src/dev/autonomous-turn-store.ts
-import { createHash as createHash15, randomUUID as randomUUID12 } from "node:crypto";
-import { mkdir as mkdir11, open as open6, readFile as readFile9, rename as rename7, unlink as unlink7 } from "node:fs/promises";
-import { join as join13, resolve as resolve10 } from "node:path";
+import { createHash as createHash15, randomUUID as randomUUID13 } from "node:crypto";
+import { mkdir as mkdir12, open as open7, readFile as readFile10, rename as rename7, unlink as unlink8 } from "node:fs/promises";
+import { join as join14, resolve as resolve11 } from "node:path";
 var DEV_AUTONOMOUS_TURN_SCHEMA_VERSION = "chatgpt.browser_control.dev_autonomous_turn.v1";
 var MAX_TURN_TEXT_BYTES = 4 * 1024 * 1024;
 var DIGEST_PATTERN21 = /^(?:sha256|hmac-sha256):[0-9a-f]{64}$/u;
@@ -52104,14 +52272,14 @@ var DevAutonomousTurnStoreError = class extends Error {
 var FileDevAutonomousTurnStore = class {
   stateRoot;
   constructor(options = {}) {
-    this.stateRoot = resolve10(options.stateRoot ?? join13(process.cwd(), ".chatgpt-dev", "state", "turns"));
+    this.stateRoot = resolve11(options.stateRoot ?? join14(process.cwd(), ".chatgpt-dev", "state", "turns"));
     this.now = options.now ?? (() => /* @__PURE__ */ new Date());
   }
   now;
   async get(watcherId) {
     validateId(watcherId, "watcherId");
     try {
-      return parseRecord2(JSON.parse(await readFile9(this.path(watcherId), "utf8")), watcherId);
+      return parseRecord3(JSON.parse(await readFile10(this.path(watcherId), "utf8")), watcherId);
     } catch (error) {
       if (nodeErrorCode(error) === "ENOENT") return void 0;
       if (error instanceof DevAutonomousTurnStoreError) throw error;
@@ -52206,15 +52374,15 @@ var FileDevAutonomousTurnStore = class {
     }
   }
   path(watcherId) {
-    return join13(this.stateRoot, `${createHash15("sha256").update(watcherId, "utf8").digest("hex")}.json`);
+    return join14(this.stateRoot, `${createHash15("sha256").update(watcherId, "utf8").digest("hex")}.json`);
   }
   async write(record) {
-    await mkdir11(this.stateRoot, { recursive: true, mode: 448 });
+    await mkdir12(this.stateRoot, { recursive: true, mode: 448 });
     const target = this.path(record.watcherId);
-    const temporary = join13(this.stateRoot, `${randomUUID12()}.tmp`);
+    const temporary = join14(this.stateRoot, `${randomUUID13()}.tmp`);
     let handle;
     try {
-      handle = await open6(temporary, "wx", 384);
+      handle = await open7(temporary, "wx", 384);
       await handle.writeFile(`${JSON.stringify(record, null, 2)}
 `, "utf8");
       await handle.sync();
@@ -52223,12 +52391,12 @@ var FileDevAutonomousTurnStore = class {
       await rename7(temporary, target);
     } catch {
       await handle?.close().catch(() => void 0);
-      await unlink7(temporary).catch(() => void 0);
+      await unlink8(temporary).catch(() => void 0);
       throw new DevAutonomousTurnStoreError("write_failed", "Autonomous turn state could not be committed safely.");
     }
   }
 };
-function parseRecord2(value, watcherId) {
+function parseRecord3(value, watcherId) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) invalid4();
   const record = value;
   const allowed = /* @__PURE__ */ new Set(["schemaVersion", "watcherId", "kind", "logicalConversationKey", "handle", "createdAt", "updatedAt", "response"]);
@@ -52292,16 +52460,16 @@ var PROJECT_ID_PATTERN = /^g-p-[A-Za-z0-9._:-]{1,256}$/u;
 var ChatGPTAutonomousPort = class {
   constructor(chatgpt, options = {}) {
     this.chatgpt = chatgpt;
-    const root = resolve11(options.stateRoot ?? join14(process.cwd(), ".chatgpt-dev", "state"));
+    const root = resolve12(options.stateRoot ?? join15(process.cwd(), ".chatgpt-dev", "state"));
     this.conversations = options.conversations ?? new ConversationManager(chatgpt, options.conversationOptions ?? {
-      stateRoot: join14(root, "conversations"),
-      affinityStateRoot: join14(root, "browser-affinity")
+      stateRoot: join15(root, "conversations"),
+      affinityStateRoot: join15(root, "browser-affinity")
     });
     this.watcherStore = options.watcherStore ?? new FileResponseWatcherStore({
-      stateRoot: join14(root, "response-watchers")
+      stateRoot: join15(root, "response-watchers")
     });
     this.watchers = options.watchers ?? new ResponseWatcherRegistry(this.watcherStore);
-    this.turns = options.turns ?? new FileDevAutonomousTurnStore({ stateRoot: join14(root, "turns") });
+    this.turns = options.turns ?? new FileDevAutonomousTurnStore({ stateRoot: join15(root, "turns") });
     this.provisioner = options.provisioner;
   }
   chatgpt;
@@ -52851,22 +53019,22 @@ function createChatGPT2(options = {}) {
     options.dev
   );
   const autonomousOptions = options.dev?.autonomous;
-  const autonomousRoot = resolve12(
-    autonomousOptions?.stateRoot ?? (options.dev?.stateRoot === void 0 ? join15(process.cwd(), ".chatgpt-dev", "state", "autonomous") : join15(options.dev.stateRoot, "autonomous"))
+  const autonomousRoot = resolve13(
+    autonomousOptions?.stateRoot ?? (options.dev?.stateRoot === void 0 ? join16(process.cwd(), ".chatgpt-dev", "state", "autonomous") : join16(options.dev.stateRoot, "autonomous"))
   );
   const chat = new ChatGPTAutonomousPort(base, {
     ...autonomousOptions?.chat ?? {},
-    stateRoot: join15(autonomousRoot, "chat")
+    stateRoot: join16(autonomousRoot, "chat")
   });
   const store = new FileDevAutonomousWorkflowStore({
-    stateRoot: join15(autonomousRoot, "workflows")
+    stateRoot: join16(autonomousRoot, "workflows")
   });
   if (autonomousOptions?.local !== void 0 && autonomousOptions.localCodex !== void 0) {
     throw new TypeError("Configure either dev.autonomous.local or dev.autonomous.localCodex, not both.");
   }
   const local = autonomousOptions?.local ?? (autonomousOptions?.localCodex === void 0 ? void 0 : createCodexCliAutonomousLocalPort({
     ...autonomousOptions.localCodex,
-    stateRoot: autonomousOptions.localCodex.stateRoot ?? join15(autonomousRoot, "local")
+    stateRoot: autonomousOptions.localCodex.stateRoot ?? join16(autonomousRoot, "local")
   }));
   const autonomous = createDevAutonomousApi({
     store,
@@ -54373,7 +54541,7 @@ var MAX_OPERATION_JSON_NODES = 1e4;
 var MAX_OPERATION_JSON_UTF8_BYTES = 1024 * 1024;
 
 // src/backend/session.ts
-var PROCESS_BACKEND_SESSION_ID = randomUUID13();
+var PROCESS_BACKEND_SESSION_ID = randomUUID14();
 var MAX_IDENTITY_FIELD_LENGTH = 512;
 var BackendSession = class {
   constructor(options = {}) {
@@ -55139,14 +55307,14 @@ async function writeDiagnostic(error, value) {
 `);
 }
 async function writeLine(output, line) {
-  await new Promise((resolve14, reject) => {
+  await new Promise((resolve15, reject) => {
     let settled = false;
     const finish = (error) => {
       if (settled) return;
       settled = true;
       output.off("error", onError);
       if (error !== void 0 && error !== null) reject(error);
-      else resolve14();
+      else resolve15();
     };
     const onError = (error) => finish(error);
     output.once("error", onError);
@@ -55229,9 +55397,9 @@ function validateServerOptions(options) {
 
 // src/backend/runtime-identity.ts
 import { constants as fsConstants5 } from "node:fs";
-import { lstat as lstat6, open as open7 } from "node:fs/promises";
+import { lstat as lstat7, open as open8 } from "node:fs/promises";
 import { createHash as createHash17 } from "node:crypto";
-import { dirname as dirname6, join as join16, resolve as resolve13 } from "node:path";
+import { dirname as dirname6, join as join17, resolve as resolve14 } from "node:path";
 import { fileURLToPath } from "node:url";
 var MAX_METADATA_BYTES = 1024 * 1024;
 var MAX_BACKEND_ARTIFACT_BYTES = 128 * 1024 * 1024;
@@ -55253,7 +55421,7 @@ function modulePath(moduleUrl) {
   try {
     const url = moduleUrl instanceof URL ? moduleUrl : new URL(moduleUrl);
     if (url.protocol !== "file:") throw new TypeError("Backend module URL must use file protocol.");
-    return resolve13(fileURLToPath(url));
+    return resolve14(fileURLToPath(url));
   } catch (error) {
     throw new TypeError(
       `Backend module URL is invalid: ${error instanceof Error ? error.message : "unknown URL error"}`
@@ -55265,9 +55433,9 @@ async function digestArtifact(path3) {
   return bytes === void 0 ? void 0 : `sha256:${createHash17("sha256").update(bytes).digest("hex")}`;
 }
 async function findPackageMetadata(start) {
-  let current = resolve13(start);
+  let current = resolve14(start);
   for (let depth = 0; depth < MAX_ANCESTORS; depth += 1) {
-    for (const candidate of [join16(current, "package.json"), join16(current, ".codex-plugin", "plugin.json")]) {
+    for (const candidate of [join17(current, "package.json"), join17(current, ".codex-plugin", "plugin.json")]) {
       const parsed = await readBoundedJson(candidate);
       if (parsed === void 0) continue;
       const packageName = identityField(parsed.name);
@@ -55298,14 +55466,14 @@ async function readBoundedJson(path3) {
 async function readStableRegularFile(path3, maxBytes) {
   let handle;
   try {
-    const before = await lstat6(path3);
+    const before = await lstat7(path3);
     if (!isBoundedRegularFile(before, maxBytes)) return void 0;
-    handle = await open7(path3, fsConstants5.O_RDONLY | (fsConstants5.O_NOFOLLOW ?? 0));
+    handle = await open8(path3, fsConstants5.O_RDONLY | (fsConstants5.O_NOFOLLOW ?? 0));
     const opened = await handle.stat();
     if (!isBoundedRegularFile(opened, maxBytes) || !sameFileIdentity2(before, opened)) return void 0;
     const bytes = await handle.readFile();
     const finalHandle = await handle.stat();
-    const finalPath = await lstat6(path3);
+    const finalPath = await lstat7(path3);
     if (!isBoundedRegularFile(finalHandle, maxBytes) || !isBoundedRegularFile(finalPath, maxBytes) || !sameFileIdentity2(opened, finalHandle) || !sameFileIdentity2(finalHandle, finalPath) || bytes.byteLength !== finalHandle.size) {
       return void 0;
     }

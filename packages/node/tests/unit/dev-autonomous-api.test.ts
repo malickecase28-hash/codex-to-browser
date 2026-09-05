@@ -153,6 +153,29 @@ describe("public autonomous SDK", () => {
     expect(planning.planWorkflow).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects planning-spec drift before a second master-planner turn", async () => {
+    const planning = planner();
+    const value = await api({ planner: planning, local: local() });
+    await value.bootstrap(planningSpec());
+
+    await expect(value.bootstrap({
+      ...planningSpec(),
+      objective: "A different objective must use a different workflow ID."
+    })).rejects.toMatchObject({ code: "planner_identity_mismatch" });
+    expect(planning.planWorkflow).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retroactively bind a planner objective to a manually-created workflow", async () => {
+    const planning = planner();
+    const value = await api({ planner: planning, local: local() });
+    await value.create(plan());
+
+    await expect(value.bootstrap(planningSpec())).rejects.toMatchObject({
+      blockerCode: "workflow_identity_mismatch"
+    });
+    expect(planning.planWorkflow).not.toHaveBeenCalled();
+  });
+
   it("fails closed when master planning was not configured", async () => {
     const value = await api({ local: local() });
 
