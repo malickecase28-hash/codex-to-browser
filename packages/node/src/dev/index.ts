@@ -11,5 +11,6 @@ export * from "./autonomous-api.js";
 export * from "./autonomous-planner.js";
 export * from "./autonomous-planning-store.js";
 export * from "./autonomous-local-action-store.js";
+export * from "./autonomous-local-identity.js";
 export * from "./codex-cli-local-port.js";
 export * from "./plugin-bridge.js";
