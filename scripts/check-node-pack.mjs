@@ -11,6 +11,8 @@ const REQUIRED_FILES = [
   "CHANGELOG.md",
   "dist/src/index.js",
   "dist/src/index.d.ts",
+  "dist/src/environment.js",
+  "dist/src/environment.d.ts",
   "dist/src/dev/autonomous-api.js",
   "dist/src/dev/autonomous-api.d.ts",
   "dist/src/dev/autonomous-chatgpt-port.js",
