@@ -10,6 +10,7 @@ const D2 = `sha256:${"2".repeat(64)}`;
 const D3 = `sha256:${"3".repeat(64)}`;
 const D4 = `sha256:${"4".repeat(64)}`;
 const SHA_TASK = "a".repeat(40);
+const SHA_INTEGRATION = "b".repeat(40);
 
 function acceptedWorkflow(): DevAutonomousWorkflow {
   return {
@@ -61,6 +62,23 @@ function acceptedWorkflow(): DevAutonomousWorkflow {
   };
 }
 
+function integrationImplementation() {
+  return {
+    implementerId: "integrator",
+    branch: "integration/workflow-snapshot-corruption",
+    candidateDigest: D1
+  } as const;
+}
+
+function integrationTester(status: "passed" | "failed" = "passed") {
+  return {
+    testerId: "integration-tester",
+    candidateDigest: D1,
+    status,
+    reportDigest: D2
+  } as const;
+}
+
 describe("persisted autonomous snapshot corruption", () => {
   it("rejects accepted snapshots that lose completed worker guidance", () => {
     const value: any = structuredClone(acceptedWorkflow());
@@ -84,5 +102,57 @@ describe("persisted autonomous snapshot corruption", () => {
       value,
       "workflow-snapshot-corruption"
     )).toThrow(/blockedFrom is invalid/);
+  });
+
+  it("rejects integration evidence before every task is accepted", () => {
+    const value: any = structuredClone(acceptedWorkflow());
+    value.tasks[0] = {
+      taskId: "task-a",
+      title: "Task A",
+      summary: "Exercise persisted snapshot invariants.",
+      dependencies: [],
+      acceptanceCriteria: ["The persisted evidence chain remains exact."],
+      phase: "ready",
+      attempt: 1
+    };
+    value.status = "running";
+    value.integration = { implementation: integrationImplementation() };
+
+    expect(() => parseAutonomousWorkflowSnapshot(
+      value,
+      "workflow-snapshot-corruption"
+    )).toThrow(/integration evidence before every task is accepted/);
+  });
+
+  it("rejects passing tester evidence while integration is still marked ready", () => {
+    const value: any = structuredClone(acceptedWorkflow());
+    value.integration = {
+      implementation: integrationImplementation(),
+      tester: integrationTester("passed")
+    };
+
+    expect(() => parseAutonomousWorkflowSnapshot(
+      value,
+      "workflow-snapshot-corruption"
+    )).toThrow(/integration-ready state/);
+  });
+
+  it("rejects later-phase evidence while integration is still testing", () => {
+    const value: any = structuredClone(acceptedWorkflow());
+    value.status = "integration_testing";
+    value.integration = {
+      implementation: integrationImplementation(),
+      tester: integrationTester("passed"),
+      push: {
+        branch: "integration/workflow-snapshot-corruption",
+        commitSha: SHA_INTEGRATION,
+        candidateDigest: D1
+      }
+    };
+
+    expect(() => parseAutonomousWorkflowSnapshot(
+      value,
+      "workflow-snapshot-corruption"
+    )).toThrow(/integration-testing state contains later-phase evidence/);
   });
 });
