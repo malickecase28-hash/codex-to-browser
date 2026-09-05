@@ -325,7 +325,8 @@ export class DevAutonomousEngine {
         await this.store.apply(workflow.workflowId, {
           type: "task_blocked",
           taskId: task.taskId,
-          blockerCode: safeBlockerCode(error.blockerCode)
+          blockerCode: safeBlockerCode(error.blockerCode),
+          recoverable: error.recoverable
         });
         return { taskId: task.taskId, progressed: true, pending: false };
       }
@@ -415,7 +416,8 @@ export class DevAutonomousEngine {
       if (error instanceof DevAutonomousPortError) {
         await this.store.apply(workflow.workflowId, {
           type: "integration_blocked",
-          blockerCode: safeBlockerCode(error.blockerCode)
+          blockerCode: safeBlockerCode(error.blockerCode),
+          recoverable: error.recoverable
         });
         return true;
       }
