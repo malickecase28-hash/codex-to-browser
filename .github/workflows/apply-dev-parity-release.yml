@@ -35,12 +35,14 @@ jobs:
           npm --prefix packages/node ci
           python -m pip install -e "packages/python[dev]"
 
-      - name: Apply bounded dev parity and destructive-confirmation patch
-        run: python .github/scripts/apply_dev_parity_release.py
+      - name: Apply bounded dev parity, safety, and Codex local-port patches
+        run: |
+          python .github/scripts/apply_dev_parity_release.py
+          python .github/scripts/apply_codex_local_port_wiring.py
 
-      - name: Run focused development safety and dispatch tests
+      - name: Run focused development safety, dispatch, and local-executor tests
         working-directory: packages/node
-        run: npx vitest run tests/unit/dev-backend-dispatch.test.ts tests/unit/dev-orchestrator.test.ts
+        run: npx vitest run tests/unit/dev-backend-dispatch.test.ts tests/unit/dev-orchestrator.test.ts tests/unit/dev-codex-cli-local-port.test.ts
 
       - name: Build and run complete Node suite
         working-directory: packages/node
@@ -78,7 +80,7 @@ jobs:
           npm run plugin:check
           git diff --check
 
-      - name: Commit verified parity, safety, generated contracts, and bundles
+      - name: Commit verified parity, safety, local executor, generated contracts, and bundles
         shell: bash
         run: |
           set -euo pipefail
@@ -89,5 +91,5 @@ jobs:
             echo "No generated/source changes to commit"
             exit 0
           fi
-          git commit -m "feat: complete dev backend and Python parity"
+          git commit -m "feat: complete autonomous dev parity and local execution"
           git push origin HEAD:chatgpt-dev-orchestrator
