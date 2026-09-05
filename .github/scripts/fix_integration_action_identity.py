@@ -12,8 +12,8 @@ def replace_once(path: str, old: str, new: str) -> None:
 
 # Workflow revision is bookkeeping and changes when a blocker is persisted or
 # resumed. It must not create a new physical integration action. A genuinely
-# new planner-directed integration attempt is instead keyed by the exact prior
-# reviewed SHA/digest plus the accepted source SHAs and prompt digest.
+# new integration attempt is instead keyed by semantic revision evidence:
+# exact prior planner review identity or exact failed integration-test evidence.
 replace_once(
     "packages/node/src/dev/codex-cli-local-port.ts",
     '''    const inputDigest = localInputDigest({
@@ -23,12 +23,19 @@ replace_once(
       acceptedShas,
       promptDigest: digestText(prompt)
     });''',
-    '''    const inputDigest = localInputDigest({
+    '''    const failedTester = input.workflow.integration.tester?.status === "failed"
+      ? input.workflow.integration.tester
+      : undefined;
+    const inputDigest = localInputDigest({
       workflowId: input.workflow.workflowId,
       branch,
       acceptedShas,
       plannerReviewedSha: input.workflow.integration.plannerReview?.reviewedSha ?? null,
       plannerReviewDigest: input.workflow.integration.plannerReview?.reviewDigest ?? null,
+      failedIntegrationCandidateDigest: failedTester === undefined
+        ? null
+        : input.workflow.integration.implementation?.candidateDigest ?? null,
+      failedIntegrationTestReportDigest: failedTester?.reportDigest ?? null,
       promptDigest: digestText(prompt)
     });''',
 )
@@ -111,6 +118,67 @@ replace_once(
     expect(calls.codex).toBe(0);
     expect(evidence.branch).toBe("codex/workflow-recovery-integration");
     expect(evidence.candidateDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it("creates a new integration action only after semantic failed-test evidence", async () => {
+    const fixture = await repositoryFixture();
+    const base = await git(fixture.repository, "rev-parse", "HEAD");
+    await writeFile(join(fixture.repository, "accepted.txt"), "accepted\\n", "utf8");
+    await git(fixture.repository, "add", "accepted.txt");
+    await git(fixture.repository, "commit", "-m", "accepted source");
+    const sourceSha = await git(fixture.repository, "rev-parse", "HEAD");
+    await git(fixture.repository, "branch", "accepted-source", sourceSha);
+    await git(fixture.repository, "reset", "--hard", base);
+
+    const digest = `sha256:${"9".repeat(64)}`;
+    const accepted: DevTaskRecord = {
+      ...task(),
+      phase: "accepted",
+      implementation: {
+        implementerId: "implementer-revision",
+        branch: "accepted-source",
+        candidateDigest: digest
+      },
+      tester: {
+        testerId: "tester-revision",
+        candidateDigest: digest,
+        status: "passed",
+        reportDigest: `sha256:${"a".repeat(64)}`
+      },
+      push: {
+        branch: "accepted-source",
+        commitSha: sourceSha,
+        candidateDigest: digest
+      }
+    };
+    const calls = { codex: 0, pushes: 0 };
+    const port = new CodexCliAutonomousLocalPort({
+      repositoryRoot: fixture.repository,
+      stateRoot: fixture.stateRoot,
+      codexExecutable: "fake-codex",
+      processRunner: successfulCodexRunner(calls)
+    });
+
+    const firstWorkflow = workflow(accepted, 4);
+    const first = await port.integrate({ workflow: firstWorkflow, acceptedTasks: [accepted] });
+    expect(calls.codex).toBe(1);
+
+    const failedWorkflow: DevAutonomousWorkflow = {
+      ...workflow(accepted, 8),
+      status: "integration_ready",
+      integration: {
+        implementation: first,
+        tester: {
+          testerId: "integration-tester-revision",
+          candidateDigest: first.candidateDigest,
+          status: "failed",
+          reportDigest: `sha256:${"b".repeat(64)}`
+        }
+      }
+    };
+    await port.integrate({ workflow: failedWorkflow, acceptedTasks: [accepted] });
+
+    expect(calls.codex).toBe(2);
   });
 
   it("serializes concurrent implementers on the same owned task worktree", async () => {''',
