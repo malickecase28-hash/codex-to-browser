@@ -54,12 +54,13 @@ type ExecutionIdentityRecord = ExecutionIdentityBody & Readonly<{
 }>;
 
 /**
- * Bind a packaged Codex local executor to the repository identity supplied to
- * autonomous bootstrap. The binding is durable and is re-verified before
- * every later local action, including after process restart.
+ * Bind the packaged Codex local executor to the exact repository identity
+ * supplied to autonomous bootstrap. The binding is durable and is re-verified
+ * before every later local action, including after process restart.
  *
- * Advanced create(plan) users intentionally remain caller-managed: when no
- * bootstrap identity exists for a workflow, calls delegate unchanged.
+ * An unbound workflow is never allowed to reach this packaged local executor.
+ * Advanced create(plan) callers that intentionally own execution identity must
+ * inject a custom local port instead of relying on localCodex defaults.
  */
 export function bindCodexLocalPlanningIdentity(
   local: DevAutonomousLocalPort,
@@ -88,7 +89,13 @@ export function bindCodexLocalPlanningIdentity(
 
   const assertWorkflow = async (workflow: DevAutonomousWorkflow): Promise<void> => {
     const stored = await readIdentity(stateRoot, workflow.workflowId);
-    if (stored === undefined) return;
+    if (stored === undefined) {
+      throw new DevAutonomousPortError(
+        "execution_identity_unbound",
+        true,
+        "The packaged Codex executor has no durable bootstrap identity for this workflow. Call bootstrap() again with the original planning specification before resuming local work."
+      );
+    }
     const observed = await observeIdentity({
       workflowId: workflow.workflowId,
       planningDigest: stored.planningDigest,
