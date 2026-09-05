@@ -35,15 +35,28 @@ jobs:
           npm --prefix packages/node ci
           python -m pip install -e "packages/python[dev]"
 
-      - name: Apply bounded dev parity, safety, and Codex local-port patches
+      - name: Apply verified autonomous source migrations
         run: |
           python .github/scripts/apply_dev_parity_release.py
           python .github/scripts/apply_codex_local_port_wiring.py
           python .github/scripts/fix_local_port_types.py
+          python .github/scripts/apply_planner_bootstrap.py
+          python .github/scripts/fix_planner_async_dev.py
 
-      - name: Run focused development safety, dispatch, and local-executor tests
+      - name: Run focused autonomous safety and planner tests
         working-directory: packages/node
-        run: npx vitest run tests/unit/dev-backend-dispatch.test.ts tests/unit/dev-orchestrator.test.ts tests/unit/dev-codex-cli-local-port.test.ts
+        run: |
+          npx vitest run \
+            tests/unit/dev-backend-dispatch.test.ts \
+            tests/unit/dev-orchestrator.test.ts \
+            tests/unit/dev-codex-cli-local-port.test.ts \
+            tests/unit/dev-autonomous-planner.test.ts \
+            tests/unit/dev-autonomous-api.test.ts \
+            tests/unit/dev-autonomous-chatgpt-port.test.ts
+
+      - name: Run focused Python dev parity tests
+        working-directory: packages/python
+        run: python -m unittest tests.test_dev_client
 
       - name: Build and run complete Node suite
         working-directory: packages/node
@@ -81,7 +94,7 @@ jobs:
           npm run plugin:check
           git diff --check
 
-      - name: Commit verified parity, safety, local executor, generated contracts, and bundles
+      - name: Commit verified permanent source, contracts, docs, and bundles
         shell: bash
         run: |
           set -euo pipefail
@@ -92,5 +105,5 @@ jobs:
             echo "No generated/source changes to commit"
             exit 0
           fi
-          git commit -m "feat: complete autonomous dev parity and local execution"
+          git commit -m "feat: complete autonomous planner and local execution parity"
           git push origin HEAD:chatgpt-dev-orchestrator
