@@ -209,6 +209,12 @@ class DevAutonomousClient:
             label="autonomous.resumeTask",
         )
 
+    def resume_integration(self, workflow_id: str) -> dict[str, Any]:
+        return _record(
+            self._namespace.raw("resumeIntegration", workflowId=workflow_id),
+            label="autonomous.resumeIntegration",
+        )
+
 
 class DevClient:
     def __init__(self, backend: Any) -> None:
@@ -397,6 +403,12 @@ class AsyncDevAutonomousClient:
         return _record(
             await self._namespace.raw("resumeTask", workflowId=workflow_id, taskId=task_id),
             label="autonomous.resumeTask",
+        )
+
+    async def resume_integration(self, workflow_id: str) -> dict[str, Any]:
+        return _record(
+            await self._namespace.raw("resumeIntegration", workflowId=workflow_id),
+            label="autonomous.resumeIntegration",
         )
 
 
