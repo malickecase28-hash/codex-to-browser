@@ -39,6 +39,7 @@ jobs:
         run: |
           python .github/scripts/apply_integration_blocker_recovery.py
           python .github/scripts/fix_integration_blocker_test_import.py
+          python .github/scripts/fix_integration_action_identity.py
 
       - name: Build once and regenerate checked-in contract fixtures
         working-directory: packages/node
@@ -57,6 +58,7 @@ jobs:
             tests/unit/dev-autonomous-chatgpt-port.test.ts \
             tests/unit/dev-autonomous-local-action-store.test.ts \
             tests/unit/dev-codex-cli-local-recovery.test.ts \
+            tests/unit/dev-codex-cli-local-port.test.ts \
             tests/unit/dev-autonomous-store.test.ts \
             tests/unit/surface-drift.test.ts \
             tests/unit/parity-suite.test.ts
