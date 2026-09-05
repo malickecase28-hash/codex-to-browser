@@ -3,7 +3,6 @@ import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { nodeErrorCode } from "../errors.js";
 import {
-  DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION,
   applyAutonomousWorkflowEvent,
   createAutonomousWorkflow,
   readyAutonomousTasks,
@@ -12,6 +11,7 @@ import {
   type DevTaskRecord,
   type DevWorkflowPlan
 } from "./autonomous-workflow.js";
+import { parseAutonomousWorkflowSnapshot } from "./autonomous-snapshot.js";
 
 export const DEV_AUTONOMOUS_STORE_SCHEMA_VERSION = "chatgpt.browser_control.dev_autonomous_store.v1" as const;
 
@@ -232,25 +232,13 @@ function parseDocument(value: unknown, workflowId: string): WorkflowDocument {
     throw new DevAutonomousStoreError("state_corrupt", "Autonomous workflow state is not an object.");
   }
   const record = value as Record<string, unknown>;
-  if (
-    record.schemaVersion !== DEV_AUTONOMOUS_STORE_SCHEMA_VERSION
-    || record.workflow === null
-    || typeof record.workflow !== "object"
-    || Array.isArray(record.workflow)
-  ) {
+  if (record.schemaVersion !== DEV_AUTONOMOUS_STORE_SCHEMA_VERSION) {
     throw new DevAutonomousStoreError("state_corrupt", "Autonomous workflow state has an unsupported schema.");
   }
-  const workflow = record.workflow as DevAutonomousWorkflow;
-  if (
-    workflow.schemaVersion !== DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION
-    || workflow.workflowId !== workflowId
-    || !Number.isSafeInteger(workflow.revision)
-    || workflow.revision < 0
-    || !Array.isArray(workflow.tasks)
-  ) {
-    throw new DevAutonomousStoreError("state_corrupt", "Autonomous workflow identity or revision is invalid.");
-  }
-  return { schemaVersion: DEV_AUTONOMOUS_STORE_SCHEMA_VERSION, workflow };
+  return {
+    schemaVersion: DEV_AUTONOMOUS_STORE_SCHEMA_VERSION,
+    workflow: parseAutonomousWorkflowSnapshot(record.workflow, workflowId)
+  };
 }
 
 function parseLockRecord(raw: string): LockRecord {
