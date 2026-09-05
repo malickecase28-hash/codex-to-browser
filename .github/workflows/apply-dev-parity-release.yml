@@ -1,4 +1,5 @@
 name: apply-dev-parity-release
+# One-shot verifier for semantic integration revision identity.
 
 on:
   push:
