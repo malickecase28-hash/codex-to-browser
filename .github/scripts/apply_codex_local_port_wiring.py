@@ -1,13 +1,17 @@
 from pathlib import Path
 
 
-def replace_once(path: str, old: str, new: str) -> None:
+def replace_exact(path: str, old: str, new: str, expected: int = 1) -> None:
     file = Path(path)
     text = file.read_text(encoding="utf-8")
     count = text.count(old)
-    if count != 1:
-        raise SystemExit(f"expected one patch site in {path}, found {count}")
-    file.write_text(text.replace(old, new, 1), encoding="utf-8")
+    if count != expected:
+        raise SystemExit(f"expected {expected} patch site(s) in {path}, found {count}")
+    file.write_text(text.replace(old, new), encoding="utf-8")
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    replace_exact(path, old, new, 1)
 
 
 # First-run worktree creation must not invoke Git with a non-existent cwd.
@@ -35,16 +39,11 @@ replace_once(
     '''      branch,\n      `integration:${input.workflow.workflowId}:${input.workflow.revision}`\n    );\n    for (const task of input.acceptedTasks) {''',
     '''      branch,\n      `integration:${input.workflow.workflowId}:${branch}`\n    );\n    for (const task of input.acceptedTasks) {''',
 )
-replace_once(
+replace_exact(
     "packages/node/src/dev/codex-cli-local-port.ts",
     '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.workflow.revision}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
     '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.implementation.branch}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
-)
-# The same text occurs in pushIntegration after the first replacement, so patch the remaining occurrence.
-replace_once(
-    "packages/node/src/dev/codex-cli-local-port.ts",
-    '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.workflow.revision}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
-    '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.implementation.branch}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
+    2,
 )
 
 # Make the concrete local port part of the public dev SDK.
