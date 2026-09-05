@@ -1,0 +1,93 @@
+name: apply-dev-parity-release
+
+on:
+  push:
+    branches:
+      - chatgpt-dev-orchestrator
+    paths:
+      - ".github/workflows/apply-dev-parity-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chatgpt-dev-orchestrator
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/node/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Node and Python development dependencies
+        run: |
+          npm --prefix packages/node ci
+          python -m pip install -e "packages/python[dev]"
+
+      - name: Apply bounded dev parity and destructive-confirmation patch
+        run: python .github/scripts/apply_dev_parity_release.py
+
+      - name: Run focused development safety and dispatch tests
+        working-directory: packages/node
+        run: npx vitest run tests/unit/dev-backend-dispatch.test.ts tests/unit/dev-orchestrator.test.ts
+
+      - name: Build and run complete Node suite
+        working-directory: packages/node
+        run: |
+          npm run build
+          npm test
+          npm run bundle
+          npm run bundle:backend
+          npm run bundle:live-smoke
+          npm run bundle:release-canary
+
+      - name: Regenerate and verify Node contracts and parity
+        working-directory: packages/node
+        run: |
+          npm run contract:generate
+          npm run contract:validate
+          npm run docs:drift
+          npm run parity:fixtures
+          npm run parity:suite
+          npm run test:backend-conformance
+          npm audit
+
+      - name: Run complete Python parity suite
+        working-directory: packages/python
+        run: |
+          python -m unittest discover -s tests
+          python -m compileall -q src
+          python -m compileall -q examples
+          python -m pyright src tests
+
+      - name: Rebuild and verify checked-in plugin runtime
+        run: |
+          npm run plugin:build
+          npm run plugin:validate
+          npm run plugin:check
+          git diff --check
+
+      - name: Commit verified parity, safety, generated contracts, and bundles
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No generated/source changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: complete dev backend and Python parity"
+          git push origin HEAD:chatgpt-dev-orchestrator
