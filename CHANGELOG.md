@@ -6,10 +6,27 @@
   Project, planner, worker, and repository workflow state, exact conversation
   continuity, independent tester evidence, exact-SHA review gates, and
   fail-closed recovery across uncertain browser operations.
+- Adds immutable master-planning identity plus Project-scoped planner/worker
+  first-send creation, same-worker revision loops, exact durable worker/planner
+  review guidance rehydration, and bounded DAG-driven task parallelism.
+- Adds the packaged Codex CLI local executor with owned Git worktrees,
+  independent implementation/test sessions, prepared/started/completed local
+  action receipts, process-safe scope locks, exact commit/remote reconciliation,
+  and explicit opt-in before any Git network push.
+- Keys physical integration retries from semantic evidence rather than workflow
+  counters: bookkeeping block/resume preserves one action identity, while an
+  exact failed tester report or planner-rejected SHA/digest authorizes a new
+  revision attempt. Digest-verified tester summaries are fed back into task and
+  integration revision prompts instead of blind retries.
+- Adds explicit durable `resumeTask` and `resumeIntegration` recovery across the
+  Node SDK, backend dispatch, and sync/async Python parity surfaces. Recoverable
+  task or integration port failures remain blocked until the caller resumes the
+  exact failed phase; the run loop never silently retries a blocked mutation.
 - Adds first-class GitHub cloud development with Codespaces and an optional
   Rust build/test gate, while keeping the Node runtime authoritative and Python
   as the parity protocol client.
-- Adds compiled GitHub npm distribution, an installed `chatgpt-thread` CLI,
+- Adds compiled GitHub npm distribution with exact `SOURCE_COMMIT` provenance
+  verification after a clean GitHub install, an installed `chatgpt-thread` CLI,
   Project-scoped first-send parity, hardened cross-platform stream cancellation,
   audited dependency updates, and release metadata for this repository fork.
 
@@ -67,7 +84,7 @@
 - Adds surface-aware `configuration.inspect` and strict `configuration.apply` for Chat intelligence/model controls and Work model/effort/speed axes.
 - Adds submit-once Work lifecycle commands for start, status, wait, steering, response capture, and artifact access.
 - Adds sanitized legacy Chat, simplified Chat, Work basic, Work advanced, and sidebar false-positive profile fixtures to the shared Node/Python conformance suite.
-- Adds sync and async Python parity, recursive snake-case wire conversion, runner/Responses support, and Work artifact aliases.
+- Adds sync and async Python parity, recursive snake-case wire conversion, Runner/Responses support, and Work artifact aliases.
 - Rebrands the plugin promise to ChatGPT Surface Control and adds `chatgpt-delegate`; package coordinates, legacy mode APIs, and `chatgpt-pro-consult` remain compatible.
 
 ## 0.3.0-alpha.1
