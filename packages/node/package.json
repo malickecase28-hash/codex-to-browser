@@ -1,17 +1,17 @@
 {
   "name": "codex-chatgpt-control",
-  "version": "0.5.1-alpha.3",
+  "version": "0.6.0-alpha.1",
   "description": "Unofficial SDK for controlling visible ChatGPT Chat and Work sessions.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/adamallcock/codex-chatgpt-control.git",
+    "url": "git+https://github.com/malickecase28-hash/codex-to-browser.git",
     "directory": "packages/node"
   },
-  "homepage": "https://github.com/adamallcock/codex-chatgpt-control#readme",
+  "homepage": "https://github.com/malickecase28-hash/codex-to-browser#readme",
   "bugs": {
-    "url": "https://github.com/adamallcock/codex-chatgpt-control/issues"
+    "url": "https://github.com/malickecase28-hash/codex-to-browser/issues"
   },
   "keywords": [
     "codex",
@@ -61,7 +61,8 @@
   },
   "types": "./dist/src/index.d.ts",
   "bin": {
-    "codex-chatgpt-control-backend": "dist/src/scripts/backend-server.js"
+    "codex-chatgpt-control-backend": "dist/src/scripts/backend-server.js",
+    "chatgpt-thread": "dist/src/scripts/chatgpt-thread-bin.js"
   },
   "files": [
     "dist/src/**/*.js",
@@ -74,6 +75,7 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
+    "SOURCE_COMMIT",
     "package.json"
   ],
   "engines": {

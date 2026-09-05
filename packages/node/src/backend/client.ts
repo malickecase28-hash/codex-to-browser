@@ -1735,6 +1735,17 @@ function streamFromBackendEvents<TOutput>(
   let returnRequested = false;
   let sourceReturned = false;
   const sourceIterator = events[Symbol.asyncIterator]();
+  let resolveCompleted!: (result: ChatGPTRunResult<TOutput>) => void;
+  let rejectCompleted!: (error: unknown) => void;
+  const completed = new Promise<ChatGPTRunResult<TOutput>>((resolve, reject) => {
+    resolveCompleted = resolve;
+    rejectCompleted = reject;
+  });
+  const cancellationError = new BackendClientError(
+    "backend_request_cancelled",
+    "Backend stream iteration was cancelled locally.",
+    true
+  );
   const returnSource = (): void => {
     if (sourceReturned) return;
     sourceReturned = true;
@@ -1746,23 +1757,30 @@ function streamFromBackendEvents<TOutput>(
       // second observable stream failure.
     }
   };
-  const cancel = (): void => {
+  const cancelTransport = (): void => {
     if (returnRequested) return;
     returnRequested = true;
-    onReturn?.();
-    returnSource();
+    try {
+      onReturn?.();
+    } finally {
+      returnSource();
+    }
+  };
+  const cancelByConsumer = (): void => {
+    if (returnRequested) return;
+    returnRequested = true;
+    rejectCompleted(cancellationError);
+    try {
+      onReturn?.();
+    } finally {
+      returnSource();
+    }
   };
   const queue = new AsyncQueue<ChatGPTRunStreamEvent>(
     DEFAULT_BACKEND_STREAM_QUEUE_LIMIT,
-    cancel,
+    cancelByConsumer,
     DEFAULT_BACKEND_STREAM_QUEUE_BYTES_LIMIT
   );
-  let resolveCompleted!: (result: ChatGPTRunResult<TOutput>) => void;
-  let rejectCompleted!: (error: unknown) => void;
-  const completed = new Promise<ChatGPTRunResult<TOutput>>((resolve, reject) => {
-    resolveCompleted = resolve;
-    rejectCompleted = reject;
-  });
 
   void (async () => {
     try {
@@ -1776,16 +1794,19 @@ function streamFromBackendEvents<TOutput>(
             name: event.name as ChatGPTRunStreamEvent["name"],
             item: event.item as ChatGPTRunStreamEvent["item"]
           })) {
-            cancel();
+            cancelTransport();
             throw new BackendClientError(
               "backend_stream_overflow",
               "High-level backend stream buffering exceeded its bounded event queue.",
               true
             );
           }
+          await new Promise<void>(resolve => setImmediate(resolve));
+          if (returnRequested) throw cancellationError;
           continue;
         }
         if (event.type === "completed") {
+          if (returnRequested) throw cancellationError;
           resolveCompleted(event.result as ChatGPTRunResult<TOutput>);
           queue.finish();
           returnSource();

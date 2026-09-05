@@ -375,450 +375,1291 @@
   "backendCommands": {
     "backend.version": {
       "surface": "backend-protocol",
-      "fixtures": ["backend-version.json"],
-      "nodeTests": ["tests/unit/backend-dispatch.test.ts", "tests/unit/backend-protocol.test.ts"],
-      "pythonTests": ["tests/test_cross_language_conformance.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "backend-version.json"
+      ],
+      "nodeTests": [
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-protocol.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_cross_language_conformance.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "backend.health": {
       "surface": "backend-protocol",
-      "fixtures": ["backend-capabilities.json"],
-      "nodeTests": ["tests/unit/backend-dispatch.test.ts"],
-      "pythonTests": ["tests/test_live_backend_smoke.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "backend-capabilities.json"
+      ],
+      "nodeTests": [
+        "tests/unit/backend-dispatch.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_live_backend_smoke.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "backend.capabilities": {
       "surface": "backend-protocol",
-      "fixtures": ["backend-capabilities.json"],
-      "nodeTests": ["tests/unit/backend-dispatch.test.ts", "tests/unit/backend-client.test.ts"],
-      "pythonTests": ["tests/test_cross_language_conformance.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "backend-capabilities.json"
+      ],
+      "nodeTests": [
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_cross_language_conformance.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "backend.hello": {
       "surface": "backend-protocol",
-      "nodeTests": ["tests/unit/backend-dispatch.test.ts", "tests/unit/backend-protocol.test.ts", "tests/unit/backend-client.test.ts"],
-      "pythonTests": ["tests/test_cross_language_conformance.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "nodeTests": [
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-protocol.test.ts",
+        "tests/unit/backend-client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_cross_language_conformance.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "runner.run": {
       "surface": "runner-results-streams",
-      "fixtures": ["run-basic-success.json", "runner-budget-blocker.json", "run-browser-bridge-blocker.json"],
-      "nodeTests": ["tests/unit/runner.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_runner.py", "tests/test_runner_api.py", "tests/test_backend_client.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/agents-runner.md", "references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "run-basic-success.json",
+        "runner-budget-blocker.json",
+        "run-browser-bridge-blocker.json"
+      ],
+      "nodeTests": [
+        "tests/unit/runner.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_runner.py",
+        "tests/test_runner_api.py",
+        "tests/test_backend_client.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/agents-runner.md",
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "runner.plan": {
       "surface": "runner-agent-plans",
-      "fixtures": ["backend-runner-plan-request.json", "runner-visible-prefix-plan.json", "runner-input-items-and-files-plan.json"],
-      "nodeTests": ["tests/unit/runner.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_runner.py", "tests/test_async_client.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/agents-runner.md", "references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "backend-runner-plan-request.json",
+        "runner-visible-prefix-plan.json",
+        "runner-input-items-and-files-plan.json"
+      ],
+      "nodeTests": [
+        "tests/unit/runner.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_runner.py",
+        "tests/test_async_client.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/agents-runner.md",
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "runner.stream": {
       "surface": "runner-results-streams",
-      "fixtures": ["stream-blocked.ndjson", "stream-submitted-completed.ndjson"],
-      "nodeTests": ["tests/unit/stream.test.ts", "tests/unit/backend-stdio.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_runner_streamed.py", "tests/test_streaming.py", "tests/test_async_client.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/streaming.md", "references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "stream-blocked.ndjson",
+        "stream-submitted-completed.ndjson"
+      ],
+      "nodeTests": [
+        "tests/unit/stream.test.ts",
+        "tests/unit/backend-stdio.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_runner_streamed.py",
+        "tests/test_streaming.py",
+        "tests/test_async_client.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/streaming.md",
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "responses.create": {
       "surface": "responses-adapter",
-      "fixtures": ["responses-basic-success.json", "responses-hidden-instructions-unsupported.json", "responses-unknown-field-unsupported.json"],
-      "nodeTests": ["tests/unit/responses-adapter.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_responses.py", "tests/test_async_client.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/responses-adapter.md", "references/python-parity.md"]
+      "fixtures": [
+        "responses-basic-success.json",
+        "responses-hidden-instructions-unsupported.json",
+        "responses-unknown-field-unsupported.json"
+      ],
+      "nodeTests": [
+        "tests/unit/responses-adapter.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_responses.py",
+        "tests/test_async_client.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/responses-adapter.md",
+        "references/python-parity.md"
+      ]
     },
     "ask": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["workflow-ask-success.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/sequence.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_workflows.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "workflow-ask-success.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/sequence.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "askInThread": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_workflows.py", "tests/test_thread_entrypoint.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py",
+        "tests/test_thread_entrypoint.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "askWithFiles": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json", "run-file-attach-success.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/files.test.ts"],
-      "pythonTests": ["tests/test_workflows.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "run-file-attach-success.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/files.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "askAndDownload": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/files.test.ts"],
-      "pythonTests": ["tests/test_workflows.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/files.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "runMessages": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json", "named-plan-two-turn.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_workflows.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "named-plan-two-turn.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "openThread": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_workflows.py", "tests/test_thread_entrypoint.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py",
+        "tests/test_thread_entrypoint.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "../../README.md"
+      ]
     },
     "readLatest": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/messages.test.ts"],
-      "pythonTests": ["tests/test_workflows.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/messages.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "copyLatest": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/messages.test.ts"],
-      "pythonTests": ["tests/test_workflows.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/messages.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "downloadLatest": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/files.test.ts"],
-      "pythonTests": ["tests/test_workflows.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/files.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "../../README.md"
+      ]
     },
     "runPlan": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["named-plan-two-turn.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_workflows.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "named-plan-two-turn.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "doctor": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["doctor-bridge-upload.json", "doctor-scenario-preflight.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_workflows.py", "tests/test_cross_language_conformance.py", "tests/test_models_complete.py"],
-      "docs": ["references/troubleshooting.md", "references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "doctor-bridge-upload.json",
+        "doctor-scenario-preflight.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py",
+        "tests/test_cross_language_conformance.py",
+        "tests/test_models_complete.py"
+      ],
+      "docs": [
+        "references/troubleshooting.md",
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "createReport": {
       "surface": "reports-redaction",
-      "fixtures": ["command-descriptors.json", "reports-create-redacted.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/safety.test.ts"],
-      "pythonTests": ["tests/test_workflows.py", "tests/test_reports.py"],
-      "docs": ["references/safety.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "reports-create-redacted.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/safety.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_workflows.py",
+        "tests/test_reports.py"
+      ],
+      "docs": [
+        "references/safety.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "reports.create": {
       "surface": "reports-redaction",
-      "fixtures": ["reports-create-redacted.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_reports.py", "tests/test_async_client.py"],
-      "docs": ["references/safety.md", "references/python-parity.md"]
+      "fixtures": [
+        "reports-create-redacted.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_reports.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/safety.md",
+        "references/python-parity.md"
+      ]
     },
     "reports.redact": {
       "surface": "reports-redaction",
-      "fixtures": ["report-redaction-default.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/safety.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_reports.py", "tests/test_cross_language_conformance.py", "tests/test_async_client.py"],
-      "docs": ["references/safety.md", "references/python-parity.md"]
+      "fixtures": [
+        "report-redaction-default.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/safety.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_reports.py",
+        "tests/test_cross_language_conformance.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/safety.md",
+        "references/python-parity.md"
+      ]
     },
     "reports.summarize": {
       "surface": "reports-redaction",
-      "fixtures": ["reports-summarize-redacted.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_reports.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/safety.md", "references/python-parity.md"]
+      "fixtures": [
+        "reports-summarize-redacted.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_reports.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/safety.md",
+        "references/python-parity.md"
+      ]
     },
     "commands": {
       "surface": "command-discovery",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_commands.py", "tests/test_async_client.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_commands.py",
+        "tests/test_async_client.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "describe": {
       "surface": "command-discovery",
-      "fixtures": ["describe-runner-run.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_commands.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "describe-runner-run.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_commands.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "help": {
       "surface": "command-discovery",
-      "fixtures": ["help-root.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_commands.py", "tests/test_cross_language_conformance.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "help-root.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_commands.py",
+        "tests/test_cross_language_conformance.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "session.bootstrap": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["primitive-bootstrap-blocker.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_cross_language_conformance.py", "tests/test_async_client.py"],
-      "docs": ["references/troubleshooting.md", "references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "primitive-bootstrap-blocker.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_cross_language_conformance.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/troubleshooting.md",
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "experience.detect": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-chat-simplified.json", "surface-work-basic.json", "surface-sidebar-false-positive.json"],
-      "nodeTests": ["tests/unit/surface-profiles.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py", "tests/test_surface_models.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-chat-simplified.json",
+        "surface-work-basic.json",
+        "surface-sidebar-false-positive.json"
+      ],
+      "nodeTests": [
+        "tests/unit/surface-profiles.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py",
+        "tests/test_surface_models.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "experience.open": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-chat-simplified.json", "surface-work-basic.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/surface-profiles.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-chat-simplified.json",
+        "surface-work-basic.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/surface-profiles.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "configuration.inspect": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-chat-legacy.json", "surface-chat-simplified.json", "surface-work-basic.json", "surface-work-advanced.json"],
-      "nodeTests": ["tests/unit/surface-profiles.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py", "tests/test_surface_models.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-chat-legacy.json",
+        "surface-chat-simplified.json",
+        "surface-work-basic.json",
+        "surface-work-advanced.json"
+      ],
+      "nodeTests": [
+        "tests/unit/surface-profiles.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py",
+        "tests/test_surface_models.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "configuration.apply": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-chat-simplified.json", "surface-work-advanced.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/surface-profiles.test.ts", "tests/unit/modes.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py", "tests/test_surface_models.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-chat-simplified.json",
+        "surface-work-advanced.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/surface-profiles.test.ts",
+        "tests/unit/modes.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py",
+        "tests/test_surface_models.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "work.start": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-work-basic.json", "surface-work-advanced.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/surface-profiles.test.ts", "tests/unit/client.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py", "tests/test_surface_models.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-work-basic.json",
+        "surface-work-advanced.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/surface-profiles.test.ts",
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py",
+        "tests/test_surface_models.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "work.status": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-work-basic.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/surface-profiles.test.ts", "tests/unit/messages.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py", "tests/test_surface_models.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-work-basic.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/surface-profiles.test.ts",
+        "tests/unit/messages.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py",
+        "tests/test_surface_models.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "work.wait": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-work-basic.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/surface-profiles.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-work-basic.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/surface-profiles.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "work.steer": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-work-basic.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/surface-profiles.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-work-basic.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/surface-profiles.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "work.readLatest": {
       "surface": "chat-work-surface-control",
-      "fixtures": ["surface-work-basic.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/surface-profiles.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "../../README.md"]
+      "fixtures": [
+        "surface-work-basic.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/surface-profiles.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "../../README.md"
+      ]
     },
     "threads.new": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/runner.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/runner.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "../../README.md"
+      ]
     },
     "threads.search": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/selectors.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_thread_entrypoint.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/selectors.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_thread_entrypoint.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "../../README.md"
+      ]
     },
     "threads.open": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/client.test.ts", "tests/unit/runner.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_thread_entrypoint.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "../../README.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/client.test.ts",
+        "tests/unit/runner.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_thread_entrypoint.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "../../README.md"
+      ]
     },
     "messages.compose": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "messages.submit": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json", "stream-submitted-completed.ndjson"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/stream.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/streaming.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "stream-submitted-completed.ndjson"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/stream.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/streaming.md",
+        "references/python-parity.md"
+      ]
     },
     "messages.ask": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["workflow-ask-success.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/sequence.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "workflow-ask-success.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/sequence.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "messages.wait": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/polling.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/polling.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "references/python-parity.md"
+      ]
     },
     "messages.readLatest": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json", "run-basic-success.json", "read-latest-clipped.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_models_complete.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "run-basic-success.json",
+        "read-latest-clipped.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_models_complete.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "references/python-parity.md"
+      ]
     },
     "messages.status": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json", "stream-in-progress.ndjson"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/client.test.ts", "tests/unit/stream.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_parity_snapshots.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "stream-in-progress.ndjson"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/client.test.ts",
+        "tests/unit/stream.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_parity_snapshots.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "references/python-parity.md"
+      ]
     },
     "messages.stop": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json", "backend-capabilities.json", "messages-stop-needs-confirmation.json", "messages-stop-noop.json", "messages-stop-success.json", "messages-stop-indeterminate.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/client.test.ts", "tests/unit/sequence.test.ts", "tests/unit/backend-conformance.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "backend-capabilities.json",
+        "messages-stop-needs-confirmation.json",
+        "messages-stop-noop.json",
+        "messages-stop-success.json",
+        "messages-stop-indeterminate.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/client.test.ts",
+        "tests/unit/sequence.test.ts",
+        "tests/unit/backend-conformance.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "references/python-parity.md"
+      ]
     },
     "operations.submit": {
       "surface": "transactional-operations-contract",
-      "fixtures": ["operation-request.json", "operation-submit-result.json"],
-      "nodeTests": ["tests/unit/backend-client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/operations-wire-results.test.ts"],
-      "pythonTests": ["tests/test_operations_client.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "references/2026-08-16-transactional-operations.md"]
+      "fixtures": [
+        "operation-request.json",
+        "operation-submit-result.json"
+      ],
+      "nodeTests": [
+        "tests/unit/backend-client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/operations-wire-results.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_operations_client.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "references/2026-08-16-transactional-operations.md"
+      ]
     },
     "operations.collect": {
       "surface": "transactional-operations-contract",
-      "fixtures": ["operation-collect-request.json", "operation-collect-result.json"],
-      "nodeTests": ["tests/unit/backend-client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/operations-wire-requests.test.ts", "tests/unit/operations-wire-results.test.ts"],
-      "pythonTests": ["tests/test_operations_client.py", "tests/test_operation_models.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "references/2026-08-16-transactional-operations.md"]
+      "fixtures": [
+        "operation-collect-request.json",
+        "operation-collect-result.json"
+      ],
+      "nodeTests": [
+        "tests/unit/backend-client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/operations-wire-requests.test.ts",
+        "tests/unit/operations-wire-results.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_operations_client.py",
+        "tests/test_operation_models.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "references/2026-08-16-transactional-operations.md"
+      ]
     },
     "operations.inspect": {
       "surface": "transactional-operations-contract",
-      "fixtures": ["operation-inspect-request.json", "operation-inspect-result.json"],
-      "nodeTests": ["tests/unit/backend-client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/operations-wire-results.test.ts"],
-      "pythonTests": ["tests/test_operations_client.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "references/2026-08-16-transactional-operations.md"]
+      "fixtures": [
+        "operation-inspect-request.json",
+        "operation-inspect-result.json"
+      ],
+      "nodeTests": [
+        "tests/unit/backend-client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/operations-wire-results.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_operations_client.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "references/2026-08-16-transactional-operations.md"
+      ]
     },
     "operations.control": {
       "surface": "transactional-operations-contract",
-      "fixtures": ["operation-control-request.json", "operation-control-result.json"],
-      "nodeTests": ["tests/unit/backend-client.test.ts", "tests/unit/backend-dispatch.test.ts", "tests/unit/operations-wire-results.test.ts"],
-      "pythonTests": ["tests/test_operations_client.py", "tests/test_backend_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md", "references/2026-08-16-transactional-operations.md"]
+      "fixtures": [
+        "operation-control-request.json",
+        "operation-control-result.json"
+      ],
+      "nodeTests": [
+        "tests/unit/backend-client.test.ts",
+        "tests/unit/backend-dispatch.test.ts",
+        "tests/unit/operations-wire-results.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_operations_client.py",
+        "tests/test_backend_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md",
+        "references/2026-08-16-transactional-operations.md"
+      ]
     },
     "messages.waitAndRead": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json", "workflow-ask-success.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json",
+        "workflow-ask-success.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "artifacts.listLatest": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/artifacts.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/artifacts.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "artifacts.wait": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/artifacts.test.ts", "tests/unit/sequence.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/artifacts.test.ts",
+        "tests/unit/sequence.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "artifacts.downloadLatest": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/artifacts.test.ts", "tests/unit/files.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/artifacts.test.ts",
+        "tests/unit/files.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "files.preflight": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["files-preflight-success.json", "doctor-scenario-preflight.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/files.test.ts", "tests/unit/client.test.ts", "tests/unit/backend-dispatch.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_models_complete.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "references/python-parity.md"]
+      "fixtures": [
+        "files-preflight-success.json",
+        "doctor-scenario-preflight.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/files.test.ts",
+        "tests/unit/client.test.ts",
+        "tests/unit/backend-dispatch.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_models_complete.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "references/python-parity.md"
+      ]
     },
     "files.attach": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["run-file-attach-success.json", "files-attach-indeterminate.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/files.test.ts", "tests/unit/runner.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "references/python-parity.md"]
+      "fixtures": [
+        "run-file-attach-success.json",
+        "files-attach-indeterminate.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/files.test.ts",
+        "tests/unit/runner.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "references/python-parity.md"
+      ]
     },
     "files.downloadLatest": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/files.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/files.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md",
+        "references/python-parity.md"
+      ]
     },
     "projects.sources.list": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/project-sources.test.ts", "tests/unit/backend-dispatch.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/localization.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/project-sources.test.ts",
+        "tests/unit/backend-dispatch.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/localization.md",
+        "references/python-parity.md"
+      ]
     },
     "projects.sources.planAdd": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["project-sources-plan-add.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/project-sources.test.ts", "tests/unit/backend-dispatch.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "project-sources-plan-add.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/project-sources.test.ts",
+        "tests/unit/backend-dispatch.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
     },
     "projects.sources.add": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["project-sources-plan-add.json", "command-descriptors.json"],
-      "nodeTests": ["tests/unit/project-sources.test.ts", "tests/unit/backend-dispatch.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/localization.md", "references/python-parity.md"]
+      "fixtures": [
+        "project-sources-plan-add.json",
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/project-sources.test.ts",
+        "tests/unit/backend-dispatch.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/localization.md",
+        "references/python-parity.md"
+      ]
     },
     "modes.set": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/modes.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/modes.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md"
+      ]
     },
     "modes.get": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/modes.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py", "tests/test_async_client.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/modes.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py",
+        "tests/test_async_client.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md"
+      ]
     },
     "tools.select": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/modes.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/troubleshooting.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/modes.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/troubleshooting.md"
+      ]
     },
     "response.copy": {
       "surface": "workflows-primitives-diagnostics",
-      "fixtures": ["command-descriptors.json"],
-      "nodeTests": ["tests/unit/messages.test.ts", "tests/unit/client.test.ts"],
-      "pythonTests": ["tests/test_primitives.py"],
-      "docs": ["references/backend-protocol.md", "references/python-parity.md"]
+      "fixtures": [
+        "command-descriptors.json"
+      ],
+      "nodeTests": [
+        "tests/unit/messages.test.ts",
+        "tests/unit/client.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_primitives.py"
+      ],
+      "docs": [
+        "references/backend-protocol.md",
+        "references/python-parity.md"
+      ]
+    },
+    "dev.dispatch": {
+      "surface": "backend-protocol",
+      "sourceFiles": [
+        "src/dev/backend-dispatch.ts",
+        "src/dev/client.ts",
+        "src/dev/autonomous-api.ts"
+      ],
+      "nodeTests": [
+        "tests/unit/dev-backend-dispatch.test.ts",
+        "tests/unit/dev-autonomous-api.test.ts",
+        "tests/unit/backend-dispatch.test.ts"
+      ],
+      "pythonTests": [
+        "tests/test_dev_client.py"
+      ],
+      "docs": [
+        "README.md",
+        "../../docs/github-install.md"
+      ]
     }
   },
   "gates": [

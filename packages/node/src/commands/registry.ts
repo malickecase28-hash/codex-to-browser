@@ -114,7 +114,8 @@ const descriptors: CommandDescriptor[] = [
   primitive("response.copy", "Click Copy response and return clipboard Markdown, with DOM fallback.", 5000),
   primitive("modes.set", "Legacy compatibility command: select a visible model/intelligence/effort/version candidate with historical warning-oriented verification.", 30000),
   primitive("modes.get", "Legacy compatibility command: read mode labels shown on visible composer controls without changing them.", 30000),
-  primitive("tools.select", "Select a visible ChatGPT tool when unambiguous.", 30000)
+  primitive("tools.select", "Select a visible ChatGPT tool when unambiguous.", 30000),
+  primitive("dev.dispatch", "Dispatch one bounded development-orchestrator namespace/action through the authoritative Node backend while preserving confirmation and visible-browser safety contracts.", 120000)
 ];
 
 export function commandDescriptors(): CommandDescriptor[] {
@@ -279,6 +280,11 @@ function reportArgs(name: string): Record<string, string> {
 }
 
 function primitiveArgs(name: string): Record<string, string> {
+  if (name === "dev.dispatch") return {
+    namespace: "projects, planner, worker, or autonomous",
+    action: "allowlisted action inside the selected namespace",
+    args: "bounded JSON arguments for that action; destructive actions retain explicit confirmation fields"
+  };
   if (name === "messages.wait") return {
     timeoutMs: "optional wait timeout",
     stableMs: "optional stability window before completion",
@@ -337,6 +343,9 @@ function primitiveArgs(name: string): Record<string, string> {
 }
 
 function primitiveExamples(name: string): string[] {
+  if (name === "dev.dispatch") {
+    return [`await backend.request("dev.dispatch", { namespace: "autonomous", action: "get", args: { workflowId: "workflow-1" } });`];
+  }
   if (name === "modes.set") {
     return [
       `await chatgpt.modes.set({ model: "Pro" });`,

@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { createChatGPT, type ChatGPTClient, type ChatGPTClientOptions } from "../client.js";
+import {
+  createChatGPT,
+  type DevChatGPTClient as ChatGPTClient,
+  type DevChatGPTClientOptions as ChatGPTClientOptions
+} from "../dev/client.js";
+import { dispatchDevBackend } from "../dev/backend-dispatch.js";
 import type { ChatGPTAgentConfig, ChatGPTRunInput } from "../runner/types.js";
 import type { OperationClientSubmitOptions, OperationClientCollectOptions, OperationClientControlOptions } from "../operations/client.js";
 import type { OperationSubmitResult, OperationInspectResult } from "../operations/service.js";
@@ -327,6 +332,8 @@ async function dispatchBackendCommand(
       return client.tools.select(payload as Parameters<ChatGPTClient["tools"]["select"]>[0]);
     case "response.copy":
       return client.response.copy(emptyToUndefined(payload));
+    case "dev.dispatch":
+      return dispatchDevBackend(client.dev, payload);
     case "operations.submit":
       return dispatchOperationSubmit(client as ChatGPTClientWithOperations, payload);
     case "operations.collect":

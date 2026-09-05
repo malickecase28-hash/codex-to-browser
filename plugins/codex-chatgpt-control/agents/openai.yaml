@@ -1,5 +1,5 @@
 interface:
   display_name: "ChatGPT Surface Control"
-  short_description: "Visible Chat and Work delegation for Codex"
+  short_description: "Visible Chat/Work control and autonomous repository development"
   brand_color: "#10A37F"
-  default_prompt: "Use $codex-chatgpt-control with the connected @Browser extension as its transport. Route retrieval and new work by intent, and never substitute direct Chrome control, Browser Harness, CDP, remote debugging, or an ordinary-shell fallback."
+  default_prompt: "Use $codex-chatgpt-control with the connected @Browser extension as its transport for visible Chat and Work. For durable repository-development orchestration, use $autonomous-development so the Project planner, dedicated workers, local Codex executor, independent tester, exact-SHA reviews, and recovery rules remain intact. Never substitute hidden ChatGPT endpoints, direct Chrome control, Browser Harness, CDP, remote debugging, or an ordinary-shell browser fallback."

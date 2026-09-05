@@ -4,6 +4,7 @@ from typing import Any, Protocol
 
 from .agent import Agent
 from .commands import CommandClient
+from .dev import DevClient
 from .diagnostics import explain_blocker
 from .models import ChatGPTRunResult, SequencePlan
 from .operations import OperationsClient
@@ -123,6 +124,7 @@ class ChatGPT:
         self.response = ResponseClient(self._transport)
         self.reports = ReportsClient(self._transport)
         self.operations = OperationsClient(self._transport)
+        self.dev = DevClient(self._transport)
 
     def run(
         self,

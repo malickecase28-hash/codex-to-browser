@@ -109,7 +109,9 @@ async function main() {
     path.join(pluginRoot, "runtime/node/codex-chatgpt-control-backend.mjs"),
     path.join(pluginRoot, "runtime/node/codex-chatgpt-control-live-smoke.bundle.mjs"),
     path.join(pluginRoot, "runtime/node/codex-chatgpt-control-release-canary.bundle.mjs"),
+    path.join(pluginRoot, "skills/autonomous-development/SKILL.md"),
     path.join(pluginRoot, "skills/codex-chatgpt-control/SKILL.md"),
+    path.join(pluginRoot, "skills/codex-chatgpt-control/references/autonomous-development.md"),
     path.join(pluginRoot, "skills/chatgpt-delegate/SKILL.md"),
     path.join(pluginRoot, "skills/chatgpt-pro-consult/SKILL.md")
   ];
@@ -141,26 +143,39 @@ async function main() {
   assert(!manifest.mcpServers, "V1 plugin must not declare MCP servers");
   assert(!manifest.apps, "V1 plugin must not declare apps");
   assert(manifest.interface?.defaultPrompt?.length <= 3, "Plugin defaultPrompt must contain at most 3 entries");
+  assert(manifest.interface?.defaultPrompt?.some(prompt => typeof prompt === "string" && prompt.includes("autonomous")), "Plugin defaultPrompt must advertise autonomous repository development");
   await assertReferencedAsset(pluginRoot, manifest.interface?.logo, "Plugin logo", 256);
   await assertReferencedAsset(pluginRoot, manifest.interface?.composerIcon, "Plugin composerIcon", 64);
 
   const skillRoot = path.join(pluginRoot, "skills");
-  const expectedSkills = ["chatgpt-delegate", "chatgpt-pro-consult", "codex-chatgpt-control"];
+  const expectedSkills = ["autonomous-development", "chatgpt-delegate", "chatgpt-pro-consult", "codex-chatgpt-control"];
   const actualSkills = (await readdir(skillRoot, { withFileTypes: true }))
     .filter(entry => entry.isDirectory())
     .map(entry => entry.name)
     .sort();
   assert(JSON.stringify(actualSkills) === JSON.stringify(expectedSkills), `Plugin skill inventory mismatch: ${actualSkills.join(", ")}`);
 
+  const autonomousSkill = await readFile(path.join(skillRoot, "autonomous-development/SKILL.md"), "utf8");
   const broadSkill = await readFile(path.join(skillRoot, "codex-chatgpt-control/SKILL.md"), "utf8");
+  const autonomousReference = await readFile(path.join(skillRoot, "codex-chatgpt-control/references/autonomous-development.md"), "utf8");
   const delegateSkill = await readFile(path.join(skillRoot, "chatgpt-delegate/SKILL.md"), "utf8");
   const proSkill = await readFile(path.join(skillRoot, "chatgpt-pro-consult/SKILL.md"), "utf8");
+  validateSkillFrontmatter(autonomousSkill, "autonomous-development");
   validateSkillFrontmatter(broadSkill, "codex-chatgpt-control");
   validateSkillFrontmatter(delegateSkill, "chatgpt-delegate");
   validateSkillFrontmatter(proSkill, "chatgpt-pro-consult");
+  assert(autonomousSkill.includes("name: autonomous-development"), "Autonomous skill frontmatter missing name");
   assert(broadSkill.includes("name: codex-chatgpt-control"), "Broad skill frontmatter missing name");
   assert(delegateSkill.includes("name: chatgpt-delegate"), "Delegate skill frontmatter missing name");
   assert(proSkill.includes("name: chatgpt-pro-consult"), "Pro skill frontmatter missing name");
+  assert(autonomousSkill.includes("../../runtime/import-chatgpt-control.mjs"), "Autonomous skill must use plugin runtime loader");
+  assert(autonomousSkill.includes("createChatGPTFromEnvironment(undefined, {"), "Autonomous skill must pass enhanced client options through the environment facade");
+  assert(autonomousSkill.includes("dev.autonomous.bootstrap"), "Autonomous skill must document planner bootstrap");
+  assert(autonomousSkill.includes("resumeIntegration"), "Autonomous skill must document integration recovery");
+  assert(autonomousSkill.includes("localCodex"), "Autonomous skill must document the packaged Codex local executor");
+  assert(autonomousSkill.includes("../codex-chatgpt-control/references/autonomous-development.md"), "Autonomous skill must link the full operating reference");
+  assert(autonomousReference.includes("dev.autonomous"), "Autonomous reference must document the autonomous API");
+  assert(autonomousReference.includes("resumeIntegration"), "Autonomous reference must document integration resume semantics");
   assert(broadSkill.includes("../../runtime/import-chatgpt-control.mjs"), "Broad skill must use plugin runtime loader");
   assert(delegateSkill.includes("../../runtime/import-chatgpt-control.mjs"), "Delegate skill must use plugin runtime loader");
   assert(proSkill.includes("../../runtime/import-chatgpt-control.mjs"), "Pro skill must use plugin runtime loader");
@@ -168,6 +183,7 @@ async function main() {
 
   const agentMetadata = await readFile(path.join(pluginRoot, "agents/openai.yaml"), "utf8");
   assert(agentMetadata.includes('$codex-chatgpt-control'), "agents/openai.yaml default_prompt must explicitly invoke $codex-chatgpt-control");
+  assert(agentMetadata.includes('$autonomous-development'), "agents/openai.yaml default_prompt must explicitly route repository work to $autonomous-development");
 
   const pluginFiles = await listTextFiles(pluginRoot);
   for (const file of pluginFiles) {

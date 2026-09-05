@@ -16,6 +16,7 @@ from typing import Any, Protocol
 
 from .agent import Agent
 from .commands import wire_kwargs
+from .dev import AsyncDevClient
 from .models import BackendEvent, ChatGPTResponse, ChatGPTRunResult, CommandDescriptor, CommandResult, SequencePlan
 from .operations import AsyncOperationsClient
 from .primitives import _transactional_command_error_result
@@ -1296,6 +1297,24 @@ class AsyncChatGPT:
         self.response = AsyncPrimitiveGroup(transport, {"copy": "response.copy"}, self._execution)
         self.reports = AsyncReportsClient(transport, self._execution)
         self.operations = _BoundAsyncOperationsClient(transport, self._execution)
+        self.dev = AsyncDevClient(
+            lambda command, payload: async_request_backend(
+                transport,
+                command,
+                payload,
+                execution=self._execution,
+            )
+        )
+
+        async def dev_request(command: str, payload: dict[str, Any]) -> Any:
+            return await async_request_backend(
+                transport,
+                command,
+                payload,
+                execution=self._execution,
+            )
+
+        self.dev = AsyncDevClient(dev_request)
 
     def _mark_close_complete(self) -> None:
         if self._close_complete:

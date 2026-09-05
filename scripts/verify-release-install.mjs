@@ -20,6 +20,16 @@ const PYPI_INDEX = "https://pypi.org/simple";
 const REQUEST_SCHEMA = "chatgpt.browser_control.backend_request.v1";
 const RESPONSE_SCHEMA = "chatgpt.browser_control.backend_response.v1";
 const DEFAULT_TIMEOUT_MS = 180_000;
+const REQUIRED_AUTONOMOUS_METHODS = Object.freeze([
+  "plan",
+  "bootstrap",
+  "create",
+  "get",
+  "advance",
+  "run",
+  "resumeTask",
+  "resumeIntegration"
+]);
 
 function parseArgs(argv) {
   const options = { mode: undefined, timeoutMs: DEFAULT_TIMEOUT_MS };
@@ -145,12 +155,27 @@ async function registrySpecs(versions, timeoutMs) {
   };
 }
 
+function requireMethod(object, name, label) {
+  if (object === null || typeof object !== "object" || typeof object[name] !== "function") {
+    throw new Error(`${label} does not expose ${name}()`);
+  }
+}
+
+function requireAutonomousSurface(client, label) {
+  if (client?.dev?.autonomous === undefined) {
+    throw new Error(`${label} does not expose dev.autonomous`);
+  }
+  for (const method of REQUIRED_AUTONOMOUS_METHODS) {
+    requireMethod(client.dev.autonomous, method, `${label} dev.autonomous API`);
+  }
+}
+
 async function installAndVerify(root, specs, versions) {
   const nodeEnv = join(root, "node-env");
   const pythonEnv = join(root, "python-env");
   await mkdir(nodeEnv, { recursive: true });
   await writeFile(join(nodeEnv, "package.json"), '{"private":true,"type":"module"}\n', "utf8");
-  const npmInstallArgs = ["install", "--ignore-scripts", "--no-audit", "--no-fund"];
+  const npmInstallArgs = ["install", "--no-audit", "--no-fund"];
   if (specs.registry) npmInstallArgs.push(`--registry=${NPM_REGISTRY}`);
   npmInstallArgs.push(specs.nodeSpec);
   const npm = npmInvocation(npmInstallArgs);
@@ -162,7 +187,34 @@ async function installAndVerify(root, specs, versions) {
     throw new Error(`Installed npm version ${installedNode.version} did not match ${versions.nodeVersion}`);
   }
   const sdk = await import(`${pathToFileURL(join(installedNodeRoot, "dist", "src", "index.js")).href}?t=${Date.now()}`);
-  if (typeof sdk.createChatGPT !== "function") throw new Error("Installed npm package does not export createChatGPT");
+  for (const exportName of [
+    "createChatGPT",
+    "createChatGPTFromEnvironment",
+    "createDevChatGPT",
+    "createDevAutonomousApi",
+    "createCodexCliAutonomousLocalPort",
+    "DevAutonomousPortError"
+  ]) {
+    if (typeof sdk[exportName] !== "function") {
+      throw new Error(`Installed npm package does not export ${exportName}`);
+    }
+  }
+  requireAutonomousSurface(sdk.createChatGPT({}), "Installed createChatGPT client");
+  const environmentClient = await sdk.createChatGPTFromEnvironment({}, {
+    dev: {
+      autonomous: {
+        stateRoot: join(root, "environment-state"),
+        localCodex: {
+          repositoryRoot: nodeEnv,
+          allowPush: false
+        }
+      }
+    }
+  });
+  requireAutonomousSurface(environmentClient, "Installed environment client");
+
+  const threadCli = join(installedNodeRoot, "dist", "src", "scripts", "chatgpt-thread-bin.js");
+  run(process.execPath, [threadCli, "--help"], { cwd: nodeEnv, capture: true });
 
   const backendPath = join(installedNodeRoot, "dist", "src", "scripts", "backend-server.js");
   const health = await backendRequest(backendPath, "backend.health");
@@ -191,7 +243,7 @@ async function installAndVerify(root, specs, versions) {
     "from importlib.metadata import version",
     `import ${PYTHON_IMPORT}`,
     `assert version('${PYPI_PACKAGE}') == '${versions.pythonVersion}'`,
-    `from ${PYTHON_IMPORT} import BackendClient, ChatGPT, StdioBackendTransport`,
+    `from ${PYTHON_IMPORT} import AsyncChatGPT, AsyncDevClient, BackendClient, ChatGPT, DevClient, StdioBackendTransport`,
     `transport = StdioBackendTransport(command=['node', r'${backendLiteral}'], timeout_seconds=30)`,
     "client = BackendClient(transport)",
     "health = client.health()",
@@ -199,14 +251,31 @@ async function installAndVerify(root, specs, versions) {
     "capabilities = client.capabilities()",
     `assert capabilities['protocolVersion'] == '${REQUEST_SCHEMA}'`,
     "assert isinstance(client.request('commands'), list)",
-    "client.close()"
+    "dev = DevClient(client)",
+    "assert callable(dev.autonomous.plan)",
+    "assert callable(dev.autonomous.bootstrap)",
+    "assert callable(dev.autonomous.create)",
+    "assert callable(dev.autonomous.get)",
+    "assert callable(dev.autonomous.advance)",
+    "assert callable(dev.autonomous.run)",
+    "assert callable(dev.autonomous.resume_task)",
+    "assert callable(dev.autonomous.resume_integration)",
+    "chatgpt = ChatGPT(backend=client)",
+    "assert callable(chatgpt.dev.autonomous.plan)",
+    "assert callable(chatgpt.dev.autonomous.bootstrap)",
+    "assert callable(chatgpt.dev.autonomous.run)",
+    "assert callable(chatgpt.dev.autonomous.resume_task)",
+    "assert callable(chatgpt.dev.autonomous.resume_integration)",
+    "assert AsyncChatGPT is not None and AsyncDevClient is not None",
+    "chatgpt.close()"
   ].join("; ");
   run(venvPython, ["-c", pythonCheck]);
   run(venvCli, ["--help"]);
   return {
     nodeVersion: installedNode.version,
     pythonVersion: versions.pythonVersion,
-    backendProtocol: capabilities.protocolVersion
+    backendProtocol: capabilities.protocolVersion,
+    autonomousMethods: REQUIRED_AUTONOMOUS_METHODS.length
   };
 }
 

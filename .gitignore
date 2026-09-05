@@ -16,3 +16,4 @@ outputs/surface-profiles/
 .env
 .env.*
 !.env.example
+.chatgpt-dev/

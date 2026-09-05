@@ -471,6 +471,27 @@ BlockerCode = Literal[
 
 class NewTarget(StrictWireModel):
     type: Literal["new"]
+    url: BoundedText4096 | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        _bounded_utf8(value, max_bytes=4096, field_name="target URL")
+        try:
+            parsed = urlsplit(value)
+        except ValueError as exc:
+            raise ValueError("target URL must be a bounded HTTP(S) URL") from exc
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+        ):
+            raise ValueError("target URL must be an HTTP(S) URL without control characters")
+        return value
 
 
 class SelectedTabTarget(StrictWireModel):
