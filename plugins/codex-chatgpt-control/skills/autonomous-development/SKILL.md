@@ -20,7 +20,7 @@ const loaderUrl = new URL(
 );
 const { importChatGPTControl } = await import(`${loaderUrl.href}?t=${Date.now()}`);
 const { createChatGPTFromEnvironment } = await importChatGPTControl();
-const chatgpt = await createChatGPTFromEnvironment({
+const chatgpt = await createChatGPTFromEnvironment(undefined, {
   dev: {
     autonomous: {
       localCodex: {
@@ -31,6 +31,8 @@ const chatgpt = await createChatGPTFromEnvironment({
   }
 });
 ```
+
+The first argument remains the optional process-environment map for compatibility. Passing `undefined` uses the real process environment while the second argument carries enhanced SDK options.
 
 `localCodex` is explicit. `allowPush: true` is a separate Git network-write opt-in. Never infer either from the user merely asking for analysis or planning.
 
