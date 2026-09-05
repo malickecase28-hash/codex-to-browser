@@ -35,8 +35,10 @@ jobs:
           npm --prefix packages/node ci
           python -m pip install -e "packages/python[dev]"
 
-      - name: Apply immutable planning identity wiring
-        run: python .github/scripts/apply_planning_identity_store.py
+      - name: Apply restart-safe local action journal wiring
+        run: |
+          python .github/scripts/apply_local_action_journal.py
+          python .github/scripts/fix_local_action_recovery_tests.py
 
       - name: Build once and regenerate checked-in contract fixtures
         working-directory: packages/node
@@ -44,15 +46,16 @@ jobs:
           npm run build
           npm run contract:generate
 
-      - name: Run focused autonomous durability and planner tests
+      - name: Run focused local durability and orchestration tests
         working-directory: packages/node
         run: |
           npx vitest run \
-            tests/unit/dev-autonomous-planning-store.test.ts \
-            tests/unit/dev-autonomous-planner.test.ts \
-            tests/unit/dev-autonomous-api.test.ts \
-            tests/unit/dev-autonomous-chatgpt-port.test.ts \
+            tests/unit/dev-autonomous-local-action-store.test.ts \
+            tests/unit/dev-codex-cli-local-port.test.ts \
+            tests/unit/dev-codex-cli-local-recovery.test.ts \
+            tests/unit/dev-autonomous-engine.test.ts \
             tests/unit/dev-autonomous-store.test.ts \
+            tests/unit/dev-autonomous-api.test.ts \
             tests/unit/surface-drift.test.ts \
             tests/unit/parity-suite.test.ts
 
@@ -90,7 +93,7 @@ jobs:
           npm run plugin:check
           git diff --check
 
-      - name: Commit verified immutable planning identity source and generated artifacts
+      - name: Commit verified local action journal source and generated artifacts
         shell: bash
         run: |
           set -euo pipefail
@@ -101,5 +104,5 @@ jobs:
             echo "No generated/source changes to commit"
             exit 0
           fi
-          git commit -m "feat: bind workflow ids to immutable planning specs"
+          git commit -m "feat: journal autonomous local side effects"
           git push origin HEAD:chatgpt-dev-orchestrator
