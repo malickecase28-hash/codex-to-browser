@@ -75,6 +75,7 @@ export type DevWorkerReviewEvidence = Readonly<{
   reviewedSha: string;
   status: "accepted" | "revision_required";
   reviewDigest: string;
+  reviewWatcherId?: string | undefined;
 }>;
 
 export type DevTaskRecord = Readonly<{
@@ -106,6 +107,7 @@ export type DevIntegrationRecord = Readonly<{
     reviewedSha: string;
     status: "accepted" | "revision_required";
     reviewDigest: string;
+    reviewWatcherId?: string | undefined;
   }> | undefined;
 }>;
 
@@ -139,6 +141,7 @@ export type DevAutonomousWorkflowEvent =
         reviewedSha: string;
         status: "accepted" | "revision_required";
         reviewDigest: string;
+        reviewWatcherId?: string | undefined;
       }>;
     }>;
 
@@ -481,6 +484,10 @@ function plannerReview(
   requireText(evidence.plannerConversationKey, "planner conversation key", 512);
   requireCommit(evidence.reviewedSha, "planner reviewed SHA");
   requireDigest(evidence.reviewDigest, "planner review digest");
+  if (evidence.reviewWatcherId !== undefined) requireId(evidence.reviewWatcherId, "planner review watcher ID");
+  if (evidence.status === "revision_required" && evidence.reviewWatcherId === undefined) {
+    throw new DevAutonomousWorkflowError("invalid_event", "Planner revision evidence requires its durable review watcher identity.");
+  }
   if (evidence.plannerConversationKey !== workflow.plannerConversationKey) {
     throw new DevAutonomousWorkflowError("conversation_mismatch", "Final review must return to the master planner conversation.");
   }
@@ -569,6 +576,10 @@ function validateWorkerReview(value: DevWorkerReviewEvidence): void {
   requireText(value.reviewerConversationKey, "reviewer conversation key", 512);
   requireCommit(value.reviewedSha, "reviewed SHA");
   requireDigest(value.reviewDigest, "worker review digest");
+  if (value.reviewWatcherId !== undefined) requireId(value.reviewWatcherId, "worker review watcher ID");
+  if (value.status === "revision_required" && value.reviewWatcherId === undefined) {
+    throw new DevAutonomousWorkflowError("invalid_event", "Worker revision evidence requires its durable review watcher identity.");
+  }
   if (value.status !== "accepted" && value.status !== "revision_required") {
     throw new DevAutonomousWorkflowError("invalid_event", "Worker review status is invalid.");
   }

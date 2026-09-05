@@ -197,6 +197,26 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort, DevAutonomo
     return response.text;
   }
 
+  async readReviewGuidance(input: Readonly<{ watcherId: string; reviewDigest: string }>): Promise<string> {
+    const response = await this.turns.readResponse(input.watcherId, input.reviewDigest);
+    if (response === undefined) {
+      throw new DevAutonomousPortError(
+        "review_guidance_unavailable",
+        true,
+        "The exact revision review is unavailable from the restart-safe turn cache."
+      );
+    }
+    const parsed = parseReviewResult(response.text);
+    if (parsed.verdict !== "revision_required") {
+      throw new DevAutonomousPortError(
+        "review_guidance_mismatch",
+        false,
+        "Durable review evidence does not contain revision guidance."
+      );
+    }
+    return parsed.guidance;
+  }
+
   async reviewCommit(input: Readonly<{
     workflow: DevAutonomousWorkflow;
     task: DevTaskRecord;
@@ -225,9 +245,10 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort, DevAutonomo
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs })
     });
     if (response === undefined) return Object.freeze({ status: "pending" as const });
+    const review = parseReviewResult(response.text);
     return Object.freeze({
       status: "completed" as const,
-      verdict: parseReviewVerdict(response.text),
+      verdict: review.verdict,
       reviewDigest: response.digest
     });
   }
@@ -259,9 +280,10 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort, DevAutonomo
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs })
     });
     if (response === undefined) return Object.freeze({ status: "pending" as const });
+    const review = parseReviewResult(response.text);
     return Object.freeze({
       status: "completed" as const,
-      verdict: parseReviewVerdict(response.text),
+      verdict: review.verdict,
       reviewDigest: response.digest
     });
   }
@@ -663,6 +685,12 @@ function guidancePrompt(workflow: DevAutonomousWorkflow, task: DevTaskRecord): s
     task.plannedBranch === undefined ? "Branch: assigned by the local executor" : `Branch: ${task.plannedBranch}`,
     "Acceptance criteria:",
     criteria,
+    ...(task.workerReview?.status === "revision_required"
+      ? [
+          `Your immediately preceding review rejected exact commit ${task.workerReview.reviewedSha}.`,
+          "Produce updated implementation guidance that directly addresses the revision guidance you gave in that review before suggesting any additional changes."
+        ]
+      : []),
     "Provide precise implementation guidance for the local coding agent. Do not claim to edit the repository, run tests, push commits, or inspect hidden ChatGPT APIs. Treat repository work as owned by the local executor."
   ].join("\n\n");
 }
@@ -673,7 +701,7 @@ function workerReviewPrompt(task: DevTaskRecord, commitSha: string): string {
     `Task ID: ${task.taskId}`,
     `Exact pushed commit SHA: ${commitSha}`,
     "Use the visible GitHub/repository context available to you. Evaluate the exact SHA against the task and acceptance criteria.",
-    "Return a final verdict in a JSON object with exactly one key: {\"verdict\":\"accepted\"} or {\"verdict\":\"revision_required\"}. Do not use a different SHA."
+    "Return only JSON. If accepted, return exactly {\"verdict\":\"accepted\"}. If revision is required, return exactly {\"verdict\":\"revision_required\",\"guidance\":\"specific bounded instructions for the next implementation attempt\"}. Do not use a different SHA."
   ].join("\n\n");
 }
 
@@ -684,11 +712,17 @@ function plannerReviewPrompt(workflow: DevAutonomousWorkflow, commitSha: string)
     `Project key: ${workflow.projectKey}`,
     `Exact integrated commit SHA: ${commitSha}`,
     "All task workers have already accepted their task commits and the independent integration tester passed this integration candidate.",
-    "Review the exact integrated SHA against the overall plan. Return a final verdict in a JSON object with exactly one key: {\"verdict\":\"accepted\"} or {\"verdict\":\"revision_required\"}."
+    "Review the exact integrated SHA against the overall plan. Return only JSON. If accepted, return exactly {\"verdict\":\"accepted\"}. If revision is required, return exactly {\"verdict\":\"revision_required\",\"guidance\":\"specific bounded integration changes required before approval\"}."
   ].join("\n\n");
 }
 
-export function parseReviewVerdict(text: string): "accepted" | "revision_required" {
+export type DevAutonomousReviewResult =
+  | Readonly<{ verdict: "accepted" }>
+  | Readonly<{ verdict: "revision_required"; guidance: string }>;
+
+const MAX_REVISION_GUIDANCE_CHARS = 32_768;
+
+export function parseReviewResult(text: string): DevAutonomousReviewResult {
   const candidates = [text.trim()];
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
   if (fenced !== undefined) candidates.push(fenced);
@@ -697,8 +731,22 @@ export function parseReviewVerdict(text: string): "accepted" | "revision_require
       const parsed: unknown = JSON.parse(candidate);
       if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) continue;
       const record = parsed as Record<string, unknown>;
-      if (Object.keys(record).length !== 1 || !Object.hasOwn(record, "verdict")) continue;
-      if (record.verdict === "accepted" || record.verdict === "revision_required") return record.verdict;
+      const keys = Object.keys(record).sort();
+      if (record.verdict === "accepted" && keys.length === 1 && keys[0] === "verdict") {
+        return Object.freeze({ verdict: "accepted" as const });
+      }
+      if (
+        record.verdict === "revision_required"
+        && keys.length === 2
+        && keys[0] === "guidance"
+        && keys[1] === "verdict"
+        && typeof record.guidance === "string"
+        && record.guidance.trim().length > 0
+        && record.guidance.length <= MAX_REVISION_GUIDANCE_CHARS
+        && !/[\u0000\u000b\u000c\u007f]/u.test(record.guidance)
+      ) {
+        return Object.freeze({ verdict: "revision_required" as const, guidance: record.guidance.trim() });
+      }
     } catch {
       continue;
     }
@@ -706,6 +754,10 @@ export function parseReviewVerdict(text: string): "accepted" | "revision_require
   throw new DevAutonomousPortError(
     "review_response_invalid",
     true,
-    "The ChatGPT review response did not contain the required strict verdict object."
+    "The ChatGPT review response did not contain the required strict accepted or revision-guidance object."
   );
+}
+
+export function parseReviewVerdict(text: string): "accepted" | "revision_required" {
+  return parseReviewResult(text).verdict;
 }

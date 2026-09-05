@@ -184,9 +184,11 @@ describe("Codex CLI autonomous local port", () => {
 
     const reintegration = await port.integrate({
       workflow: workflow(acceptedTask, 10),
-      acceptedTasks: [acceptedTask]
+      acceptedTasks: [acceptedTask],
+      revisionGuidance: "Resolve the planner-reported cross-task regression without changing accepted task intent."
     });
     expect(reintegration.branch).toBe(integration.branch);
+    expect(codexCalls.at(-1)?.at(-1)).toContain("planner-reported cross-task regression");
 
     expect(codexCalls.length).toBe(6);
     for (const args of codexCalls) {

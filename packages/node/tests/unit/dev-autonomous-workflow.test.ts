@@ -173,7 +173,7 @@ describe("autonomous development workflow", () => {
     const revision = applyAutonomousWorkflowEvent(pushed, {
       type: "worker_review",
       taskId: "task-a",
-      evidence: { reviewerConversationKey: "worker-task-a", reviewedSha: SHA_A, status: "revision_required", reviewDigest: D4 }
+      evidence: { reviewerConversationKey: "worker-task-a", reviewedSha: SHA_A, status: "revision_required", reviewDigest: D4, reviewWatcherId: "worker-review-watch-a" }
     });
 
     expect(revision.tasks[0]?.phase).toBe("revision_required");

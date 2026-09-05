@@ -56,6 +56,7 @@ function ports() {
       return { status: "completed" as const, responseDigest: D1 };
     }),
     readGuidance: vi.fn(async evidence => `guidance:${evidence.responseDigest}`),
+    readReviewGuidance: vi.fn(async () => "Resolve the planner-reported integration regression."),
     reviewCommit: vi.fn(async input => {
       reviewPending.add(input.operationId);
       return { status: "completed" as const, verdict: "accepted" as const, reviewDigest: D4 };
@@ -136,6 +137,40 @@ describe("autonomous orchestration engine", () => {
     expect(local.testIntegration).toHaveBeenCalledTimes(1);
     expect(local.pushIntegration).toHaveBeenCalledTimes(1);
     expect(chat.reviewIntegration).toHaveBeenCalledTimes(1);
+  });
+
+  it("rehydrates exact planner revision guidance before the next integration attempt", async () => {
+    const stateRoot = await root();
+    const store = new FileDevAutonomousWorkflowStore({ stateRoot });
+    const { chat, local } = ports();
+    const reviewIntegration = chat.reviewIntegration as ReturnType<typeof vi.fn>;
+    reviewIntegration
+      .mockResolvedValueOnce({ status: "completed" as const, verdict: "revision_required" as const, reviewDigest: D4 })
+      .mockResolvedValueOnce({ status: "completed" as const, verdict: "accepted" as const, reviewDigest: D4 });
+    const engine = new DevAutonomousEngine(store, chat, local, { maxParallelTasks: 2 });
+    await engine.create(plan());
+
+    for (let index = 0; index < 6; index += 1) await engine.advance("workflow-engine");
+    for (let index = 0; index < 4; index += 1) await engine.advance("workflow-engine");
+
+    const revision = await engine.get("workflow-engine");
+    expect(revision.status).toBe("integration_ready");
+    expect(revision.integration.plannerReview).toMatchObject({
+      status: "revision_required",
+      reviewedSha: SHA_I,
+      reviewDigest: D4
+    });
+    expect(revision.integration.plannerReview?.reviewWatcherId).toMatch(/^dev-watcher-/);
+
+    await engine.advance("workflow-engine");
+
+    expect(chat.readReviewGuidance).toHaveBeenCalledWith({
+      watcherId: revision.integration.plannerReview?.reviewWatcherId,
+      reviewDigest: D4
+    });
+    expect(local.integrate).toHaveBeenLastCalledWith(expect.objectContaining({
+      revisionGuidance: "Resolve the planner-reported integration regression."
+    }));
   });
 
   it("persists a structured task blocker instead of retrying a failed external port", async () => {

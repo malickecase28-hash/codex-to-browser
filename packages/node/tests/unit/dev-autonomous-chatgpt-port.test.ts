@@ -361,7 +361,13 @@ describe("transactional autonomous ChatGPT port", () => {
 
   it("parses only an explicit accepted or revision-required review verdict", () => {
     expect(parseReviewVerdict('{"verdict":"accepted"}')).toBe("accepted");
-    expect(parseReviewVerdict('```json\n{"verdict":"revision_required"}\n```')).toBe("revision_required");
+    expect(parseReviewVerdict('```json\n{"verdict":"revision_required","guidance":"Fix the exact lifecycle regression."}\n```')).toBe("revision_required");
+    expect(() => parseReviewVerdict('{"verdict":"revision_required"}')).toThrowError(
+      expect.objectContaining({ blockerCode: "review_response_invalid" })
+    );
+    expect(() => parseReviewVerdict('{"verdict":"accepted","guidance":"not allowed"}')).toThrowError(
+      expect.objectContaining({ blockerCode: "review_response_invalid" })
+    );
     expect(() => parseReviewVerdict('{"verdict":"accepted","sha":"wrong"}')).toThrowError(
       expect.objectContaining({ blockerCode: "review_response_invalid" })
     );

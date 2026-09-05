@@ -41,6 +41,7 @@ export type DevAutonomousChatPort = Readonly<{
     options: Readonly<{ wait: boolean; timeoutMs?: number }>
   ): Promise<DevAutonomousTurnObservation>;
   readGuidance(evidence: DevGuidanceEvidence): Promise<string>;
+  readReviewGuidance?(input: Readonly<{ watcherId: string; reviewDigest: string }>): Promise<string>;
   reviewCommit(input: Readonly<{
     workflow: DevAutonomousWorkflow;
     task: DevTaskRecord;
@@ -81,6 +82,7 @@ export type DevAutonomousLocalPort = Readonly<{
   integrate(input: Readonly<{
     workflow: DevAutonomousWorkflow;
     acceptedTasks: readonly DevTaskRecord[];
+    revisionGuidance?: string;
   }>): Promise<DevImplementationCandidate>;
   testIntegration(input: Readonly<{
     workflow: DevAutonomousWorkflow;
@@ -246,7 +248,8 @@ export class DevAutonomousEngine {
             reviewerConversationKey: task.workerConversationKey,
             reviewedSha: task.push.commitSha,
             status: observation.verdict,
-            reviewDigest: observation.reviewDigest
+            reviewDigest: observation.reviewDigest,
+            reviewWatcherId: watcherId
           };
           await this.store.apply(workflow.workflowId, { type: "worker_review", taskId: task.taskId, evidence });
           return { taskId: task.taskId, progressed: true, pending: false };
@@ -275,9 +278,25 @@ export class DevAutonomousEngine {
   ): Promise<boolean> {
     switch (workflow.status) {
       case "integration_ready": {
+        const priorReview = workflow.integration.plannerReview;
+        let revisionGuidance: string | undefined;
+        if (priorReview?.status === "revision_required") {
+          if (priorReview.reviewWatcherId === undefined || this.chat.readReviewGuidance === undefined) {
+            throw new DevAutonomousPortError(
+              "review_guidance_unavailable",
+              true,
+              "Planner revision guidance cannot be recovered from its durable ChatGPT turn."
+            );
+          }
+          revisionGuidance = await this.chat.readReviewGuidance({
+            watcherId: priorReview.reviewWatcherId,
+            reviewDigest: priorReview.reviewDigest
+          });
+        }
         const evidence = await this.local.integrate({
           workflow,
-          acceptedTasks: workflow.tasks.filter(task => task.phase === "accepted")
+          acceptedTasks: workflow.tasks.filter(task => task.phase === "accepted"),
+          ...(revisionGuidance === undefined ? {} : { revisionGuidance })
         });
         await this.store.apply(workflow.workflowId, { type: "integration_candidate", evidence });
         return true;
@@ -317,7 +336,8 @@ export class DevAutonomousEngine {
             plannerConversationKey: workflow.plannerConversationKey,
             reviewedSha: push.commitSha,
             status: observation.verdict,
-            reviewDigest: observation.reviewDigest
+            reviewDigest: observation.reviewDigest,
+            reviewWatcherId: watcherId
           }
         });
         return true;
