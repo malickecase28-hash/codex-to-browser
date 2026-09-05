@@ -38,6 +38,7 @@ export type DevAutonomousApi = Readonly<{
   advance(workflowId: string, options?: DevAutonomousAdvanceOptions): Promise<DevAutonomousAdvanceResult>;
   run(workflowId: string, options?: DevAutonomousRunOptions): Promise<DevAutonomousRunResult>;
   resumeTask(workflowId: string, taskId: string): Promise<DevAutonomousWorkflow>;
+  resumeIntegration(workflowId: string): Promise<DevAutonomousWorkflow>;
 }>;
 
 export type DevAutonomousApiOptions = DevAutonomousEngineOptions & Readonly<{
@@ -125,6 +126,7 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
     get: workflowId => engine.get(workflowId),
     advance: (workflowId, advanceOptions) => engine.advance(workflowId, advanceOptions),
     resumeTask: (workflowId, taskId) => engine.resumeTask(workflowId, taskId),
+    resumeIntegration: workflowId => engine.resumeIntegration(workflowId),
     run: async (workflowId, runOptions = {}) => {
       const maxSteps = boundedSteps(runOptions.maxSteps ?? DEFAULT_MAX_STEPS);
       const advanceOptions: DevAutonomousAdvanceOptions = {
