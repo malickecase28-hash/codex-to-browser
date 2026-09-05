@@ -138,11 +138,13 @@ describe("autonomous recovery invariants", () => {
 
     const blocked = applyAutonomousWorkflowEvent(workflow, {
       type: "integration_blocked",
-      blockerCode: "local_action_busy"
+      blockerCode: "local_action_busy",
+      recoverable: true
     });
     expect(blocked.status).toBe("blocked");
     expect(blocked.integration).toMatchObject({
       blockerCode: "local_action_busy",
+      blockerRecoverable: true,
       blockedFrom: "integration_testing"
     });
 

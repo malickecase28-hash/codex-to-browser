@@ -150,7 +150,7 @@ function successfulRunner(
     const prompt = args.at(-1) ?? "";
     const output = outputPath(args);
     calls.prompts.push(prompt);
-    if (prompt.includes("independent integration tester")) {
+    if (prompt.startsWith("You are the independent integration tester")) {
       calls.test += 1;
       if (output !== undefined) await writeFile(output, JSON.stringify(testResult), "utf8");
     } else {

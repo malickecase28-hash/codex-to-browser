@@ -321,6 +321,13 @@ function validateWorkflowCoherence(workflow: DevAutonomousWorkflow): void {
   const integration = workflow.integration;
 
   validateIntegrationEvidenceRelations(integration, workflow.plannerConversationKey);
+  const hasIntegrationEvidence = integration.implementation !== undefined
+    || integration.tester !== undefined
+    || integration.push !== undefined
+    || integration.plannerReview !== undefined;
+  if (!allAccepted && hasIntegrationEvidence) {
+    invalid("Persisted workflow contains integration evidence before every task is accepted.");
+  }
   if (integration.blockedFrom !== undefined) {
     if (
       workflow.status !== "blocked"
@@ -348,8 +355,14 @@ function validateWorkflowCoherence(workflow: DevAutonomousWorkflow): void {
   if (workflow.status === "blocked") return;
   if (!allAccepted) invalid("Integration or completed workflow state requires every task to be accepted.");
   if (workflow.status === "completed") {
-    validateEffectiveIntegrationPhase(integration, "planner_review_pending");
-    if (integration.plannerReview?.status !== "accepted") {
+    requirePresent(
+      integration.implementation,
+      integration.tester,
+      integration.push,
+      integration.plannerReview,
+      "Completed workflow lacks exact pushed integration and planner-review evidence."
+    );
+    if (integration.tester?.status !== "passed" || integration.plannerReview?.status !== "accepted") {
       invalid("Completed workflow lacks exact master-planner acceptance evidence.");
     }
     return;
@@ -403,18 +416,55 @@ function validateEffectiveIntegrationPhase(
   phase: DevIntegrationPhase
 ): void {
   switch (phase) {
-    case "integration_ready":
-      return;
+    case "integration_ready": {
+      const hasImplementation = integration.implementation !== undefined;
+      const hasTester = integration.tester !== undefined;
+      const hasPush = integration.push !== undefined;
+      const plannerReview = integration.plannerReview;
+      if (plannerReview !== undefined) {
+        if (
+          plannerReview.status !== "revision_required"
+          || hasImplementation
+          || hasTester
+          || hasPush
+        ) {
+          invalid("Persisted integration-ready state contains incompatible planner-review evidence.");
+        }
+        return;
+      }
+      if (!hasImplementation && !hasTester && !hasPush) return;
+      if (
+        hasImplementation
+        && integration.tester?.status === "failed"
+        && !hasPush
+      ) {
+        return;
+      }
+      invalid("Persisted integration-ready state contains evidence that is not a valid retry state.");
+    }
     case "integration_testing":
       requirePresent(integration.implementation, "Integration testing state lacks a candidate.");
+      if (
+        integration.tester !== undefined
+        || integration.push !== undefined
+        || integration.plannerReview !== undefined
+      ) {
+        invalid("Persisted integration-testing state contains later-phase evidence.");
+      }
       return;
     case "integration_push_pending":
       requirePresent(integration.implementation, integration.tester, "Integration push state lacks tester evidence.");
       if (integration.tester?.status !== "passed") invalid("Integration push state requires a passing independent test.");
+      if (integration.push !== undefined || integration.plannerReview !== undefined) {
+        invalid("Persisted integration-push-pending state contains later-phase evidence.");
+      }
       return;
     case "planner_review_pending":
       requirePresent(integration.implementation, integration.tester, integration.push, "Planner review state lacks pushed integration evidence.");
       if (integration.tester?.status !== "passed") invalid("Planner review state requires a passing independent integration test.");
+      if (integration.plannerReview !== undefined) {
+        invalid("Persisted planner-review-pending state already contains planner review evidence.");
+      }
       return;
   }
 }
