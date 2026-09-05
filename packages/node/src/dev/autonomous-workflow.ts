@@ -25,6 +25,12 @@ export type DevWorkflowStatus =
   | "completed"
   | "blocked";
 
+export type DevIntegrationPhase =
+  | "integration_ready"
+  | "integration_testing"
+  | "integration_push_pending"
+  | "planner_review_pending";
+
 export type DevTaskPlan = Readonly<{
   taskId: string;
   title: string;
@@ -109,6 +115,8 @@ export type DevIntegrationRecord = Readonly<{
     reviewDigest: string;
     reviewWatcherId?: string | undefined;
   }> | undefined;
+  blockerCode?: string | undefined;
+  blockedFrom?: DevIntegrationPhase | undefined;
 }>;
 
 export type DevAutonomousWorkflow = Readonly<{
@@ -134,6 +142,8 @@ export type DevAutonomousWorkflowEvent =
   | Readonly<{ type: "integration_candidate"; evidence: DevImplementationCandidate }>
   | Readonly<{ type: "integration_tester_result"; evidence: DevTesterEvidence }>
   | Readonly<{ type: "integration_pushed"; evidence: DevPushEvidence }>
+  | Readonly<{ type: "integration_blocked"; blockerCode: string }>
+  | Readonly<{ type: "integration_resumed" }>
   | Readonly<{
       type: "planner_review";
       evidence: Readonly<{
@@ -229,6 +239,12 @@ export function applyAutonomousWorkflowEvent(
       break;
     case "integration_pushed":
       next = integrationPushed(workflow, event.evidence);
+      break;
+    case "integration_blocked":
+      next = blockIntegration(workflow, event.blockerCode);
+      break;
+    case "integration_resumed":
+      next = resumeIntegration(workflow);
       break;
     case "planner_review":
       next = plannerReview(workflow, event.evidence);
@@ -473,6 +489,47 @@ function integrationPushed(workflow: DevAutonomousWorkflow, evidence: DevPushEvi
   });
 }
 
+function blockIntegration(workflow: DevAutonomousWorkflow, blockerCode: string): DevAutonomousWorkflow {
+  if (!isIntegrationPhase(workflow.status)) {
+    invalidTransition("Only an active integration phase can be blocked.");
+  }
+  requireId(blockerCode, "integration blockerCode");
+  return freezeWorkflow({
+    ...workflow,
+    revision: workflow.revision + 1,
+    status: "blocked",
+    integration: {
+      ...workflow.integration,
+      blockerCode,
+      blockedFrom: workflow.status
+    }
+  });
+}
+
+function resumeIntegration(workflow: DevAutonomousWorkflow): DevAutonomousWorkflow {
+  const blockedFrom = workflow.integration.blockedFrom;
+  if (workflow.status !== "blocked" || blockedFrom === undefined) {
+    invalidTransition("Only a durably blocked integration phase can be resumed.");
+  }
+  return freezeWorkflow({
+    ...workflow,
+    revision: workflow.revision + 1,
+    status: blockedFrom,
+    integration: {
+      ...workflow.integration,
+      blockerCode: undefined,
+      blockedFrom: undefined
+    }
+  });
+}
+
+function isIntegrationPhase(status: DevWorkflowStatus): status is DevIntegrationPhase {
+  return status === "integration_ready"
+    || status === "integration_testing"
+    || status === "integration_push_pending"
+    || status === "planner_review_pending";
+}
+
 function plannerReview(
   workflow: DevAutonomousWorkflow,
   evidence: NonNullable<DevIntegrationRecord["plannerReview"]>
@@ -531,6 +588,9 @@ function normalizeWorkflow(workflow: DevAutonomousWorkflow): DevAutonomousWorkfl
       : task;
   });
   let status = workflow.status;
+  if (status === "blocked" && workflow.integration.blockedFrom !== undefined) {
+    return freezeWorkflow({ ...workflow, tasks, status });
+  }
   if (status === "running" || status === "blocked" || status === "integration_ready") {
     if (tasks.every(task => task.phase === "accepted")) status = "integration_ready";
     else if (tasks.every(task => task.phase === "accepted" || task.phase === "blocked") && tasks.some(task => task.phase === "blocked")) status = "blocked";
