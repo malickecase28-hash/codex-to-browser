@@ -2,17 +2,38 @@ import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createChatGPT, type ChatGPTClient } from "./client.js";
+import {
+  createChatGPT,
+  type DevChatGPTClient,
+  type DevChatGPTClientOptions
+} from "./dev/client.js";
 import { createTerminalBrowserFromEnv } from "./browser/transports/terminal.js";
 
+/**
+ * Construct the enhanced SDK from the host browser environment.
+ *
+ * The first parameter intentionally remains the historical environment map so
+ * existing callers and CLI helpers stay source-compatible. Enhanced client
+ * options are a separate second parameter to avoid guessing whether an
+ * arbitrary record is process environment or SDK configuration.
+ */
 export async function createChatGPTFromEnvironment(
-  env: Record<string, string | undefined> = runtimeEnvironment()
-): Promise<ChatGPTClient> {
+  env: Record<string, string | undefined> = runtimeEnvironment(),
+  options: DevChatGPTClientOptions = {}
+): Promise<DevChatGPTClient> {
   if (env.CODEX_BROWSER_PROVIDER !== undefined) {
-    return createChatGPT({ browser: createTerminalBrowserFromEnv(env) });
+    return createChatGPT({
+      ...options,
+      browser: createTerminalBrowserFromEnv(env)
+    });
   }
-  const agent = (globalThis as Record<string, unknown>).agent ?? await loadCodexBrowserAgent(env);
-  return agent === undefined ? createChatGPT() : createChatGPT({ agent });
+  const explicitAgent = options.agent;
+  const agent = explicitAgent
+    ?? (globalThis as Record<string, unknown>).agent
+    ?? await loadCodexBrowserAgent(env);
+  return agent === undefined
+    ? createChatGPT(options)
+    : createChatGPT({ ...options, agent });
 }
 
 export async function loadCodexBrowserAgent(
