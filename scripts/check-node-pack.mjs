@@ -19,6 +19,8 @@ const REQUIRED_FILES = [
   "dist/src/dev/autonomous-chatgpt-port.d.ts",
   "dist/src/dev/autonomous-engine.js",
   "dist/src/dev/autonomous-engine.d.ts",
+  "dist/src/dev/autonomous-local-identity.js",
+  "dist/src/dev/autonomous-local-identity.d.ts",
   "dist/src/dev/autonomous-workflow.js",
   "dist/src/dev/autonomous-workflow.d.ts",
   "dist/src/dev/codex-cli-local-port.js",
