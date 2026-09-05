@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +14,21 @@ async function stateRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "codex-chatgpt-autonomous-"));
   roots.push(root);
   return root;
+}
+
+function persistedPath(root: string, workflowId: string): string {
+  const digest = createHash("sha256").update(workflowId, "utf8").digest("hex");
+  return join(root, `${digest}.json`);
+}
+
+async function mutatePersistedWorkflow(
+  root: string,
+  mutate: (workflow: Record<string, unknown>) => void
+): Promise<void> {
+  const path = persistedPath(root, plan().workflowId);
+  const document = JSON.parse(await readFile(path, "utf8")) as { workflow: Record<string, unknown> };
+  mutate(document.workflow);
+  await writeFile(path, `${JSON.stringify(document, null, 2)}\n`, "utf8");
 }
 
 afterEach(async () => {
@@ -56,6 +72,49 @@ describe("autonomous workflow store", () => {
     expect(state.revision).toBe(1);
     expect(state.tasks[0]?.phase).toBe("guidance_pending");
     expect(state.tasks[0]?.workerConversationKey).toBe("worker-task-a");
+    expect(Object.isFrozen(state)).toBe(true);
+    expect(Object.isFrozen(state.tasks)).toBe(true);
+    expect(Object.isFrozen(state.tasks[0])).toBe(true);
+    expect(Object.isFrozen(state.tasks[0]?.guidanceDispatch)).toBe(true);
+  });
+
+  it("rejects malformed nested execution evidence before rehydrating it", async () => {
+    const root = await stateRoot();
+    const store = new FileDevAutonomousWorkflowStore({ stateRoot: root });
+    await store.create(plan());
+    await store.apply("workflow-restart", {
+      type: "guidance_dispatched",
+      taskId: "task-a",
+      dispatch: {
+        workerConversationKey: "worker-task-a",
+        operationId: "operation-a",
+        watcherId: "watcher-a"
+      }
+    });
+    await mutatePersistedWorkflow(root, workflow => {
+      const tasks = workflow.tasks as Array<Record<string, unknown>>;
+      const dispatch = tasks[0]?.guidanceDispatch as Record<string, unknown>;
+      dispatch.watcherId = "not a stable identifier";
+    });
+
+    await expect(store.get("workflow-restart")).rejects.toMatchObject({
+      code: "state_corrupt"
+    } satisfies Partial<DevAutonomousStoreError>);
+  });
+
+  it("rejects impossible accepted task state that lacks tested push and review evidence", async () => {
+    const root = await stateRoot();
+    const store = new FileDevAutonomousWorkflowStore({ stateRoot: root });
+    await store.create(plan());
+    await mutatePersistedWorkflow(root, workflow => {
+      const tasks = workflow.tasks as Array<Record<string, unknown>>;
+      if (tasks[0] !== undefined) tasks[0].phase = "accepted";
+      workflow.status = "integration_ready";
+    });
+
+    await expect(store.get("workflow-restart")).rejects.toMatchObject({
+      code: "state_corrupt"
+    } satisfies Partial<DevAutonomousStoreError>);
   });
 
   it("serializes concurrent mutations so no state revision is silently overwritten", async () => {
