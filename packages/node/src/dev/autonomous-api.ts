@@ -7,6 +7,7 @@ import {
   type DevAutonomousEngineOptions,
   type DevAutonomousLocalPort
 } from "./autonomous-engine.js";
+import type { DevAutonomousPlanningVerifier } from "./autonomous-local-identity.js";
 import {
   type DevAutonomousPlannerPort,
   type DevAutonomousPlanningOptions,
@@ -46,7 +47,7 @@ export type DevAutonomousApiOptions = DevAutonomousEngineOptions & Readonly<{
   chat: DevAutonomousChatPort;
   planner?: DevAutonomousPlannerPort;
   planningStore?: FileDevAutonomousPlanningSpecStore;
-  local?: DevAutonomousLocalPort;
+  local?: DevAutonomousLocalPort & Partial<DevAutonomousPlanningVerifier>;
 }>;
 
 const DEFAULT_MAX_STEPS = 128;
@@ -54,6 +55,7 @@ const MAX_STEPS = 10_000;
 
 export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAutonomousApi {
   const local = options.local ?? unavailableLocalPort();
+  const planningVerifier = options.local?.verifyPlanningSpec;
   const engine = new DevAutonomousEngine(
     options.store,
     options.chat,
@@ -74,6 +76,9 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
     }
     return planner;
   };
+  const verifyExecutionIdentity = async (spec: DevAutonomousPlanningSpec): Promise<void> => {
+    if (planningVerifier !== undefined) await planningVerifier.call(options.local, spec);
+  };
   return Object.freeze({
     plan: async (spec, planningOptions) => {
       const plannerPort = requirePlanner();
@@ -92,6 +97,7 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
           );
         }
         await planningStore.claim(spec);
+        await verifyExecutionIdentity(spec);
         if (
           existing.projectKey !== spec.projectKey
           || existing.plannerConversationKey !== spec.plannerConversationKey
@@ -108,6 +114,7 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
       }
       const plannerPort = requirePlanner();
       await planningStore.claim(spec);
+      await verifyExecutionIdentity(spec);
       const plan = await plannerPort.planWorkflow(spec, planningOptions);
       try {
         return await engine.create(plan);
