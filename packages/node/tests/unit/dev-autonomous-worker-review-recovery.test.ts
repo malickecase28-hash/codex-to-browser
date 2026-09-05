@@ -121,7 +121,9 @@ describe("worker review revision recovery", () => {
 
     expect(readReviewGuidance).toHaveBeenCalledWith({
       watcherId,
-      reviewDigest: D3
+      reviewDigest: D3,
+      conversationKey: "worker-task-a",
+      kind: "worker_review"
     });
     expect(beginGuidance).toHaveBeenLastCalledWith(expect.objectContaining({
       conversationKey: "worker-task-a",
