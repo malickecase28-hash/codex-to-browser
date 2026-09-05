@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   finalize:
-    name: finalize source and generated runtime
+    name: finalize generated release artifacts
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -37,176 +37,25 @@ jobs:
       - name: Install Node dependencies
         run: npm --prefix packages/node ci
 
-      - name: Add restart-boundary regression tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > packages/node/tests/unit/dev-autonomous-snapshot-corruption.test.ts <<'TS'
-          import { describe, expect, it } from "vitest";
-          import { parseAutonomousWorkflowSnapshot } from "../../src/dev/autonomous-snapshot.js";
-          import {
-            DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION,
-            type DevAutonomousWorkflow
-          } from "../../src/dev/autonomous-workflow.js";
-
-          const D1 = `sha256:${"1".repeat(64)}`;
-          const D2 = `sha256:${"2".repeat(64)}`;
-          const D3 = `sha256:${"3".repeat(64)}`;
-          const D4 = `sha256:${"4".repeat(64)}`;
-          const SHA_TASK = "a".repeat(40);
-
-          function acceptedWorkflow(): DevAutonomousWorkflow {
-            return {
-              schemaVersion: DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION,
-              workflowId: "workflow-snapshot-corruption",
-              projectKey: "project-snapshot-corruption",
-              plannerConversationKey: "planner-snapshot-corruption",
-              revision: 6,
-              status: "integration_ready",
-              tasks: [{
-                taskId: "task-a",
-                title: "Task A",
-                summary: "Exercise persisted snapshot invariants.",
-                dependencies: [],
-                acceptanceCriteria: ["The persisted evidence chain remains exact."],
-                phase: "accepted",
-                attempt: 1,
-                workerConversationKey: "worker-task-a",
-                guidance: {
-                  workerConversationKey: "worker-task-a",
-                  operationId: "operation-a",
-                  watcherId: "watcher-a",
-                  responseDigest: D1
-                },
-                implementation: {
-                  implementerId: "implementer-task-a",
-                  branch: "feature/task-a",
-                  candidateDigest: D2
-                },
-                tester: {
-                  testerId: "tester-task-a",
-                  candidateDigest: D2,
-                  status: "passed",
-                  reportDigest: D3
-                },
-                push: {
-                  branch: "feature/task-a",
-                  commitSha: SHA_TASK,
-                  candidateDigest: D2
-                },
-                workerReview: {
-                  reviewerConversationKey: "worker-task-a",
-                  reviewedSha: SHA_TASK,
-                  status: "accepted",
-                  reviewDigest: D4
-                }
-              }],
-              integration: {}
-            };
-          }
-
-          describe("persisted autonomous snapshot corruption", () => {
-            it("rejects accepted snapshots that lose completed worker guidance", () => {
-              const value: any = structuredClone(acceptedWorkflow());
-              delete value.tasks[0].guidance;
-
-              expect(() => parseAutonomousWorkflowSnapshot(
-                value,
-                "workflow-snapshot-corruption"
-              )).toThrow(/accepted evidence/);
-            });
-
-            it("rejects a forged block that claims an accepted task was blockable", () => {
-              const value: any = structuredClone(acceptedWorkflow());
-              value.tasks[0].phase = "blocked";
-              value.tasks[0].blockerCode = "local_action_busy";
-              value.tasks[0].blockerRecoverable = true;
-              value.tasks[0].blockedFrom = "accepted";
-              value.status = "blocked";
-
-              expect(() => parseAutonomousWorkflowSnapshot(
-                value,
-                "workflow-snapshot-corruption"
-              )).toThrow(/blockedFrom is invalid/);
-            });
-
-            it("rejects revision snapshots that lose the guidance for the failed candidate", () => {
-              const value: any = structuredClone(acceptedWorkflow());
-              value.status = "running";
-              value.tasks[0].phase = "revision_required";
-              value.tasks[0].attempt = 2;
-              value.tasks[0].tester.status = "failed";
-              delete value.tasks[0].guidance;
-              delete value.tasks[0].push;
-              delete value.tasks[0].workerReview;
-
-              expect(() => parseAutonomousWorkflowSnapshot(
-                value,
-                "workflow-snapshot-corruption"
-              )).toThrow(/worker identity and guidance/);
-            });
-          });
-          TS
-
-      - name: Prove regressions are red before the fix
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd packages/node
-          set +e
-          npx vitest run tests/unit/dev-autonomous-snapshot-corruption.test.ts > /tmp/autonomous-red.log 2>&1
-          status=$?
-          set -e
-          cat /tmp/autonomous-red.log
-          if [ "$status" -eq 0 ]; then
-            echo "Restart-boundary regressions unexpectedly passed before the fix" >&2
-            exit 1
-          fi
-          grep -F "rejects accepted snapshots that lose completed worker guidance" /tmp/autonomous-red.log >/dev/null
-          grep -F "rejects a forged block that claims an accepted task was blockable" /tmp/autonomous-red.log >/dev/null
-          grep -F "rejects revision snapshots that lose the guidance for the failed candidate" /tmp/autonomous-red.log >/dev/null
-
-      - name: Apply minimal restart-state fixes and clean Python import
+      - name: Remove duplicate Python async-client import
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          snapshot = Path("packages/node/src/dev/autonomous-snapshot.ts")
-          text = snapshot.read_text(encoding="utf-8")
-
-          old = '  "review_pending",\n  "revision_required",\n  "accepted"\n]);'
-          new = '  "review_pending",\n  "revision_required"\n]);'
-          if old not in text:
-              raise SystemExit("expected blockedFrom phase list was not found")
-          text = text.replace(old, new, 1)
-
-          old = '      requirePresent(task.workerConversationKey, `Task ${task.taskId} worker identity`);'
-          new = '      requirePresent(task.workerConversationKey, task.guidance, `Task ${task.taskId} worker identity and guidance`);'
-          if old not in text:
-              raise SystemExit("expected revision-required guard was not found")
-          text = text.replace(old, new, 1)
-
-          old = '      requirePresent(task.workerConversationKey, task.implementation, task.tester, task.push, task.workerReview, `Task ${task.taskId} accepted evidence`);'
-          new = '      requirePresent(task.workerConversationKey, task.guidance, task.implementation, task.tester, task.push, task.workerReview, `Task ${task.taskId} accepted evidence`);'
-          if old not in text:
-              raise SystemExit("expected accepted-state guard was not found")
-          text = text.replace(old, new, 1)
-          snapshot.write_text(text, encoding="utf-8")
-
-          async_client = Path("packages/python/src/codex_chatgpt_control/async_client.py")
-          py = async_client.read_text(encoding="utf-8")
+          path = Path("packages/python/src/codex_chatgpt_control/async_client.py")
+          text = path.read_text(encoding="utf-8")
           duplicate = "from .dev import AsyncDevClient\nfrom .dev import AsyncDevClient\n"
-          if duplicate not in py:
+          if duplicate not in text:
               raise SystemExit("expected duplicate AsyncDevClient import was not found")
-          py = py.replace(duplicate, "from .dev import AsyncDevClient\n", 1)
-          if py.count("from .dev import AsyncDevClient") != 1:
+          text = text.replace(duplicate, "from .dev import AsyncDevClient\n", 1)
+          if text.count("from .dev import AsyncDevClient") != 1:
               raise SystemExit("AsyncDevClient import cleanup was not exact")
-          async_client.write_text(py, encoding="utf-8")
+          path.write_text(text, encoding="utf-8")
           PY
 
-      - name: Verify focused restart and local-executor behavior
+      - name: Verify focused autonomous behavior
         shell: bash
         run: |
           set -euo pipefail
@@ -232,7 +81,7 @@ jobs:
           npm run plugin:validate
           npm run release:check-node-pack
 
-      - name: Commit exact finalized source and generated runtime
+      - name: Commit exact generated release state and remove finalizer
         shell: bash
         run: |
           set -euo pipefail
@@ -241,13 +90,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            packages/node/src/dev/autonomous-snapshot.ts \
-            packages/node/tests/unit/dev-autonomous-snapshot-corruption.test.ts \
             packages/python/src/codex_chatgpt_control/async_client.py \
             plugins/codex-chatgpt-control/runtime
-          if git diff --cached --quiet; then
-            echo "No finalization changes were produced" >&2
-            exit 1
-          fi
+          git rm .github/workflows/finalize-autonomous-release.yml
+          git diff --cached --check
           git commit -m "build: finalize autonomous release runtime"
           git push origin HEAD:chatgpt-dev-orchestrator
