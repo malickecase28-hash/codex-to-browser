@@ -23,10 +23,8 @@ import {
   bindCodexLocalPlanningIdentity,
   codexLocalIdentityOptions
 } from "./autonomous-local-identity.js";
-import {
-  createCodexCliAutonomousLocalPort,
-  type CodexCliAutonomousLocalPortOptions
-} from "./codex-cli-local-port.js";
+import type { CodexCliAutonomousLocalPortOptions } from "./codex-cli-local-port.js";
+import { createCodexCliAutonomousLocalPort } from "./codex-cli-safe-local-port.js";
 import {
   ChatGPTAutonomousPort,
   type ChatGPTAutonomousPortOptions
