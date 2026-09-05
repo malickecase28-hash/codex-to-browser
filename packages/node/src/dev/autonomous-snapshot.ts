@@ -31,8 +31,7 @@ const NON_BLOCKED_TASK_PHASES = new Set<Exclude<DevTaskPhase, "blocked">>([
   "testing_pending",
   "push_pending",
   "review_pending",
-  "revision_required",
-  "accepted"
+  "revision_required"
 ]);
 const WORKFLOW_STATUSES = new Set<DevWorkflowStatus>([
   "running",
@@ -279,7 +278,7 @@ function validateEffectiveTaskPhase(task: DevTaskRecord, phase: Exclude<DevTaskP
       invalid(`Task ${task.taskId} revision-required state lacks rejection evidence.`);
     }
     case "accepted":
-      requirePresent(task.workerConversationKey, task.implementation, task.tester, task.push, task.workerReview, `Task ${task.taskId} accepted evidence`);
+      requirePresent(task.workerConversationKey, task.guidance, task.implementation, task.tester, task.push, task.workerReview, `Task ${task.taskId} accepted evidence`);
       if (task.tester?.status !== "passed" || task.workerReview?.status !== "accepted") {
         invalid(`Task ${task.taskId} accepted state lacks passing test and worker acceptance evidence.`);
       }
