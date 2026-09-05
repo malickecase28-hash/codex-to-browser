@@ -20,6 +20,10 @@ import {
 } from "./autonomous-api.js";
 import type { DevAutonomousLocalPort } from "./autonomous-engine.js";
 import {
+  bindCodexLocalPlanningIdentity,
+  codexLocalIdentityOptions
+} from "./autonomous-local-identity.js";
+import {
   createCodexCliAutonomousLocalPort,
   type CodexCliAutonomousLocalPortOptions
 } from "./codex-cli-local-port.js";
@@ -130,12 +134,18 @@ export function createChatGPT(options: DevChatGPTClientOptions = {}): DevChatGPT
   if (autonomousOptions?.local !== undefined && autonomousOptions.localCodex !== undefined) {
     throw new TypeError("Configure either dev.autonomous.local or dev.autonomous.localCodex, not both.");
   }
-  const local = autonomousOptions?.local ?? (autonomousOptions?.localCodex === undefined
-    ? undefined
-    : createCodexCliAutonomousLocalPort({
-        ...autonomousOptions.localCodex,
-        stateRoot: autonomousOptions.localCodex.stateRoot ?? join(autonomousRoot, "local")
-      }));
+  let local = autonomousOptions?.local;
+  if (local === undefined && autonomousOptions?.localCodex !== undefined) {
+    const codexOptions: CodexCliAutonomousLocalPortOptions = {
+      ...autonomousOptions.localCodex,
+      stateRoot: autonomousOptions.localCodex.stateRoot ?? join(autonomousRoot, "local")
+    };
+    const codexLocal = createCodexCliAutonomousLocalPort(codexOptions);
+    local = bindCodexLocalPlanningIdentity(
+      codexLocal,
+      codexLocalIdentityOptions(codexOptions, join(autonomousRoot, "execution-identities"))
+    );
+  }
   const autonomous = createDevAutonomousApi({
     store,
     chat,
