@@ -108,13 +108,19 @@ describe("integration transition guard", () => {
     });
 
     expect(workflow.status).toBe("planner_review_pending");
-    expect(() => applyAutonomousWorkflowEvent(workflow, {
-      type: "integration_candidate",
-      evidence: {
-        implementerId: "integrator-2",
-        branch: "integration",
-        candidateDigest: D3
-      }
-    })).toThrowError(expect.objectContaining({ code: "invalid_transition" }));
+    let thrown: unknown;
+    try {
+      applyAutonomousWorkflowEvent(workflow, {
+        type: "integration_candidate",
+        evidence: {
+          implementerId: "integrator-2",
+          branch: "integration",
+          candidateDigest: D3
+        }
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ code: "invalid_transition" });
   });
 });
