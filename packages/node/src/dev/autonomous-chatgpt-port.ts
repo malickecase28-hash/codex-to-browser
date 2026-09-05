@@ -25,7 +25,8 @@ import {
   type DevAutonomousChatPort,
   type DevAutonomousReviewObservation,
   type DevAutonomousTurnObservation,
-  type DevLocalTestFailureContext
+  type DevLocalTestFailureContext,
+  type DevReviewGuidanceLookup
 } from "./autonomous-engine.js";
 import {
   devAutonomousPlannerPrompt,
@@ -214,7 +215,15 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort, DevAutonomo
     return response.text;
   }
 
-  async readReviewGuidance(input: Readonly<{ watcherId: string; reviewDigest: string }>): Promise<string> {
+  async readReviewGuidance(input: DevReviewGuidanceLookup): Promise<string> {
+    const turn = await this.turns.require(input.watcherId);
+    if (turn.kind !== input.kind || turn.logicalConversationKey !== input.conversationKey) {
+      throw new DevAutonomousPortError(
+        "review_guidance_identity_mismatch",
+        false,
+        "Durable review guidance belongs to a different review kind or logical conversation."
+      );
+    }
     const response = await this.turns.readResponse(input.watcherId, input.reviewDigest);
     if (response === undefined) {
       throw new DevAutonomousPortError(
