@@ -42,6 +42,7 @@ export type DevAutonomousChatPort = Readonly<{
     operationId: string;
     watcherId: string;
     localTestFailure?: DevLocalTestFailureContext;
+    workerReviewGuidance?: string;
   }>): Promise<DevGuidanceDispatch>;
   collectGuidance(
     dispatch: DevGuidanceDispatch,
@@ -209,6 +210,20 @@ export class DevAutonomousEngine {
               summary: feedback.summary
             });
           }
+          let workerReviewGuidance: string | undefined;
+          if (task.workerReview?.status === "revision_required") {
+            if (task.workerReview.reviewWatcherId === undefined || this.chat.readReviewGuidance === undefined) {
+              throw new DevAutonomousPortError(
+                "review_guidance_unavailable",
+                true,
+                "The exact worker revision guidance is unavailable from its durable ChatGPT review turn."
+              );
+            }
+            workerReviewGuidance = await this.chat.readReviewGuidance({
+              watcherId: task.workerReview.reviewWatcherId,
+              reviewDigest: task.workerReview.reviewDigest
+            });
+          }
           const conversation = await this.chat.ensureWorkerConversation({ workflow, task });
           const operationId = deterministicUuid(`${workflow.workflowId}:${task.taskId}:${task.attempt}:guidance`);
           const watcherId = deterministicWatcherId(`${workflow.workflowId}:${task.taskId}:${task.attempt}:guidance`);
@@ -218,7 +233,8 @@ export class DevAutonomousEngine {
             conversationKey: conversation.conversationKey,
             operationId,
             watcherId,
-            ...(localTestFailure === undefined ? {} : { localTestFailure })
+            ...(localTestFailure === undefined ? {} : { localTestFailure }),
+            ...(workerReviewGuidance === undefined ? {} : { workerReviewGuidance })
           });
           await this.store.apply(workflow.workflowId, { type: "guidance_dispatched", taskId: task.taskId, dispatch });
           return { taskId: task.taskId, progressed: true, pending: true };
