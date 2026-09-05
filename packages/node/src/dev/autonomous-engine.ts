@@ -30,6 +30,13 @@ export type DevLocalTestFailureContext = Readonly<{
   summary: string;
 }>;
 
+export type DevReviewGuidanceLookup = Readonly<{
+  watcherId: string;
+  reviewDigest: string;
+  conversationKey: string;
+  kind: "worker_review" | "planner_review";
+}>;
+
 export type DevAutonomousChatPort = Readonly<{
   ensureWorkerConversation(input: Readonly<{
     workflow: DevAutonomousWorkflow;
@@ -49,7 +56,7 @@ export type DevAutonomousChatPort = Readonly<{
     options: Readonly<{ wait: boolean; timeoutMs?: number }>
   ): Promise<DevAutonomousTurnObservation>;
   readGuidance(evidence: DevGuidanceEvidence): Promise<string>;
-  readReviewGuidance?(input: Readonly<{ watcherId: string; reviewDigest: string }>): Promise<string>;
+  readReviewGuidance?(input: DevReviewGuidanceLookup): Promise<string>;
   reviewCommit(input: Readonly<{
     workflow: DevAutonomousWorkflow;
     task: DevTaskRecord;
@@ -212,7 +219,11 @@ export class DevAutonomousEngine {
           }
           let workerReviewGuidance: string | undefined;
           if (task.workerReview?.status === "revision_required") {
-            if (task.workerReview.reviewWatcherId === undefined || this.chat.readReviewGuidance === undefined) {
+            if (
+              task.workerConversationKey === undefined
+              || task.workerReview.reviewWatcherId === undefined
+              || this.chat.readReviewGuidance === undefined
+            ) {
               throw new DevAutonomousPortError(
                 "review_guidance_unavailable",
                 true,
@@ -221,7 +232,9 @@ export class DevAutonomousEngine {
             }
             workerReviewGuidance = await this.chat.readReviewGuidance({
               watcherId: task.workerReview.reviewWatcherId,
-              reviewDigest: task.workerReview.reviewDigest
+              reviewDigest: task.workerReview.reviewDigest,
+              conversationKey: task.workerConversationKey,
+              kind: "worker_review"
             });
           }
           const conversation = await this.chat.ensureWorkerConversation({ workflow, task });
@@ -339,7 +352,9 @@ export class DevAutonomousEngine {
             }
             revisionGuidance = await this.chat.readReviewGuidance({
               watcherId: priorReview.reviewWatcherId,
-              reviewDigest: priorReview.reviewDigest
+              reviewDigest: priorReview.reviewDigest,
+              conversationKey: workflow.plannerConversationKey,
+              kind: "planner_review"
             });
           }
           const evidence = await this.local.integrate({
