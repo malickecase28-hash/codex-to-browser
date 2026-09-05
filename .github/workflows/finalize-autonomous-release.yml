@@ -37,7 +37,136 @@ jobs:
       - name: Install Node dependencies
         run: npm --prefix packages/node ci
 
-      - name: Add restart-boundary regressions and clean Python import
+      - name: Add restart-boundary regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > packages/node/tests/unit/dev-autonomous-snapshot-corruption.test.ts <<'TS'
+          import { describe, expect, it } from "vitest";
+          import { parseAutonomousWorkflowSnapshot } from "../../src/dev/autonomous-snapshot.js";
+          import {
+            DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION,
+            type DevAutonomousWorkflow
+          } from "../../src/dev/autonomous-workflow.js";
+
+          const D1 = `sha256:${"1".repeat(64)}`;
+          const D2 = `sha256:${"2".repeat(64)}`;
+          const D3 = `sha256:${"3".repeat(64)}`;
+          const D4 = `sha256:${"4".repeat(64)}`;
+          const SHA_TASK = "a".repeat(40);
+
+          function acceptedWorkflow(): DevAutonomousWorkflow {
+            return {
+              schemaVersion: DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION,
+              workflowId: "workflow-snapshot-corruption",
+              projectKey: "project-snapshot-corruption",
+              plannerConversationKey: "planner-snapshot-corruption",
+              revision: 6,
+              status: "integration_ready",
+              tasks: [{
+                taskId: "task-a",
+                title: "Task A",
+                summary: "Exercise persisted snapshot invariants.",
+                dependencies: [],
+                acceptanceCriteria: ["The persisted evidence chain remains exact."],
+                phase: "accepted",
+                attempt: 1,
+                workerConversationKey: "worker-task-a",
+                guidance: {
+                  workerConversationKey: "worker-task-a",
+                  operationId: "operation-a",
+                  watcherId: "watcher-a",
+                  responseDigest: D1
+                },
+                implementation: {
+                  implementerId: "implementer-task-a",
+                  branch: "feature/task-a",
+                  candidateDigest: D2
+                },
+                tester: {
+                  testerId: "tester-task-a",
+                  candidateDigest: D2,
+                  status: "passed",
+                  reportDigest: D3
+                },
+                push: {
+                  branch: "feature/task-a",
+                  commitSha: SHA_TASK,
+                  candidateDigest: D2
+                },
+                workerReview: {
+                  reviewerConversationKey: "worker-task-a",
+                  reviewedSha: SHA_TASK,
+                  status: "accepted",
+                  reviewDigest: D4
+                }
+              }],
+              integration: {}
+            };
+          }
+
+          describe("persisted autonomous snapshot corruption", () => {
+            it("rejects accepted snapshots that lose completed worker guidance", () => {
+              const value: any = structuredClone(acceptedWorkflow());
+              delete value.tasks[0].guidance;
+
+              expect(() => parseAutonomousWorkflowSnapshot(
+                value,
+                "workflow-snapshot-corruption"
+              )).toThrow(/accepted evidence/);
+            });
+
+            it("rejects a forged block that claims an accepted task was blockable", () => {
+              const value: any = structuredClone(acceptedWorkflow());
+              value.tasks[0].phase = "blocked";
+              value.tasks[0].blockerCode = "local_action_busy";
+              value.tasks[0].blockerRecoverable = true;
+              value.tasks[0].blockedFrom = "accepted";
+              value.status = "blocked";
+
+              expect(() => parseAutonomousWorkflowSnapshot(
+                value,
+                "workflow-snapshot-corruption"
+              )).toThrow(/blockedFrom is invalid/);
+            });
+
+            it("rejects revision snapshots that lose the guidance for the failed candidate", () => {
+              const value: any = structuredClone(acceptedWorkflow());
+              value.status = "running";
+              value.tasks[0].phase = "revision_required";
+              value.tasks[0].attempt = 2;
+              value.tasks[0].tester.status = "failed";
+              delete value.tasks[0].guidance;
+              delete value.tasks[0].push;
+              delete value.tasks[0].workerReview;
+
+              expect(() => parseAutonomousWorkflowSnapshot(
+                value,
+                "workflow-snapshot-corruption"
+              )).toThrow(/worker identity and guidance/);
+            });
+          });
+          TS
+
+      - name: Prove regressions are red before the fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/node
+          set +e
+          npx vitest run tests/unit/dev-autonomous-snapshot-corruption.test.ts > /tmp/autonomous-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/autonomous-red.log
+          if [ "$status" -eq 0 ]; then
+            echo "Restart-boundary regressions unexpectedly passed before the fix" >&2
+            exit 1
+          fi
+          grep -F "rejects accepted snapshots that lose completed worker guidance" /tmp/autonomous-red.log >/dev/null
+          grep -F "rejects a forged block that claims an accepted task was blockable" /tmp/autonomous-red.log >/dev/null
+          grep -F "rejects revision snapshots that lose the guidance for the failed candidate" /tmp/autonomous-red.log >/dev/null
+
+      - name: Apply minimal restart-state fixes and clean Python import
         shell: bash
         run: |
           set -euo pipefail
@@ -47,13 +176,8 @@ jobs:
           snapshot = Path("packages/node/src/dev/autonomous-snapshot.ts")
           text = snapshot.read_text(encoding="utf-8")
 
-          old = '''  "review_pending",
-            "revision_required",
-            "accepted"
-          ]);'''
-          new = '''  "review_pending",
-            "revision_required"
-          ]);'''
+          old = '  "review_pending",\n  "revision_required",\n  "accepted"\n]);'
+          new = '  "review_pending",\n  "revision_required"\n]);'
           if old not in text:
               raise SystemExit("expected blockedFrom phase list was not found")
           text = text.replace(old, new, 1)
@@ -80,136 +204,6 @@ jobs:
           if py.count("from .dev import AsyncDevClient") != 1:
               raise SystemExit("AsyncDevClient import cleanup was not exact")
           async_client.write_text(py, encoding="utf-8")
-
-          test = Path("packages/node/tests/unit/dev-autonomous-store.test.ts")
-          t = test.read_text(encoding="utf-8")
-          roots = "const roots: string[] = [];\n"
-          constants = '''const roots: string[] = [];
-          const D1 = `sha256:${"1".repeat(64)}`;
-          const D2 = `sha256:${"2".repeat(64)}`;
-          const D3 = `sha256:${"3".repeat(64)}`;
-          const D4 = `sha256:${"4".repeat(64)}`;
-          const SHA_TASK = "a".repeat(40);
-          '''
-          if roots not in t:
-              raise SystemExit("store test constants anchor was not found")
-          t = t.replace(roots, constants, 1)
-
-          plan_end = '''  } as const;
-          }
-
-          describe("autonomous workflow store", () => {'''
-          helper = '''  } as const;
-          }
-
-          async function createAcceptedTask(store: FileDevAutonomousWorkflowStore): Promise<void> {
-            await store.create(plan());
-            await store.apply("workflow-restart", {
-              type: "guidance_dispatched",
-              taskId: "task-a",
-              dispatch: {
-                workerConversationKey: "worker-task-a",
-                operationId: "operation-a",
-                watcherId: "watcher-a"
-              }
-            });
-            await store.apply("workflow-restart", {
-              type: "guidance_completed",
-              taskId: "task-a",
-              evidence: {
-                workerConversationKey: "worker-task-a",
-                operationId: "operation-a",
-                watcherId: "watcher-a",
-                responseDigest: D1
-              }
-            });
-            await store.apply("workflow-restart", {
-              type: "implementation_candidate",
-              taskId: "task-a",
-              evidence: {
-                implementerId: "implementer-task-a",
-                branch: "feature/task-a",
-                candidateDigest: D2
-              }
-            });
-            await store.apply("workflow-restart", {
-              type: "tester_result",
-              taskId: "task-a",
-              evidence: {
-                testerId: "tester-task-a",
-                candidateDigest: D2,
-                status: "passed",
-                reportDigest: D3
-              }
-            });
-            await store.apply("workflow-restart", {
-              type: "implementation_pushed",
-              taskId: "task-a",
-              evidence: {
-                branch: "feature/task-a",
-                commitSha: SHA_TASK,
-                candidateDigest: D2
-              }
-            });
-            await store.apply("workflow-restart", {
-              type: "worker_review",
-              taskId: "task-a",
-              evidence: {
-                reviewerConversationKey: "worker-task-a",
-                reviewedSha: SHA_TASK,
-                status: "accepted",
-                reviewDigest: D4
-              }
-            });
-          }
-
-          describe("autonomous workflow store", () => {'''
-          if plan_end not in t:
-              raise SystemExit("store test helper anchor was not found")
-          t = t.replace(plan_end, helper, 1)
-
-          anchor = '''  it("serializes concurrent mutations so no state revision is silently overwritten", async () => {'''
-          regressions = '''  it("rejects accepted snapshots that lose the completed worker guidance", async () => {
-            const root = await stateRoot();
-            const store = new FileDevAutonomousWorkflowStore({ stateRoot: root });
-            await createAcceptedTask(store);
-            await mutatePersistedWorkflow(root, workflow => {
-              const tasks = workflow.tasks as Array<Record<string, unknown>>;
-              const task = tasks[0];
-              if (task !== undefined) delete task.guidance;
-            });
-
-            await expect(store.get("workflow-restart")).rejects.toMatchObject({
-              code: "state_corrupt"
-            } satisfies Partial<DevAutonomousStoreError>);
-          });
-
-          it("rejects a forged block that claims an accepted task was blockable", async () => {
-            const root = await stateRoot();
-            const store = new FileDevAutonomousWorkflowStore({ stateRoot: root });
-            await createAcceptedTask(store);
-            await mutatePersistedWorkflow(root, workflow => {
-              const tasks = workflow.tasks as Array<Record<string, unknown>>;
-              const task = tasks[0];
-              if (task !== undefined) {
-                task.phase = "blocked";
-                task.blockerCode = "local_action_busy";
-                task.blockerRecoverable = true;
-                task.blockedFrom = "accepted";
-              }
-              workflow.status = "blocked";
-            });
-
-            await expect(store.get("workflow-restart")).rejects.toMatchObject({
-              code: "state_corrupt"
-            } satisfies Partial<DevAutonomousStoreError>);
-          });
-
-          it("serializes concurrent mutations so no state revision is silently overwritten", async () => {'''
-          if anchor not in t:
-              raise SystemExit("store test insertion anchor was not found")
-          t = t.replace(anchor, regressions, 1)
-          test.write_text(t, encoding="utf-8")
           PY
 
       - name: Verify focused restart and local-executor behavior
@@ -218,6 +212,7 @@ jobs:
           set -euo pipefail
           cd packages/node
           npx vitest run \
+            tests/unit/dev-autonomous-snapshot-corruption.test.ts \
             tests/unit/dev-autonomous-store.test.ts \
             tests/unit/dev-autonomous-recovery-invariants.test.ts \
             tests/unit/dev-autonomous-blocker-recoverability.test.ts \
@@ -247,7 +242,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             packages/node/src/dev/autonomous-snapshot.ts \
-            packages/node/tests/unit/dev-autonomous-store.test.ts \
+            packages/node/tests/unit/dev-autonomous-snapshot-corruption.test.ts \
             packages/python/src/codex_chatgpt_control/async_client.py \
             plugins/codex-chatgpt-control/runtime
           if git diff --cached --quiet; then
