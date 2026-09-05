@@ -101,6 +101,7 @@ export type DevTaskRecord = Readonly<{
   push?: DevPushEvidence | undefined;
   workerReview?: DevWorkerReviewEvidence | undefined;
   blockerCode?: string | undefined;
+  blockerRecoverable?: boolean | undefined;
   blockedFrom?: Exclude<DevTaskPhase, "blocked"> | undefined;
 }>;
 
@@ -116,6 +117,7 @@ export type DevIntegrationRecord = Readonly<{
     reviewWatcherId?: string | undefined;
   }> | undefined;
   blockerCode?: string | undefined;
+  blockerRecoverable?: boolean | undefined;
   blockedFrom?: DevIntegrationPhase | undefined;
 }>;
 
@@ -137,12 +139,12 @@ export type DevAutonomousWorkflowEvent =
   | Readonly<{ type: "tester_result"; taskId: string; evidence: DevTesterEvidence }>
   | Readonly<{ type: "implementation_pushed"; taskId: string; evidence: DevPushEvidence }>
   | Readonly<{ type: "worker_review"; taskId: string; evidence: DevWorkerReviewEvidence }>
-  | Readonly<{ type: "task_blocked"; taskId: string; blockerCode: string }>
+  | Readonly<{ type: "task_blocked"; taskId: string; blockerCode: string; recoverable?: boolean }>
   | Readonly<{ type: "task_resumed"; taskId: string }>
   | Readonly<{ type: "integration_candidate"; evidence: DevImplementationCandidate }>
   | Readonly<{ type: "integration_tester_result"; evidence: DevTesterEvidence }>
   | Readonly<{ type: "integration_pushed"; evidence: DevPushEvidence }>
-  | Readonly<{ type: "integration_blocked"; blockerCode: string }>
+  | Readonly<{ type: "integration_blocked"; blockerCode: string; recoverable?: boolean }>
   | Readonly<{ type: "integration_resumed" }>
   | Readonly<{
       type: "planner_review";
@@ -226,7 +228,7 @@ export function applyAutonomousWorkflowEvent(
       next = updateTask(workflow, event.taskId, task => workerReview(task, event.evidence));
       break;
     case "task_blocked":
-      next = updateTask(workflow, event.taskId, task => blockTask(task, event.blockerCode));
+      next = updateTask(workflow, event.taskId, task => blockTask(task, event.blockerCode, event.recoverable === true));
       break;
     case "task_resumed":
       next = updateTask(workflow, event.taskId, resumeTask);
@@ -241,7 +243,7 @@ export function applyAutonomousWorkflowEvent(
       next = integrationPushed(workflow, event.evidence);
       break;
     case "integration_blocked":
-      next = blockIntegration(workflow, event.blockerCode);
+      next = blockIntegration(workflow, event.blockerCode, event.recoverable === true);
       break;
     case "integration_resumed":
       next = resumeIntegration(workflow);
@@ -261,12 +263,24 @@ function validatePlan(plan: DevWorkflowPlan): void {
     throw new DevAutonomousWorkflowError("invalid_plan", "A bounded non-empty task plan is required.");
   }
   const ids = new Set<string>();
+  const branches = new Set<string>();
   for (const task of plan.tasks) {
     requireId(task.taskId, "taskId");
     if (ids.has(task.taskId)) throw new DevAutonomousWorkflowError("invalid_plan", "Task IDs must be unique.");
     ids.add(task.taskId);
     requireText(task.title, "task title", 240);
     requireText(task.summary, "task summary", 16_384);
+    if (task.branch !== undefined) {
+      requireText(task.branch, "task branch", 512);
+      const branchKey = task.branch.toLocaleLowerCase("en-US");
+      if (["main", "master", "trunk"].includes(branchKey)) {
+        throw new DevAutonomousWorkflowError("invalid_plan", "Task branches cannot target a primary branch directly.");
+      }
+      if (branches.has(branchKey)) {
+        throw new DevAutonomousWorkflowError("invalid_plan", "Explicit task branches must be unique across the workflow.");
+      }
+      branches.add(branchKey);
+    }
     if (!Array.isArray(task.acceptanceCriteria) || task.acceptanceCriteria.length === 0 || task.acceptanceCriteria.length > 128) {
       throw new DevAutonomousWorkflowError("invalid_plan", "Every task needs bounded acceptance criteria.");
     }
@@ -330,6 +344,7 @@ function guidanceDispatched(task: DevTaskRecord, dispatch: DevGuidanceDispatch):
     push: undefined,
     workerReview: undefined,
     blockerCode: undefined,
+    blockerRecoverable: undefined,
     blockedFrom: undefined
   });
 }
@@ -417,15 +432,28 @@ function workerReview(task: DevTaskRecord, evidence: DevWorkerReviewEvidence): D
   });
 }
 
-function blockTask(task: DevTaskRecord, blockerCode: string): DevTaskRecord {
+function blockTask(task: DevTaskRecord, blockerCode: string, recoverable: boolean): DevTaskRecord {
   if (task.phase === "accepted" || task.phase === "blocked") invalidTransition("The task cannot be blocked from its current phase.");
   requireId(blockerCode, "blockerCode");
-  return Object.freeze({ ...task, phase: "blocked", blockerCode, blockedFrom: task.phase });
+  return Object.freeze({
+    ...task,
+    phase: "blocked",
+    blockerCode,
+    blockerRecoverable: recoverable,
+    blockedFrom: task.phase
+  });
 }
 
 function resumeTask(task: DevTaskRecord): DevTaskRecord {
   if (task.phase !== "blocked" || task.blockedFrom === undefined) invalidTransition("Only a blocked task can be resumed.");
-  return Object.freeze({ ...task, phase: task.blockedFrom, blockerCode: undefined, blockedFrom: undefined });
+  if (task.blockerRecoverable !== true) invalidTransition("A non-recoverable blocked task cannot be resumed.");
+  return Object.freeze({
+    ...task,
+    phase: task.blockedFrom,
+    blockerCode: undefined,
+    blockerRecoverable: undefined,
+    blockedFrom: undefined
+  });
 }
 
 function integrationCandidate(workflow: DevAutonomousWorkflow, evidence: DevImplementationCandidate): DevAutonomousWorkflow {
@@ -489,7 +517,7 @@ function integrationPushed(workflow: DevAutonomousWorkflow, evidence: DevPushEvi
   });
 }
 
-function blockIntegration(workflow: DevAutonomousWorkflow, blockerCode: string): DevAutonomousWorkflow {
+function blockIntegration(workflow: DevAutonomousWorkflow, blockerCode: string, recoverable: boolean): DevAutonomousWorkflow {
   if (!isIntegrationPhase(workflow.status)) {
     invalidTransition("Only an active integration phase can be blocked.");
   }
@@ -501,6 +529,7 @@ function blockIntegration(workflow: DevAutonomousWorkflow, blockerCode: string):
     integration: {
       ...workflow.integration,
       blockerCode,
+      blockerRecoverable: recoverable,
       blockedFrom: workflow.status
     }
   });
@@ -511,6 +540,9 @@ function resumeIntegration(workflow: DevAutonomousWorkflow): DevAutonomousWorkfl
   if (workflow.status !== "blocked" || blockedFrom === undefined) {
     invalidTransition("Only a durably blocked integration phase can be resumed.");
   }
+  if (workflow.integration.blockerRecoverable !== true) {
+    invalidTransition("A non-recoverable blocked integration phase cannot be resumed.");
+  }
   return freezeWorkflow({
     ...workflow,
     revision: workflow.revision + 1,
@@ -518,6 +550,7 @@ function resumeIntegration(workflow: DevAutonomousWorkflow): DevAutonomousWorkfl
     integration: {
       ...workflow.integration,
       blockerCode: undefined,
+      blockerRecoverable: undefined,
       blockedFrom: undefined
     }
   });
