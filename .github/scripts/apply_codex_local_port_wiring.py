@@ -49,3 +49,10 @@ if ".chatgpt-dev/\n" not in text:
         text += "\n"
     text += ".chatgpt-dev/\n"
     gitignore.write_text(text, encoding="utf-8")
+
+# The README shipped inside the npm tarball must document the turnkey local adapter.
+replace_once(
+    "packages/node/README.md",
+    '''const result = await chatgpt.runner.run(reviewer, {\n  input: "Review this design.",\n  thread: { type: "new" },\n  experience: "chat",\n  response: { format: "markdown" }\n});\n```\n\n## Connected Browser transport''',
+    '''const result = await chatgpt.runner.run(reviewer, {\n  input: "Review this design.",\n  thread: { type: "new" },\n  experience: "chat",\n  response: { format: "markdown" }\n});\n```\n\n## Autonomous repository development with Codex CLI\n\nInstall and sign in to the official Codex CLI when you want the packaged local implementation/test adapter:\n\n```bash\nnpm install -g @openai/codex\ncodex\n```\n\nOpt in explicitly when creating the enhanced client:\n\n```ts\nconst chatgpt = createChatGPT({\n  agent: globalThis.agent,\n  dev: {\n    autonomous: {\n      localCodex: {\n        repositoryRoot: process.cwd(),\n        allowPush: true\n      }\n    }\n  }\n});\n```\n\n`localCodex` is not enabled implicitly. `allowPush: true` is a second explicit opt-in because Git push is a network mutation. The adapter uses owned Git worktrees, direct executable invocation without a shell, Codex `workspace-write` sandboxing, separate implementation and independent-test sessions, candidate-digest verification, and non-force pushes. It never enables Codex's dangerous approval/sandbox bypass flags.\n\nProject and Planner deletion likewise requires explicit `confirmMutation: true`; unconfirmed destructive calls stop with `needs_confirmation` before the browser adapter touches a delete control. Planner controls that cannot be positively verified in the live visible UI remain `ui_unsupported` rather than using guessed selectors or hidden endpoints.\n\nSee `docs/github-install.md` in the source repository for the complete install, autonomous workflow, Python parity, and distribution instructions.\n\n## Connected Browser transport''',
+)
