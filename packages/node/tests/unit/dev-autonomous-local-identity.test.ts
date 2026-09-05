@@ -166,16 +166,25 @@ describe("autonomous local execution identity", () => {
     expect(implementations).toBe(0);
   });
 
-  it("leaves advanced create(plan) local execution caller-managed when no bootstrap identity exists", async () => {
+  it("blocks packaged local execution until bootstrap has claimed an execution identity", async () => {
+    const stateRoot = await mkdtemp(join(tmpdir(), "codex-local-identity-state-"));
+    roots.push(stateRoot);
     let implementations = 0;
     const local = bindCodexLocalPlanningIdentity(fakeLocal(() => { implementations += 1; }), {
-      repositoryRoot: join(tmpdir(), "does-not-need-to-exist-for-caller-managed-plan"),
-      stateRoot: join(await mkdtemp(join(tmpdir(), "codex-local-identity-state-")), "identity")
+      repositoryRoot: join(tmpdir(), "unbound-repository-does-not-need-to-be-opened"),
+      stateRoot: join(stateRoot, "identity")
     });
     const state = workflow();
 
-    await local.implement({ workflow: state, task: state.tasks[0]!, guidance: "Caller owns identity." });
+    await expect(local.implement({
+      workflow: state,
+      task: state.tasks[0]!,
+      guidance: "Do not run before bootstrap binding."
+    })).rejects.toMatchObject({
+      blockerCode: "execution_identity_unbound",
+      recoverable: true
+    });
 
-    expect(implementations).toBe(1);
+    expect(implementations).toBe(0);
   });
 });
