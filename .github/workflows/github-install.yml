@@ -80,7 +80,7 @@ jobs:
           trap 'rm -rf "$temp_dir"' EXIT
           cd "$temp_dir"
           npm init -y >/dev/null
-          npm install --ignore-scripts --no-audit --no-fund "$tarball"
+          npm install --no-audit --no-fund "$tarball"
           node --input-type=module <<'NODE'
           const sdk = await import("codex-chatgpt-control");
           if (typeof sdk.createChatGPT !== "function") {
@@ -88,6 +88,9 @@ jobs:
           }
           if (typeof sdk.createDevAutonomousApi !== "function") {
             throw new Error("packed SDK does not export createDevAutonomousApi");
+          }
+          if (typeof sdk.createCodexCliAutonomousLocalPort !== "function") {
+            throw new Error("packed SDK does not export the Codex CLI autonomous local port");
           }
           NODE
           ./node_modules/.bin/chatgpt-thread --help >/dev/null
@@ -173,11 +176,14 @@ jobs:
           trap 'rm -rf "$temp_dir"' EXIT
           cd "$temp_dir"
           npm init -y >/dev/null
-          npm install --ignore-scripts --no-audit --no-fund "git+https://github.com/${GITHUB_REPOSITORY}.git#npm-dist"
+          npm install --no-audit --no-fund "git+https://github.com/${GITHUB_REPOSITORY}.git#npm-dist"
           node --input-type=module <<'NODE'
           const sdk = await import("codex-chatgpt-control");
           if (typeof sdk.createChatGPT !== "function" || typeof sdk.createDevAutonomousApi !== "function") {
             throw new Error("npm-dist install did not expose the compiled SDK surface");
+          }
+          if (typeof sdk.createCodexCliAutonomousLocalPort !== "function") {
+            throw new Error("npm-dist install did not expose the Codex CLI autonomous local port");
           }
           NODE
           ./node_modules/.bin/chatgpt-thread --help >/dev/null
