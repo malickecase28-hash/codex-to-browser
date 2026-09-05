@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createChatGPTFromEnvironment, loadCodexBrowserAgent } from "../../src/environment.js";
+import type { BrowserLike } from "../../src/types.js";
 
 describe("Codex browser environment", () => {
   it("loads and verifies the configured Browser bridge module", async () => {
@@ -53,5 +54,16 @@ describe("Codex browser environment", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("never lets an ambient provider override an explicitly configured browser", async () => {
+    const explicitBrowser = Object.freeze({}) as BrowserLike;
+
+    const client = await createChatGPTFromEnvironment(
+      { CODEX_BROWSER_PROVIDER: "definitely-not-a-real-provider" },
+      { browser: explicitBrowser }
+    );
+
+    expect(client.dev.autonomous.bootstrap).toBeTypeOf("function");
   });
 });
