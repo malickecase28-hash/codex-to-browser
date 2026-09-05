@@ -7,7 +7,15 @@ import {
   type DevAutonomousEngineOptions,
   type DevAutonomousLocalPort
 } from "./autonomous-engine.js";
-import { FileDevAutonomousWorkflowStore } from "./autonomous-store.js";
+import {
+  type DevAutonomousPlannerPort,
+  type DevAutonomousPlanningOptions,
+  type DevAutonomousPlanningSpec
+} from "./autonomous-planner.js";
+import {
+  DevAutonomousStoreError,
+  FileDevAutonomousWorkflowStore
+} from "./autonomous-store.js";
 import type { DevAutonomousWorkflow, DevWorkflowPlan } from "./autonomous-workflow.js";
 
 export type DevAutonomousRunOptions = DevAutonomousAdvanceOptions & Readonly<{
@@ -22,6 +30,8 @@ export type DevAutonomousRunResult = Readonly<{
 }>;
 
 export type DevAutonomousApi = Readonly<{
+  plan(spec: DevAutonomousPlanningSpec, options?: DevAutonomousPlanningOptions): Promise<DevWorkflowPlan>;
+  bootstrap(spec: DevAutonomousPlanningSpec, options?: DevAutonomousPlanningOptions): Promise<DevAutonomousWorkflow>;
   create(plan: DevWorkflowPlan): Promise<DevAutonomousWorkflow>;
   get(workflowId: string): Promise<DevAutonomousWorkflow>;
   advance(workflowId: string, options?: DevAutonomousAdvanceOptions): Promise<DevAutonomousAdvanceResult>;
@@ -32,6 +42,7 @@ export type DevAutonomousApi = Readonly<{
 export type DevAutonomousApiOptions = DevAutonomousEngineOptions & Readonly<{
   store: FileDevAutonomousWorkflowStore;
   chat: DevAutonomousChatPort;
+  planner?: DevAutonomousPlannerPort;
   local?: DevAutonomousLocalPort;
 }>;
 
@@ -46,7 +57,50 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
     local,
     options.maxParallelTasks === undefined ? {} : { maxParallelTasks: options.maxParallelTasks }
   );
+  const planner = options.planner;
+  const requirePlanner = (): DevAutonomousPlannerPort => {
+    if (planner === undefined) {
+      throw new DevAutonomousPortError(
+        "planner_unavailable",
+        true,
+        "Autonomous master planning requires a visible-ChatGPT planner port."
+      );
+    }
+    return planner;
+  };
   return Object.freeze({
+    plan: (spec, planningOptions) => requirePlanner().planWorkflow(spec, planningOptions),
+    bootstrap: async (spec, planningOptions) => {
+      try {
+        const existing = await engine.get(spec.workflowId);
+        if (
+          existing.projectKey !== spec.projectKey
+          || existing.plannerConversationKey !== spec.plannerConversationKey
+        ) {
+          throw new DevAutonomousPortError(
+            "workflow_identity_mismatch",
+            false,
+            "An existing autonomous workflow ID belongs to a different Project or planner conversation."
+          );
+        }
+        return existing;
+      } catch (error) {
+        if (!(error instanceof DevAutonomousStoreError) || error.code !== "workflow_not_found") throw error;
+      }
+      const plan = await requirePlanner().planWorkflow(spec, planningOptions);
+      try {
+        return await engine.create(plan);
+      } catch (error) {
+        if (error instanceof DevAutonomousStoreError && error.code === "workflow_exists") {
+          const existing = await engine.get(spec.workflowId);
+          if (
+            existing.projectKey === spec.projectKey
+            && existing.plannerConversationKey === spec.plannerConversationKey
+          ) return existing;
+        }
+        throw error;
+      }
+    },
     create: plan => engine.create(plan),
     get: workflowId => engine.get(workflowId),
     advance: (workflowId, advanceOptions) => engine.advance(workflowId, advanceOptions),
