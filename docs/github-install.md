@@ -47,7 +47,7 @@ Global installation:
 npm install -g "git+https://github.com/malickecase28-hash/codex-to-browser.git#npm-dist"
 ```
 
-The `npm-dist` branch is force-updated only from a successful `codex-chatgpt-control-parity` run on `main`. Its root `SOURCE_COMMIT` file records the exact source commit used to produce the compiled package. The distribution workflow performs an ordinary clean `npm install` from that exact private Git branch before the branch is considered verified.
+The `npm-dist` branch is force-updated only from a successful `codex-chatgpt-control-parity` run on `main`. Its root `SOURCE_COMMIT` file records the exact source commit used to produce the compiled package. The distribution workflow performs an ordinary clean `npm install` from that exact private Git branch and verifies the installed `SOURCE_COMMIT` equals the source SHA before the branch is considered verified.
 
 ## Run the installed commands
 
@@ -107,23 +107,19 @@ const chatgpt = createChatGPT({
 
 The local port uses owned Git worktrees, direct executable invocation without a shell, Codex's `workspace-write` sandbox, bounded process output, separate implementation and independent-test Codex sessions, candidate-digest checks, non-force Git pushes, and exact commit-SHA evidence. Runtime state and owned worktrees live under `.chatgpt-dev` by default and are ignored by the source repository.
 
-A minimal workflow plan is explicit and durable:
+For turnkey orchestration, prefer `bootstrap()`. It creates or resumes the durable master-planning turn and then creates the workflow from the planner's strict task graph:
 
 ```js
-const workflow = await chatgpt.dev.autonomous.create({
+const workflow = await chatgpt.dev.autonomous.bootstrap({
   workflowId: "release-hardening",
-  projectKey: "codex-to-browser",
-  plannerConversationKey: "planner-main",
-  tasks: [
-    {
-      taskId: "task-001",
-      title: "Harden release path",
-      summary: "Implement the planned release hardening work.",
-      acceptanceCriteria: [
-        "relevant unit tests pass",
-        "package verification passes"
-      ]
-    }
+  projectKey: "g-p-example-project-id",
+  plannerConversationKey: "release-hardening:planner",
+  objective: "Harden the release path and preserve Node/Python parity.",
+  repositoryUrl: "https://github.com/malickecase28-hash/codex-to-browser",
+  defaultBranch: "main",
+  constraints: [
+    "Use visible ChatGPT Project conversations only.",
+    "Keep repository implementation and testing local to Codex."
   ]
 });
 
@@ -133,7 +129,11 @@ const result = await chatgpt.dev.autonomous.run(workflow.workflowId, {
 });
 ```
 
-ChatGPT worker/planner turns remain visible-browser operations. The local Codex port never substitutes hidden ChatGPT endpoints and never treats an unverified browser mutation as successful.
+`projectKey` is not a friendly project name. For automatic Project-scoped first-send creation it must be either the exact ChatGPT Project ID (for example `g-p-example-project-id`) or the exact Project route such as `https://chatgpt.com/g/g-p-example-project-id/project`. The runtime fails closed with `project_identity_unavailable` rather than guessing a Project from a title.
+
+Advanced callers may use `create(plan)` when they already own a validated `DevWorkflowPlan`. That bypasses master planning; it does not make an arbitrary Project name safe for first-send conversation creation.
+
+ChatGPT planner/worker turns remain visible-browser operations. The local Codex port never substitutes hidden ChatGPT endpoints and never treats an unverified browser mutation as successful.
 
 ## Destructive UI mutations
 
