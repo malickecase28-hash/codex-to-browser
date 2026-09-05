@@ -188,6 +188,8 @@ async function dispatchAutonomous(
         requiredString(args, "workflowId"),
         requiredString(args, "taskId")
       );
+    case "resumeIntegration":
+      return dev.autonomous.resumeIntegration(requiredString(args, "workflowId"));
     default:
       throw new DevBackendDispatchError();
   }
