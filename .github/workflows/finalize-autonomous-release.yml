@@ -1,0 +1,258 @@
+name: finalize-autonomous-release
+
+on:
+  push:
+    branches:
+      - chatgpt-dev-orchestrator
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-autonomous-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: finalize source and generated runtime
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chatgpt-dev-orchestrator
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: packages/node/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Node dependencies
+        run: npm --prefix packages/node ci
+
+      - name: Add restart-boundary regressions and clean Python import
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          snapshot = Path("packages/node/src/dev/autonomous-snapshot.ts")
+          text = snapshot.read_text(encoding="utf-8")
+
+          old = '''  "review_pending",
+            "revision_required",
+            "accepted"
+          ]);'''
+          new = '''  "review_pending",
+            "revision_required"
+          ]);'''
+          if old not in text:
+              raise SystemExit("expected blockedFrom phase list was not found")
+          text = text.replace(old, new, 1)
+
+          old = '      requirePresent(task.workerConversationKey, `Task ${task.taskId} worker identity`);'
+          new = '      requirePresent(task.workerConversationKey, task.guidance, `Task ${task.taskId} worker identity and guidance`);'
+          if old not in text:
+              raise SystemExit("expected revision-required guard was not found")
+          text = text.replace(old, new, 1)
+
+          old = '      requirePresent(task.workerConversationKey, task.implementation, task.tester, task.push, task.workerReview, `Task ${task.taskId} accepted evidence`);'
+          new = '      requirePresent(task.workerConversationKey, task.guidance, task.implementation, task.tester, task.push, task.workerReview, `Task ${task.taskId} accepted evidence`);'
+          if old not in text:
+              raise SystemExit("expected accepted-state guard was not found")
+          text = text.replace(old, new, 1)
+          snapshot.write_text(text, encoding="utf-8")
+
+          async_client = Path("packages/python/src/codex_chatgpt_control/async_client.py")
+          py = async_client.read_text(encoding="utf-8")
+          duplicate = "from .dev import AsyncDevClient\nfrom .dev import AsyncDevClient\n"
+          if duplicate not in py:
+              raise SystemExit("expected duplicate AsyncDevClient import was not found")
+          py = py.replace(duplicate, "from .dev import AsyncDevClient\n", 1)
+          if py.count("from .dev import AsyncDevClient") != 1:
+              raise SystemExit("AsyncDevClient import cleanup was not exact")
+          async_client.write_text(py, encoding="utf-8")
+
+          test = Path("packages/node/tests/unit/dev-autonomous-store.test.ts")
+          t = test.read_text(encoding="utf-8")
+          roots = "const roots: string[] = [];\n"
+          constants = '''const roots: string[] = [];
+          const D1 = `sha256:${"1".repeat(64)}`;
+          const D2 = `sha256:${"2".repeat(64)}`;
+          const D3 = `sha256:${"3".repeat(64)}`;
+          const D4 = `sha256:${"4".repeat(64)}`;
+          const SHA_TASK = "a".repeat(40);
+          '''
+          if roots not in t:
+              raise SystemExit("store test constants anchor was not found")
+          t = t.replace(roots, constants, 1)
+
+          plan_end = '''  } as const;
+          }
+
+          describe("autonomous workflow store", () => {'''
+          helper = '''  } as const;
+          }
+
+          async function createAcceptedTask(store: FileDevAutonomousWorkflowStore): Promise<void> {
+            await store.create(plan());
+            await store.apply("workflow-restart", {
+              type: "guidance_dispatched",
+              taskId: "task-a",
+              dispatch: {
+                workerConversationKey: "worker-task-a",
+                operationId: "operation-a",
+                watcherId: "watcher-a"
+              }
+            });
+            await store.apply("workflow-restart", {
+              type: "guidance_completed",
+              taskId: "task-a",
+              evidence: {
+                workerConversationKey: "worker-task-a",
+                operationId: "operation-a",
+                watcherId: "watcher-a",
+                responseDigest: D1
+              }
+            });
+            await store.apply("workflow-restart", {
+              type: "implementation_candidate",
+              taskId: "task-a",
+              evidence: {
+                implementerId: "implementer-task-a",
+                branch: "feature/task-a",
+                candidateDigest: D2
+              }
+            });
+            await store.apply("workflow-restart", {
+              type: "tester_result",
+              taskId: "task-a",
+              evidence: {
+                testerId: "tester-task-a",
+                candidateDigest: D2,
+                status: "passed",
+                reportDigest: D3
+              }
+            });
+            await store.apply("workflow-restart", {
+              type: "implementation_pushed",
+              taskId: "task-a",
+              evidence: {
+                branch: "feature/task-a",
+                commitSha: SHA_TASK,
+                candidateDigest: D2
+              }
+            });
+            await store.apply("workflow-restart", {
+              type: "worker_review",
+              taskId: "task-a",
+              evidence: {
+                reviewerConversationKey: "worker-task-a",
+                reviewedSha: SHA_TASK,
+                status: "accepted",
+                reviewDigest: D4
+              }
+            });
+          }
+
+          describe("autonomous workflow store", () => {'''
+          if plan_end not in t:
+              raise SystemExit("store test helper anchor was not found")
+          t = t.replace(plan_end, helper, 1)
+
+          anchor = '''  it("serializes concurrent mutations so no state revision is silently overwritten", async () => {'''
+          regressions = '''  it("rejects accepted snapshots that lose the completed worker guidance", async () => {
+            const root = await stateRoot();
+            const store = new FileDevAutonomousWorkflowStore({ stateRoot: root });
+            await createAcceptedTask(store);
+            await mutatePersistedWorkflow(root, workflow => {
+              const tasks = workflow.tasks as Array<Record<string, unknown>>;
+              const task = tasks[0];
+              if (task !== undefined) delete task.guidance;
+            });
+
+            await expect(store.get("workflow-restart")).rejects.toMatchObject({
+              code: "state_corrupt"
+            } satisfies Partial<DevAutonomousStoreError>);
+          });
+
+          it("rejects a forged block that claims an accepted task was blockable", async () => {
+            const root = await stateRoot();
+            const store = new FileDevAutonomousWorkflowStore({ stateRoot: root });
+            await createAcceptedTask(store);
+            await mutatePersistedWorkflow(root, workflow => {
+              const tasks = workflow.tasks as Array<Record<string, unknown>>;
+              const task = tasks[0];
+              if (task !== undefined) {
+                task.phase = "blocked";
+                task.blockerCode = "local_action_busy";
+                task.blockerRecoverable = true;
+                task.blockedFrom = "accepted";
+              }
+              workflow.status = "blocked";
+            });
+
+            await expect(store.get("workflow-restart")).rejects.toMatchObject({
+              code: "state_corrupt"
+            } satisfies Partial<DevAutonomousStoreError>);
+          });
+
+          it("serializes concurrent mutations so no state revision is silently overwritten", async () => {'''
+          if anchor not in t:
+              raise SystemExit("store test insertion anchor was not found")
+          t = t.replace(anchor, regressions, 1)
+          test.write_text(t, encoding="utf-8")
+          PY
+
+      - name: Verify focused restart and local-executor behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/node
+          npx vitest run \
+            tests/unit/dev-autonomous-store.test.ts \
+            tests/unit/dev-autonomous-recovery-invariants.test.ts \
+            tests/unit/dev-autonomous-blocker-recoverability.test.ts \
+            tests/unit/dev-codex-cli-test-hygiene.test.ts \
+            tests/unit/environment.test.ts
+
+      - name: Compile Python source
+        run: python -m compileall -q packages/python/src packages/python/tests
+
+      - name: Build SDK and regenerate plugin runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run node:build
+          npm run plugin:build
+          npm run plugin:check
+          npm run plugin:validate
+          npm run release:check-node-pack
+
+      - name: Commit exact finalized source and generated runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            packages/node/src/dev/autonomous-snapshot.ts \
+            packages/node/tests/unit/dev-autonomous-store.test.ts \
+            packages/python/src/codex_chatgpt_control/async_client.py \
+            plugins/codex-chatgpt-control/runtime
+          if git diff --cached --quiet; then
+            echo "No finalization changes were produced" >&2
+            exit 1
+          fi
+          git commit -m "build: finalize autonomous release runtime"
+          git push origin HEAD:chatgpt-dev-orchestrator
