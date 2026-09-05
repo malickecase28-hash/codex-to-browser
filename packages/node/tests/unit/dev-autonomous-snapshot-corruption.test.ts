@@ -155,4 +155,39 @@ describe("persisted autonomous snapshot corruption", () => {
       "workflow-snapshot-corruption"
     )).toThrow(/integration-testing state contains later-phase evidence/);
   });
+
+  it("preserves a legitimate failed integration-test retry snapshot", () => {
+    const value: any = structuredClone(acceptedWorkflow());
+    value.integration = {
+      implementation: integrationImplementation(),
+      tester: integrationTester("failed")
+    };
+
+    const parsed = parseAutonomousWorkflowSnapshot(
+      value,
+      "workflow-snapshot-corruption"
+    );
+    expect(parsed.status).toBe("integration_ready");
+    expect(parsed.integration.tester?.status).toBe("failed");
+  });
+
+  it("preserves a legitimate planner-requested integration revision snapshot", () => {
+    const value: any = structuredClone(acceptedWorkflow());
+    value.integration = {
+      plannerReview: {
+        plannerConversationKey: "planner-snapshot-corruption",
+        reviewedSha: SHA_INTEGRATION,
+        status: "revision_required",
+        reviewDigest: D3,
+        reviewWatcherId: "planner-review-watcher"
+      }
+    };
+
+    const parsed = parseAutonomousWorkflowSnapshot(
+      value,
+      "workflow-snapshot-corruption"
+    );
+    expect(parsed.status).toBe("integration_ready");
+    expect(parsed.integration.plannerReview?.status).toBe("revision_required");
+  });
 });
