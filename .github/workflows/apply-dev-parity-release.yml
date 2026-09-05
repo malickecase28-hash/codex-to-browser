@@ -39,6 +39,7 @@ jobs:
         run: |
           python .github/scripts/apply_dev_parity_release.py
           python .github/scripts/apply_codex_local_port_wiring.py
+          python .github/scripts/fix_local_port_types.py
 
       - name: Run focused development safety, dispatch, and local-executor tests
         working-directory: packages/node
