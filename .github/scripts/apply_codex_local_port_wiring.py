@@ -17,6 +17,36 @@ replace_once(
     '''    let pathState: "missing" | "directory" | "occupied" = "missing";\n    try {\n      pathState = (await lstat(path)).isDirectory() ? "directory" : "occupied";\n    } catch {\n      pathState = "missing";\n    }\n    if (pathState === "occupied") {\n      throw blocked("worktree_mismatch", "The owned worktree path is occupied by a non-directory entry.");\n    }\n    if (pathState === "directory") {\n      const existing = await this.gitRaw(path, ["rev-parse", "--show-toplevel"]);\n      if (existing.exitCode === 0) {\n        const observed = resolve(existing.stdout.trim());\n        if (observed !== path) throw blocked("worktree_mismatch", "An existing autonomous worktree has an unexpected Git root.");\n        const currentBranch = await this.gitText(path, ["branch", "--show-current"]);\n        if (currentBranch !== branch) throw blocked("worktree_mismatch", "An existing autonomous worktree is bound to a different branch.");\n        return path;\n      }\n      await rm(path, { recursive: true, force: true });\n    }\n''',
 )
 
+# A task owns one branch/worktree across revision attempts. The workflow ID prevents cross-workflow collisions.
+replace_once(
+    "packages/node/src/dev/codex-cli-local-port.ts",
+    '    const branch = await this.taskBranch(input.task);',
+    '    const branch = await this.taskBranch(input.workflow, input.task);',
+)
+replace_once(
+    "packages/node/src/dev/codex-cli-local-port.ts",
+    '''  private async taskBranch(task: DevTaskRecord): Promise<string> {\n    const branch = task.plannedBranch ?? `codex/${safeRefPart(task.taskId)}-attempt-${task.attempt}`;''',
+    '''  private async taskBranch(workflow: DevAutonomousWorkflow, task: DevTaskRecord): Promise<string> {\n    const branch = task.plannedBranch ?? `codex/${safeRefPart(workflow.workflowId)}/${safeRefPart(task.taskId)}`;''',
+)
+
+# Integration identity must remain stable after workflow.revision advances for tester/push events.
+replace_once(
+    "packages/node/src/dev/codex-cli-local-port.ts",
+    '''      branch,\n      `integration:${input.workflow.workflowId}:${input.workflow.revision}`\n    );\n    for (const task of input.acceptedTasks) {''',
+    '''      branch,\n      `integration:${input.workflow.workflowId}:${branch}`\n    );\n    for (const task of input.acceptedTasks) {''',
+)
+replace_once(
+    "packages/node/src/dev/codex-cli-local-port.ts",
+    '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.workflow.revision}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
+    '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.implementation.branch}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
+)
+# The same text occurs in pushIntegration after the first replacement, so patch the remaining occurrence.
+replace_once(
+    "packages/node/src/dev/codex-cli-local-port.ts",
+    '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.workflow.revision}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
+    '''      input.implementation.branch,\n      `integration:${input.workflow.workflowId}:${input.implementation.branch}`\n    );\n    await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);''',
+)
+
 # Make the concrete local port part of the public dev SDK.
 replace_once(
     "packages/node/src/dev/index.ts",
