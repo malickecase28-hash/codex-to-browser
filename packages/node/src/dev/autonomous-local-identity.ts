@@ -169,8 +169,8 @@ async function observeIdentity(input: Readonly<{
   gitExecutable: string;
   remote: string;
   baseRef: string;
-  expectedRepositoryUrl?: string;
-  defaultBranch?: string;
+  expectedRepositoryUrl?: string | undefined;
+  defaultBranch?: string | undefined;
 }>): Promise<ExecutionIdentityBody> {
   let root: string;
   try {
@@ -322,9 +322,11 @@ function canonicalRepositoryIdentity(value: string): string {
     }
     if (
       (parsed.protocol !== "https:" && parsed.protocol !== "ssh:")
+      || parsed.port !== ""
       || parsed.search !== ""
       || parsed.hash !== ""
       || parsed.password !== ""
+      || (parsed.protocol === "https:" && parsed.username !== "")
     ) {
       throw identityMismatch("The configured Git remote is not a canonical HTTPS or SSH repository URL.");
     }
