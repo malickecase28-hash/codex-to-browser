@@ -42,6 +42,13 @@ jobs:
           python .github/scripts/fix_local_port_types.py
           python .github/scripts/apply_planner_bootstrap.py
           python .github/scripts/fix_planner_async_dev.py
+          python .github/scripts/fix_dev_surface_matrix.py
+
+      - name: Build once and regenerate checked-in contract fixtures
+        working-directory: packages/node
+        run: |
+          npm run build
+          npm run contract:generate
 
       - name: Run focused autonomous safety and planner tests
         working-directory: packages/node
@@ -52,26 +59,26 @@ jobs:
             tests/unit/dev-codex-cli-local-port.test.ts \
             tests/unit/dev-autonomous-planner.test.ts \
             tests/unit/dev-autonomous-api.test.ts \
-            tests/unit/dev-autonomous-chatgpt-port.test.ts
+            tests/unit/dev-autonomous-chatgpt-port.test.ts \
+            tests/unit/surface-drift.test.ts \
+            tests/unit/parity-suite.test.ts
 
       - name: Run focused Python dev parity tests
         working-directory: packages/python
         run: python -m unittest tests.test_dev_client
 
-      - name: Build and run complete Node suite
+      - name: Run complete Node suite and bundles
         working-directory: packages/node
         run: |
-          npm run build
           npm test
           npm run bundle
           npm run bundle:backend
           npm run bundle:live-smoke
           npm run bundle:release-canary
 
-      - name: Regenerate and verify Node contracts and parity
+      - name: Verify Node contracts and parity
         working-directory: packages/node
         run: |
-          npm run contract:generate
           npm run contract:validate
           npm run docs:drift
           npm run parity:fixtures
