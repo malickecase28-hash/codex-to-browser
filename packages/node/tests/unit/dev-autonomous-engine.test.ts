@@ -166,7 +166,9 @@ describe("autonomous orchestration engine", () => {
 
     expect(chat.readReviewGuidance).toHaveBeenCalledWith({
       watcherId: revision.integration.plannerReview?.reviewWatcherId,
-      reviewDigest: D4
+      reviewDigest: D4,
+      conversationKey: "planner-main",
+      kind: "planner_review"
     });
     expect(local.integrate).toHaveBeenLastCalledWith(expect.objectContaining({
       revisionGuidance: "Resolve the planner-reported integration regression."
