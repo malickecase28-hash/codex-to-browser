@@ -178,6 +178,15 @@ jobs:
           npm init -y >/dev/null
           npm install --no-audit --no-fund "git+https://github.com/${GITHUB_REPOSITORY}.git#npm-dist"
           node --input-type=module <<'NODE'
+          const { readFile } = await import("node:fs/promises");
+          const sourceCommit = (await readFile(
+            "./node_modules/codex-chatgpt-control/SOURCE_COMMIT",
+            "utf8"
+          )).trim();
+          const expected = process.env.CHECKOUT_SHA ?? "";
+          if (sourceCommit !== expected) {
+            throw new Error(`npm-dist SOURCE_COMMIT mismatch: expected ${expected}, got ${sourceCommit}`);
+          }
           const sdk = await import("codex-chatgpt-control");
           if (typeof sdk.createChatGPT !== "function" || typeof sdk.createDevAutonomousApi !== "function") {
             throw new Error("npm-dist install did not expose the compiled SDK surface");
