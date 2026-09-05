@@ -10,6 +10,7 @@ import type {
   DevAutonomousChatPort,
   DevAutonomousLocalPort
 } from "../../src/dev/autonomous-engine.js";
+import type { DevAutonomousPlannerPort } from "../../src/dev/autonomous-planner.js";
 import { FileDevAutonomousWorkflowStore } from "../../src/dev/autonomous-store.js";
 
 const roots: string[] = [];
@@ -43,6 +44,16 @@ function plan() {
   } as const;
 }
 
+function planningSpec() {
+  return {
+    workflowId: "workflow-api",
+    projectKey: "g-p-project1",
+    plannerConversationKey: "planner-main",
+    objective: "Plan the repository work without implementing it.",
+    repositoryUrl: "https://github.com/malickecase28-hash/codex-to-browser"
+  } as const;
+}
+
 function chat(options: { pending?: boolean } = {}): DevAutonomousChatPort {
   return {
     ensureWorkerConversation: vi.fn(async () => ({ conversationKey: "worker-task-a" })),
@@ -66,6 +77,16 @@ function chat(options: { pending?: boolean } = {}): DevAutonomousChatPort {
       reviewDigest: D3
     }))
   };
+}
+
+function planner(): DevAutonomousPlannerPort & { planWorkflow: ReturnType<typeof vi.fn> } {
+  const planWorkflow = vi.fn(async (spec: ReturnType<typeof planningSpec>) => ({
+    workflowId: spec.workflowId,
+    projectKey: spec.projectKey,
+    plannerConversationKey: spec.plannerConversationKey,
+    tasks: plan().tasks
+  }));
+  return { planWorkflow } as unknown as DevAutonomousPlannerPort & { planWorkflow: ReturnType<typeof vi.fn> };
 }
 
 function local(): DevAutonomousLocalPort {
@@ -107,17 +128,39 @@ function local(): DevAutonomousLocalPort {
 
 async function api(options: {
   chat?: DevAutonomousChatPort;
+  planner?: DevAutonomousPlannerPort;
   local?: DevAutonomousLocalPort;
 } = {}): Promise<DevAutonomousApi> {
   const stateRoot = await root();
   return createDevAutonomousApi({
     store: new FileDevAutonomousWorkflowStore({ stateRoot }),
     chat: options.chat ?? chat(),
+    ...(options.planner === undefined ? {} : { planner: options.planner }),
     ...(options.local === undefined ? {} : { local: options.local })
   });
 }
 
 describe("public autonomous SDK", () => {
+  it("bootstraps a durable workflow from the master planner exactly once", async () => {
+    const planning = planner();
+    const value = await api({ planner: planning, local: local() });
+
+    const first = await value.bootstrap(planningSpec());
+    const second = await value.bootstrap(planningSpec());
+
+    expect(first.workflowId).toBe("workflow-api");
+    expect(second).toEqual(first);
+    expect(planning.planWorkflow).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when master planning was not configured", async () => {
+    const value = await api({ local: local() });
+
+    await expect(value.plan(planningSpec())).rejects.toMatchObject({
+      blockerCode: "planner_unavailable"
+    });
+  });
+
   it("returns control to the host when ChatGPT is pending instead of spinning", async () => {
     const value = await api({ chat: chat({ pending: true }), local: local() });
     await value.create(plan());
