@@ -8,24 +8,24 @@ import type { DevChatGPTSdk } from "../../src/dev/client.js";
 function fakeDev(calls: Array<readonly [string, unknown]>): DevChatGPTSdk {
   return {
     projects: {
-      list: async filters => {
+      list: async (filters: unknown) => {
         calls.push(["projects.list", filters]);
         return { ok: true, status: "ok", data: [], warnings: [], context: { timestamp: "2026-09-05T00:00:00.000Z" } };
       },
-      delete: async (_ref, options) => {
+      delete: async (_ref: unknown, options: unknown) => {
         calls.push(["projects.delete", options]);
         return { ok: true, status: "ok", warnings: [], context: { timestamp: "2026-09-05T00:00:00.000Z" } } as never;
       }
     },
     planner: {
-      delete: async (_ref, options) => {
+      delete: async (_ref: unknown, options: unknown) => {
         calls.push(["planner.delete", options]);
         return { ok: true, status: "ok", warnings: [], context: { timestamp: "2026-09-05T00:00:00.000Z" } } as never;
       }
     },
     worker: {},
     autonomous: {
-      run: async (_workflowId, options) => {
+      run: async (_workflowId: unknown, options: unknown) => {
         calls.push(["autonomous.run", options]);
         return { workflow: {}, steps: 1, complete: false, waiting: true } as never;
       }
