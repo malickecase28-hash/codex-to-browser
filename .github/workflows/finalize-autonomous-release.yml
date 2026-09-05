@@ -17,7 +17,7 @@ jobs:
   finalize:
     name: finalize generated release artifacts
     if: github.actor != 'github-actions[bot]'
-    runs-on: macos-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
         with:
