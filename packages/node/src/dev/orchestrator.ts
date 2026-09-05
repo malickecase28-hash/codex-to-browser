@@ -53,8 +53,10 @@ function errorResult<T>(error: unknown, now: () => Date): CommandResult<T> {
     : new DevOrchestratorError("state_error", "Development orchestrator operation failed safely.", false);
   const status: CommandResult["status"] = devError.code === "not_found"
     ? "not_found"
-    : devError.code === "ui_unsupported"
-      ? "unsupported"
+    : devError.code === "confirmation_required"
+      ? "needs_confirmation"
+      : devError.code === "ui_unsupported"
+        ? "unsupported"
       : devError.code === "mutation_uncertain"
         ? "partial"
         : devError.code === "ambiguous_match" || devError.code === "route_drift" || devError.code === "tab_ownership_unavailable"
@@ -68,9 +70,11 @@ function errorResult<T>(error: unknown, now: () => Date): CommandResult<T> {
     blocker: {
       kind: devError.code === "not_found"
         ? "not_found"
-        : devError.code === "route_drift" || devError.code === "ui_unsupported"
-          ? "selector_drift"
-          : "unknown",
+        : devError.code === "confirmation_required"
+          ? "confirmation"
+          : devError.code === "route_drift" || devError.code === "ui_unsupported"
+            ? "selector_drift"
+            : "unknown",
       code: `dev_${devError.code}`,
       message: devError.message,
       resumable: devError.recoverable
@@ -84,6 +88,15 @@ async function safe<T>(now: () => Date, callback: () => Promise<T>): Promise<Com
     return ok(await callback(), now);
   } catch (error) {
     return errorResult<T>(error, now);
+  }
+}
+
+function requireMutationConfirmation(confirmed: boolean | undefined, label: string): void {
+  if (confirmed !== true) {
+    throw new DevOrchestratorError(
+      "confirmation_required",
+      `Explicit caller confirmation is required before ${label}.`
+    );
   }
 }
 
@@ -290,8 +303,12 @@ export function createDevOrchestrator(runtime: DevRuntime, options: DevOrchestra
     }
   };
 
-  const deleteProjectMutation = async (ref: DevProjectRef, explicitKey?: string): Promise<DevMutationResult<DevProjectRecord>> => {
-    const key = operationKey("project.delete", ref, explicitKey);
+  const deleteProjectMutation = async (
+    ref: DevProjectRef,
+    options?: Readonly<{ idempotencyKey?: string; confirmMutation?: boolean }>
+  ): Promise<DevMutationResult<DevProjectRecord>> => {
+    requireMutationConfirmation(options?.confirmMutation, "deleting a ChatGPT Project");
+    const key = operationKey("project.delete", ref, options?.idempotencyKey);
     const prior = await store.receipt(key);
     if (prior !== undefined) throw new DevOrchestratorError("not_found", "This Project deletion was already committed; the destructive mutation will not be repeated.", false);
     const before = await projectSnapshot(runtime, adapter, store);
@@ -378,8 +395,12 @@ export function createDevOrchestrator(runtime: DevRuntime, options: DevOrchestra
     }
   };
 
-  const deletePlannerMutation = async (ref: DevPlannerTaskRef, explicitKey?: string): Promise<DevMutationResult<DevPlannerTaskRecord>> => {
-    const key = operationKey("planner.delete", ref, explicitKey);
+  const deletePlannerMutation = async (
+    ref: DevPlannerTaskRef,
+    options?: Readonly<{ idempotencyKey?: string; confirmMutation?: boolean }>
+  ): Promise<DevMutationResult<DevPlannerTaskRecord>> => {
+    requireMutationConfirmation(options?.confirmMutation, "deleting a ChatGPT Planner task");
+    const key = operationKey("planner.delete", ref, options?.idempotencyKey);
     const prior = await store.receipt(key);
     if (prior !== undefined) throw new DevOrchestratorError("not_found", "This Planner deletion was already committed; the destructive mutation will not be repeated.", false);
     const before = await plannerSnapshot(runtime, adapter, store);
@@ -543,7 +564,7 @@ export function createDevOrchestrator(runtime: DevRuntime, options: DevOrchestra
     }),
     create: (spec: DevProjectSpec) => safe(now, () => createProjectMutation(spec)),
     update: (ref: DevProjectRef, changes: DevProjectChanges) => safe(now, () => updateProjectMutation(ref, changes)),
-    delete: (ref: DevProjectRef, options?: Readonly<{ idempotencyKey?: string }>) => safe(now, () => deleteProjectMutation(ref, options?.idempotencyKey)),
+    delete: (ref: DevProjectRef, options?: Readonly<{ idempotencyKey?: string; confirmMutation?: boolean }>) => safe(now, () => deleteProjectMutation(ref, options)),
     chats: Object.freeze({
       list: (ref: DevProjectRef) => safe(now, async () => {
         const project = await resolveProject(ref);
@@ -576,7 +597,7 @@ export function createDevOrchestrator(runtime: DevRuntime, options: DevOrchestra
     }),
     create: (spec: DevPlannerTaskSpec) => safe(now, () => createPlannerMutation(spec)),
     update: (ref: DevPlannerTaskRef, changes: DevPlannerTaskChanges) => safe(now, () => updatePlannerMutation(ref, changes)),
-    delete: (ref: DevPlannerTaskRef, options?: Readonly<{ idempotencyKey?: string }>) => safe(now, () => deletePlannerMutation(ref, options?.idempotencyKey)),
+    delete: (ref: DevPlannerTaskRef, options?: Readonly<{ idempotencyKey?: string; confirmMutation?: boolean }>) => safe(now, () => deletePlannerMutation(ref, options)),
     setEnabled: (ref: DevPlannerTaskRef, enabled: boolean, options?: Readonly<{ idempotencyKey?: string }>) => safe(now, () => setEnabledMutation(ref, enabled, options?.idempotencyKey)),
     runs: (ref: DevPlannerTaskRef) => safe(now, async () => {
       const task = await resolvePlanner(ref);

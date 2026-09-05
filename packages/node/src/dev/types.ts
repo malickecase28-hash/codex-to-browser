@@ -168,7 +168,7 @@ export type DevProjectsApi = Readonly<{
   ensure(spec: DevProjectSpec): Promise<CommandResult<DevMutationResult<DevProjectRecord>>>;
   create(spec: DevProjectSpec): Promise<CommandResult<DevMutationResult<DevProjectRecord>>>;
   update(ref: DevProjectRef, changes: DevProjectChanges): Promise<CommandResult<DevMutationResult<DevProjectRecord>>>;
-  delete(ref: DevProjectRef, options?: Readonly<{ idempotencyKey?: string }>): Promise<CommandResult<DevMutationResult<DevProjectRecord>>>;
+  delete(ref: DevProjectRef, options?: Readonly<{ idempotencyKey?: string; confirmMutation?: boolean }>): Promise<CommandResult<DevMutationResult<DevProjectRecord>>>;
   chats: Readonly<{
     list(ref: DevProjectRef): Promise<CommandResult<readonly Readonly<{ chatId: string; title: string; url: string }>[]>>;
     open(ref: DevProjectRef, chatRef: string): Promise<CommandResult<Readonly<{ chatId: string; title: string; url: string }>>>;
@@ -183,7 +183,7 @@ export type DevPlannerApi = Readonly<{
   find(query: string | DevFindPredicate<DevPlannerTaskRecord>): Promise<CommandResult<DevPlannerTaskRecord | undefined>>;
   create(spec: DevPlannerTaskSpec): Promise<CommandResult<DevMutationResult<DevPlannerTaskRecord>>>;
   update(ref: DevPlannerTaskRef, changes: DevPlannerTaskChanges): Promise<CommandResult<DevMutationResult<DevPlannerTaskRecord>>>;
-  delete(ref: DevPlannerTaskRef, options?: Readonly<{ idempotencyKey?: string }>): Promise<CommandResult<DevMutationResult<DevPlannerTaskRecord>>>;
+  delete(ref: DevPlannerTaskRef, options?: Readonly<{ idempotencyKey?: string; confirmMutation?: boolean }>): Promise<CommandResult<DevMutationResult<DevPlannerTaskRecord>>>;
   setEnabled(ref: DevPlannerTaskRef, enabled: boolean, options?: Readonly<{ idempotencyKey?: string }>): Promise<CommandResult<DevMutationResult<DevPlannerTaskRecord>>>;
   runs(ref: DevPlannerTaskRef): Promise<CommandResult<readonly DevPlannerRunRecord[]>>;
   runNow(ref: DevPlannerTaskRef, options?: Readonly<{ idempotencyKey?: string }>): Promise<CommandResult<DevMutationResult<DevPlannerRunRecord>>>;
@@ -204,6 +204,7 @@ export class DevOrchestratorError extends Error {
       | "ambiguous_match"
       | "not_found"
       | "invalid_spec"
+      | "confirmation_required"
       | "ui_unsupported"
       | "route_drift"
       | "tab_ownership_unavailable"

@@ -8,4 +8,6 @@ export * from "./autonomous-turn-store.js";
 export * from "./autonomous-engine.js";
 export * from "./autonomous-chatgpt-port.js";
 export * from "./autonomous-api.js";
+export * from "./autonomous-planner.js";
+export * from "./codex-cli-local-port.js";
 export * from "./plugin-bridge.js";

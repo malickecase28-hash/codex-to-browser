@@ -20,6 +20,10 @@ import {
 } from "./autonomous-api.js";
 import type { DevAutonomousLocalPort } from "./autonomous-engine.js";
 import {
+  createCodexCliAutonomousLocalPort,
+  type CodexCliAutonomousLocalPortOptions
+} from "./codex-cli-local-port.js";
+import {
   ChatGPTAutonomousPort,
   type ChatGPTAutonomousPortOptions
 } from "./autonomous-chatgpt-port.js";
@@ -30,7 +34,10 @@ export * from "../client.js";
 export type DevAutonomousClientOptions = Readonly<{
   stateRoot?: string;
   maxParallelTasks?: number;
+  /** Fully custom local implementation/test/push port. */
   local?: DevAutonomousLocalPort;
+  /** Opt into the packaged Codex CLI local port. Git push still requires allowPush: true. */
+  localCodex?: CodexCliAutonomousLocalPortOptions;
   chat?: Omit<ChatGPTAutonomousPortOptions, "stateRoot">;
 }>;
 
@@ -120,10 +127,20 @@ export function createChatGPT(options: DevChatGPTClientOptions = {}): DevChatGPT
   const store = new FileDevAutonomousWorkflowStore({
     stateRoot: join(autonomousRoot, "workflows")
   });
+  if (autonomousOptions?.local !== undefined && autonomousOptions.localCodex !== undefined) {
+    throw new TypeError("Configure either dev.autonomous.local or dev.autonomous.localCodex, not both.");
+  }
+  const local = autonomousOptions?.local ?? (autonomousOptions?.localCodex === undefined
+    ? undefined
+    : createCodexCliAutonomousLocalPort({
+        ...autonomousOptions.localCodex,
+        stateRoot: autonomousOptions.localCodex.stateRoot ?? join(autonomousRoot, "local")
+      }));
   const autonomous = createDevAutonomousApi({
     store,
     chat,
-    ...(autonomousOptions?.local === undefined ? {} : { local: autonomousOptions.local }),
+    planner: chat,
+    ...(local === undefined ? {} : { local }),
     ...(autonomousOptions?.maxParallelTasks === undefined
       ? {}
       : { maxParallelTasks: autonomousOptions.maxParallelTasks })

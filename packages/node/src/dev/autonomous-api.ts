@@ -69,7 +69,7 @@ export function createDevAutonomousApi(options: DevAutonomousApiOptions): DevAut
     return planner;
   };
   return Object.freeze({
-    plan: (spec, planningOptions) => requirePlanner().planWorkflow(spec, planningOptions),
+    plan: async (spec, planningOptions) => requirePlanner().planWorkflow(spec, planningOptions),
     bootstrap: async (spec, planningOptions) => {
       try {
         const existing = await engine.get(spec.workflowId);

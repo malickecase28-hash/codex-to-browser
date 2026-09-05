@@ -1283,6 +1283,30 @@
       "retryPolicy": "Return structured CommandResult failures; retry only when the blocker is recoverable and no duplicate prompt will be submitted.",
       "risk": "medium",
       "summary": "Select a visible ChatGPT tool when unambiguous."
+    },
+    {
+      "args": {
+        "action": "allowlisted action inside the selected namespace",
+        "args": "bounded JSON arguments for that action; destructive actions retain explicit confirmation fields",
+        "namespace": "projects, planner, worker, or autonomous"
+      },
+      "blockers": [
+        "browser_bridge_unavailable",
+        "login_required",
+        "captcha",
+        "rate_limit",
+        "selector_drift"
+      ],
+      "defaults": {},
+      "defaultTimeoutMs": 120000,
+      "examples": [
+        "await backend.request(\"dev.dispatch\", { namespace: \"autonomous\", action: \"get\", args: { workflowId: \"workflow-1\" } });"
+      ],
+      "layer": "primitive",
+      "name": "dev.dispatch",
+      "retryPolicy": "Return structured CommandResult failures; retry only when the blocker is recoverable and no duplicate prompt will be submitted.",
+      "risk": "high",
+      "summary": "Dispatch one bounded development-orchestrator namespace/action through the authoritative Node backend while preserving confirmation and visible-browser safety contracts."
     }
   ],
   "schemaVersion": "chatgpt.browser_control.backend_response.v1"

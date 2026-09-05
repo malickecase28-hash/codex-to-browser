@@ -10,6 +10,8 @@ from .models import CommandResult
 SyncRequester = Callable[[str, dict[str, Any]], Any]
 AsyncRequester = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
+DEV_BACKEND_COMMANDS = {"dispatch": "dev.dispatch"}
+
 
 def _payload(namespace: str, action: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
@@ -37,10 +39,10 @@ class _SyncDevNamespace:
         self._namespace = namespace
 
     def command(self, action: str, **args: Any) -> CommandResult:
-        return _command_result(self._request("dev.dispatch", _payload(self._namespace, action, args)))
+        return _command_result(self._request(DEV_BACKEND_COMMANDS["dispatch"], _payload(self._namespace, action, args)))
 
     def raw(self, action: str, **args: Any) -> Any:
-        return self._request("dev.dispatch", _payload(self._namespace, action, args))
+        return self._request(DEV_BACKEND_COMMANDS["dispatch"], _payload(self._namespace, action, args))
 
 
 class DevProjectChatsClient:
@@ -171,6 +173,18 @@ class DevAutonomousClient:
     def __init__(self, request: SyncRequester) -> None:
         self._namespace = _SyncDevNamespace(request, "autonomous")
 
+    def plan(self, spec: dict[str, Any], *, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        args: dict[str, Any] = {"spec": spec}
+        if options is not None:
+            args["options"] = options
+        return _record(self._namespace.raw("plan", **args), label="autonomous.plan")
+
+    def bootstrap(self, spec: dict[str, Any], *, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        args: dict[str, Any] = {"spec": spec}
+        if options is not None:
+            args["options"] = options
+        return _record(self._namespace.raw("bootstrap", **args), label="autonomous.bootstrap")
+
     def create(self, plan: dict[str, Any]) -> dict[str, Any]:
         return _record(self._namespace.raw("create", plan=plan), label="autonomous.create")
 
@@ -215,10 +229,10 @@ class _AsyncDevNamespace:
         self._namespace = namespace
 
     async def command(self, action: str, **args: Any) -> CommandResult:
-        return _command_result(await self._request("dev.dispatch", _payload(self._namespace, action, args)))
+        return _command_result(await self._request(DEV_BACKEND_COMMANDS["dispatch"], _payload(self._namespace, action, args)))
 
     async def raw(self, action: str, **args: Any) -> Any:
-        return await self._request("dev.dispatch", _payload(self._namespace, action, args))
+        return await self._request(DEV_BACKEND_COMMANDS["dispatch"], _payload(self._namespace, action, args))
 
 
 class AsyncDevProjectChatsClient:
@@ -348,6 +362,18 @@ class AsyncDevWorkerClient:
 class AsyncDevAutonomousClient:
     def __init__(self, request: AsyncRequester) -> None:
         self._namespace = _AsyncDevNamespace(request, "autonomous")
+
+    async def plan(self, spec: dict[str, Any], *, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        args: dict[str, Any] = {"spec": spec}
+        if options is not None:
+            args["options"] = options
+        return _record(await self._namespace.raw("plan", **args), label="autonomous.plan")
+
+    async def bootstrap(self, spec: dict[str, Any], *, options: dict[str, Any] | None = None) -> dict[str, Any]:
+        args: dict[str, Any] = {"spec": spec}
+        if options is not None:
+            args["options"] = options
+        return _record(await self._namespace.raw("bootstrap", **args), label="autonomous.bootstrap")
 
     async def create(self, plan: dict[str, Any]) -> dict[str, Any]:
         return _record(await self._namespace.raw("create", plan=plan), label="autonomous.create")

@@ -22,6 +22,7 @@ from .backend import (
     StdioBackendTransport,
 )
 from .client import ChatGPT, ChatGPTAgent, ChatGPTRunner
+from .dev import AsyncDevClient, DevClient
 from .operations import (
     AsyncOperationsClient,
     OperationActionBlocker,
@@ -165,6 +166,7 @@ __all__ = [
     "AsyncChatGPT",
     "AsyncChatGPTRunner",
     "AsyncCommandClient",
+    "AsyncDevClient",
     "AsyncPrimitiveGroup",
     "AsyncReportsClient",
     "AsyncResponsesClient",
@@ -203,6 +205,7 @@ __all__ = [
     "ConfigurationInspectionData",
     "ConfigurationOption",
     "DetectExperienceData",
+    "DevClient",
     "DoctorReport",
     "explain_blocker",
     "ExperienceClient",

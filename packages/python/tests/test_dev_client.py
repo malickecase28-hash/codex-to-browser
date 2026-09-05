@@ -77,6 +77,27 @@ class DevClientTests(unittest.TestCase):
             {"idempotencyKey": "delete-two", "confirmMutation": True},
         )
 
+    def test_sync_autonomous_bootstrap_uses_dev_dispatch(self) -> None:
+        backend = RecordingBackend()
+        dev = DevClient(backend)
+        spec = {
+            "workflowId": "workflow-one",
+            "projectKey": "g-p-project1",
+            "plannerConversationKey": "planner-main",
+            "objective": "Plan the work.",
+        }
+
+        dev.autonomous.bootstrap(spec, options={"timeoutMs": 5000})
+
+        self.assertEqual(
+            backend.calls[-1],
+            ("dev.dispatch", {
+                "namespace": "autonomous",
+                "action": "bootstrap",
+                "args": {"spec": spec, "options": {"timeoutMs": 5000}},
+            }),
+        )
+
     def test_public_sync_chatgpt_exposes_dev_namespace(self) -> None:
         backend = RecordingBackend()
         chatgpt = ChatGPT(backend=backend)

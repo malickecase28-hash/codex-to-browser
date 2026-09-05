@@ -20,12 +20,24 @@ import {
 } from "../operations/types.js";
 import {
   DevAutonomousPortError,
+  deterministicDevOperationId,
+  deterministicDevWatcherId,
   type DevAutonomousChatPort,
   type DevAutonomousReviewObservation,
   type DevAutonomousTurnObservation
 } from "./autonomous-engine.js";
-import type {
-  DevAutonomousWorkflow,
+import {
+  devAutonomousPlannerPrompt,
+  devAutonomousPlanningDigest,
+  parseDevAutonomousPlannerResponse,
+  validateDevAutonomousPlanningSpec,
+  type DevAutonomousPlannerPort,
+  type DevAutonomousPlanningOptions,
+  type DevAutonomousPlanningSpec
+} from "./autonomous-planner.js";
+import {
+  DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION,
+  type DevAutonomousWorkflow,
   DevGuidanceDispatch,
   DevGuidanceEvidence,
   DevTaskRecord
@@ -65,7 +77,7 @@ export type ChatGPTAutonomousPortOptions = Readonly<{
 const CHATGPT_ORIGIN = "https://chatgpt.com";
 const PROJECT_ID_PATTERN = /^g-p-[A-Za-z0-9._:-]{1,256}$/u;
 
-export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
+export class ChatGPTAutonomousPort implements DevAutonomousChatPort, DevAutonomousPlannerPort {
   readonly conversations: ConversationManager;
   readonly watcherStore: FileResponseWatcherStore;
   readonly watchers: ResponseWatcherRegistry;
@@ -87,6 +99,40 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
     this.watchers = options.watchers ?? new ResponseWatcherRegistry(this.watcherStore);
     this.turns = options.turns ?? new FileDevAutonomousTurnStore({ stateRoot: join(root, "turns") });
     this.provisioner = options.provisioner;
+  }
+
+  async planWorkflow(
+    spec: DevAutonomousPlanningSpec,
+    options: DevAutonomousPlanningOptions = {}
+  ): Promise<import("./autonomous-workflow.js").DevWorkflowPlan> {
+    validateDevAutonomousPlanningSpec(spec);
+    const digest = devAutonomousPlanningDigest(spec);
+    const material = `planner-plan:${spec.workflowId}:${digest}`;
+    const workflow = planningWorkflow(spec);
+    const conversation = await this.resolvePlannerConversation(workflow, spec.plannerConversationKey);
+    const operationId = deterministicDevOperationId(material);
+    const watcherId = deterministicDevWatcherId(material);
+    await this.beginTurn({
+      workflow,
+      conversation,
+      logicalConversationKey: spec.plannerConversationKey,
+      kind: "planner_plan",
+      operationId,
+      watcherId,
+      prompt: devAutonomousPlannerPrompt(spec)
+    });
+    const response = await this.collectTurn(watcherId, {
+      wait: true,
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs })
+    });
+    if (response === undefined) {
+      throw new DevAutonomousPortError(
+        "planner_response_pending",
+        true,
+        "The master planner response is still pending; retrying will resume the same durable planner turn."
+      );
+    }
+    return parseDevAutonomousPlannerResponse(response.text, spec);
   }
 
   async ensureWorkerConversation(input: Readonly<{
@@ -251,6 +297,36 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
       throw new DevAutonomousPortError("conversation_not_established", true, message);
     }
     return existing;
+  }
+
+  private async resolvePlannerConversation(
+    workflow: DevAutonomousWorkflow,
+    key: string
+  ): Promise<ConversationRecord | undefined> {
+    const existing = await this.existingConversation(key);
+    if (existing !== undefined) return existing;
+    if (this.provisioner === undefined) return undefined;
+    const identity = await this.provisioner.ensure({
+      workflow,
+      logicalConversationKey: key,
+      role: "planner"
+    });
+    validateConversationIdentity(identity);
+    const record = await this.conversations.remember({
+      key,
+      conversationId: identity.conversationId,
+      url: identity.url,
+      ...(identity.title === undefined ? {} : { title: identity.title }),
+      surface: "chat"
+    });
+    await this.conversations.affinity.remember({
+      key,
+      tabId: identity.tabId,
+      conversationId: identity.conversationId,
+      url: identity.url,
+      surface: "chat"
+    });
+    return record;
   }
 
   private async resolveGuidanceConversation(
@@ -450,6 +526,19 @@ export class ChatGPTAutonomousPort implements DevAutonomousChatPort {
       surface: "chat"
     });
   }
+}
+
+function planningWorkflow(spec: DevAutonomousPlanningSpec): DevAutonomousWorkflow {
+  return Object.freeze({
+    schemaVersion: DEV_AUTONOMOUS_WORKFLOW_SCHEMA_VERSION,
+    workflowId: spec.workflowId,
+    projectKey: spec.projectKey,
+    plannerConversationKey: spec.plannerConversationKey,
+    revision: 0,
+    status: "running",
+    tasks: Object.freeze([]),
+    integration: Object.freeze({})
+  });
 }
 
 export function createChatGPTAutonomousPort(

@@ -165,7 +165,10 @@ function workflow(projectKey = "project-1") {
   });
 }
 
-function fakeClient(operationState: OperationStateV1 = state()) {
+function fakeClient(
+  operationState: OperationStateV1 = state(),
+  responseText = "Use the existing lifecycle seam and add a focused test."
+) {
   const submit = vi.fn(async (_request: OperationSubmitRequestV1) => ({ handle: handle(), submission: {} }));
   const inspect = vi.fn(async () => ({ handle: handle(), state: operationState }));
   const collect = vi.fn(async () => ({
@@ -176,7 +179,7 @@ function fakeClient(operationState: OperationStateV1 = state()) {
     attempts: 1,
     turn: { assistantTurnId: "assistant-after" },
     response: {
-      rawText: "Use the existing lifecycle seam and add a focused test.",
+      rawText: responseText,
       text: { digest: RESPONSE_DIGEST },
       artifacts: [],
       finishReason: "stop"
@@ -200,6 +203,40 @@ function provisioner(): DevProjectConversationProvisioner {
 }
 
 describe("transactional autonomous ChatGPT port", () => {
+  it("creates a bounded master-planner turn in the exact Project chat and parses its task DAG", async () => {
+    const stateRoot = await root();
+    const response = JSON.stringify({
+      workflowId: "workflow-plan",
+      projectKey: "g-p-project1",
+      plannerConversationKey: "planner-main",
+      tasks: [{
+        taskId: "TASK-001",
+        title: "Implement the release gate",
+        summary: "Add deterministic release verification.",
+        dependencies: [],
+        acceptanceCriteria: ["release verification passes"]
+      }]
+    });
+    const { client, submit } = fakeClient(state(), response);
+    const port = new ChatGPTAutonomousPort(client, { stateRoot, provisioner: provisioner() });
+
+    const plan = await port.planWorkflow({
+      workflowId: "workflow-plan",
+      projectKey: "g-p-project1",
+      plannerConversationKey: "planner-main",
+      objective: "Plan the release work.",
+      repositoryUrl: "https://github.com/malickecase28-hash/codex-to-browser"
+    });
+
+    expect(plan.tasks[0]?.taskId).toBe("TASK-001");
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit.mock.calls[0]?.[0]).toMatchObject({
+      surface: "chat",
+      target: { type: "tab_id", tabId: "tab-project-1" }
+    });
+    expect(submit.mock.calls[0]?.[0].prompt).toContain("Do not implement code");
+  });
+
   it("provisions a Project chat, submits once to its exact tab, and registers the authenticated response baseline", async () => {
     const stateRoot = await root();
     const { client, submit } = fakeClient();

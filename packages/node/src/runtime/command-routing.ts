@@ -118,7 +118,8 @@ export const COMMAND_ROUTING_INVENTORY = Object.freeze({
     "response.copy",
     "modes.set",
     "modes.get",
-    "tools.select"
+    "tools.select",
+    "dev.dispatch"
   ] as const),
   /**
    * Browser acquisition seams not covered by the facade remain explicit
@@ -214,7 +215,8 @@ const LEGACY_PAGE_FACADE_OWNERS: Readonly<Record<LegacyPageFacadeCommand, string
   "response.copy": "src/commands/response-actions.ts",
   "modes.set": "src/commands/modes.ts",
   "modes.get": "src/commands/modes.ts",
-  "tools.select": "src/commands/modes.ts"
+  "tools.select": "src/commands/modes.ts",
+  "dev.dispatch": "src/dev/backend-dispatch.ts -> src/dev/client.ts -> coordinated dev runtime"
 });
 
 export const COMMAND_ROUTING_GAPS: readonly CommandRoutingGap[] = Object.freeze(

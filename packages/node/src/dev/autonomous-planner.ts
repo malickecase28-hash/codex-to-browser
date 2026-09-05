@@ -48,8 +48,8 @@ export class DevAutonomousPlannerError extends Error {
 
 export function validateDevAutonomousPlanningSpec(spec: DevAutonomousPlanningSpec): void {
   boundedId(spec.workflowId, "workflowId");
-  boundedId(spec.projectKey, "projectKey");
-  boundedId(spec.plannerConversationKey, "plannerConversationKey");
+  boundedText(spec.projectKey, "projectKey", 512);
+  boundedText(spec.plannerConversationKey, "plannerConversationKey", 512);
   boundedText(spec.objective, "objective", MAX_OBJECTIVE_CHARS);
   if (spec.repositoryUrl !== undefined) {
     boundedText(spec.repositoryUrl, "repositoryUrl", MAX_REPOSITORY_URL_CHARS);

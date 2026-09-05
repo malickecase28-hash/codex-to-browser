@@ -159,6 +159,16 @@ async function dispatchAutonomous(
   args: Record<string, unknown>
 ): Promise<unknown> {
   switch (action) {
+    case "plan":
+      return dev.autonomous.plan(
+        requiredRecord(args, "spec") as Parameters<DevChatGPTSdk["autonomous"]["plan"]>[0],
+        optionalRecordOrUndefined(args.options) as Parameters<DevChatGPTSdk["autonomous"]["plan"]>[1]
+      );
+    case "bootstrap":
+      return dev.autonomous.bootstrap(
+        requiredRecord(args, "spec") as Parameters<DevChatGPTSdk["autonomous"]["bootstrap"]>[0],
+        optionalRecordOrUndefined(args.options) as Parameters<DevChatGPTSdk["autonomous"]["bootstrap"]>[1]
+      );
     case "create":
       return dev.autonomous.create(requiredRecord(args, "plan") as DevWorkflowPlan);
     case "get":

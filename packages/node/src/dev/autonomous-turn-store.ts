@@ -12,7 +12,7 @@ const MAX_TURN_TEXT_BYTES = 4 * 1024 * 1024;
 const DIGEST_PATTERN = /^(?:sha256|hmac-sha256):[0-9a-f]{64}$/u;
 const queues = new Map<string, Promise<void>>();
 
-export type DevAutonomousTurnKind = "guidance" | "worker_review" | "planner_review";
+export type DevAutonomousTurnKind = "planner_plan" | "guidance" | "worker_review" | "planner_review";
 
 export type DevAutonomousTurnRecord = Readonly<{
   schemaVersion: typeof DEV_AUTONOMOUS_TURN_SCHEMA_VERSION;
@@ -75,7 +75,7 @@ export class FileDevAutonomousTurnStore {
     validateId(input.watcherId, "watcherId");
     validateId(input.logicalConversationKey, "logicalConversationKey", 512);
     validateHandle(input.handle);
-    if (input.kind !== "guidance" && input.kind !== "worker_review" && input.kind !== "planner_review") {
+    if (input.kind !== "planner_plan" && input.kind !== "guidance" && input.kind !== "worker_review" && input.kind !== "planner_review") {
       throw new DevAutonomousTurnStoreError("invalid_record", "Autonomous turn kind is invalid.");
     }
     return this.withQueue(input.watcherId, async () => {
@@ -200,7 +200,7 @@ function parseRecord(value: unknown, watcherId: string): DevAutonomousTurnRecord
   if (record.schemaVersion !== DEV_AUTONOMOUS_TURN_SCHEMA_VERSION || record.watcherId !== watcherId) invalid();
   validateId(record.watcherId as string, "watcherId");
   validateId(record.logicalConversationKey as string, "logicalConversationKey", 512);
-  if (record.kind !== "guidance" && record.kind !== "worker_review" && record.kind !== "planner_review") invalid();
+  if (record.kind !== "planner_plan" && record.kind !== "guidance" && record.kind !== "worker_review" && record.kind !== "planner_review") invalid();
   if (typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") invalid();
   validateHandle(record.handle as OperationHandleV1);
   let response: DevAutonomousTurnRecord["response"];

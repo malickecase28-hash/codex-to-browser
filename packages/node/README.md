@@ -51,6 +51,37 @@ const result = await chatgpt.runner.run(reviewer, {
 });
 ```
 
+## Autonomous repository development with Codex CLI
+
+Install and sign in to the official Codex CLI when you want the packaged local implementation/test adapter:
+
+```bash
+npm install -g @openai/codex
+codex
+```
+
+Opt in explicitly when creating the enhanced client:
+
+```ts
+const chatgpt = createChatGPT({
+  agent: globalThis.agent,
+  dev: {
+    autonomous: {
+      localCodex: {
+        repositoryRoot: process.cwd(),
+        allowPush: true
+      }
+    }
+  }
+});
+```
+
+`localCodex` is not enabled implicitly. `allowPush: true` is a second explicit opt-in because Git push is a network mutation. The adapter uses owned Git worktrees, direct executable invocation without a shell, Codex `workspace-write` sandboxing, separate implementation and independent-test sessions, candidate-digest verification, and non-force pushes. It never enables Codex's dangerous approval/sandbox bypass flags.
+
+Project and Planner deletion likewise requires explicit `confirmMutation: true`; unconfirmed destructive calls stop with `needs_confirmation` before the browser adapter touches a delete control. Planner controls that cannot be positively verified in the live visible UI remain `ui_unsupported` rather than using guessed selectors or hidden endpoints.
+
+See `docs/github-install.md` in the source repository for the complete install, autonomous workflow, Python parity, and distribution instructions.
+
 ## Connected Browser transport
 
 The plugin uses the connected `@Browser` extension bridge. Browser Harness,

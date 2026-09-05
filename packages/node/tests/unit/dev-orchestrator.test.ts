@@ -220,6 +220,44 @@ describe("development orchestrator", () => {
     expect(result.blocker?.code).toBe("dev_ambiguous_match");
   });
 
+  it("requires explicit caller confirmation before deleting a Project", async () => {
+    const root = await stateRoot();
+    const fake = fakeAdapter();
+    fake.projects.push({ projectId: "g-p-one", name: "Build", url: "https://chatgpt.com/g/g-p-one/project" });
+    const dev = createDevOrchestrator(runtimeFromEnvironment({}), { stateRoot: root, adapter: fake.adapter });
+
+    const blocked = await dev.projects.delete("g-p-one", { idempotencyKey: "delete-build" });
+
+    expect(blocked.ok).toBe(false);
+    expect(blocked.status).toBe("needs_confirmation");
+    expect(blocked.blocker?.kind).toBe("confirmation");
+    expect(blocked.blocker?.code).toBe("dev_confirmation_required");
+    expect(fake.counts.deleteProject ?? 0).toBe(0);
+    expect(fake.projects).toHaveLength(1);
+
+    const confirmed = await dev.projects.delete("g-p-one", {
+      idempotencyKey: "delete-build",
+      confirmMutation: true
+    });
+    expect(confirmed.ok).toBe(true);
+    expect(fake.counts.deleteProject).toBe(1);
+    expect(fake.projects).toHaveLength(0);
+  });
+
+  it("requires explicit caller confirmation before a Planner delete reaches a custom adapter", async () => {
+    const root = await stateRoot();
+    const fake = fakeAdapter();
+    fake.tasks.push({ taskId: "task-1", name: "Nightly", enabled: true });
+    const dev = createDevOrchestrator(runtimeFromEnvironment({}), { stateRoot: root, adapter: fake.adapter });
+
+    const blocked = await dev.planner.delete("task-1");
+
+    expect(blocked.ok).toBe(false);
+    expect(blocked.status).toBe("needs_confirmation");
+    expect(fake.counts.deletePlannerTask ?? 0).toBe(0);
+    expect(fake.tasks).toHaveLength(1);
+  });
+
   it("sets planner enabled state once and reuses its durable receipt", async () => {
     const root = await stateRoot();
     const fake = fakeAdapter();

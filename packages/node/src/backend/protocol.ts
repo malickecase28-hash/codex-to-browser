@@ -107,6 +107,7 @@ export const backendCommands = [
   "modes.get",
   "tools.select",
   "response.copy",
+  "dev.dispatch",
   "operations.submit",
   "operations.collect",
   "operations.inspect",

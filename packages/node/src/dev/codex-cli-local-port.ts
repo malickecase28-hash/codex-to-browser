@@ -90,8 +90,8 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
   private readonly baseRef: string;
   private readonly remote: string;
   private readonly allowPush: boolean;
-  private readonly model?: string;
-  private readonly profile?: string;
+  private readonly model: string | undefined;
+  private readonly profile: string | undefined;
   private readonly timeoutMs: number;
   private readonly maxOutputBytes: number;
   private readonly runProcess: CodexCliLocalProcessRunner;
@@ -121,7 +121,7 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     guidance: string;
   }>): Promise<DevImplementationCandidate> {
     const repositoryRoot = await this.verifiedRepositoryRoot();
-    const branch = await this.taskBranch(input.task);
+    const branch = await this.taskBranch(input.workflow, input.task);
     const worktree = await this.ensureWorktree(
       repositoryRoot,
       branch,
@@ -217,7 +217,7 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     const worktree = await this.ensureWorktree(
       repositoryRoot,
       branch,
-      `integration:${input.workflow.workflowId}:${input.workflow.revision}`
+      `integration:${input.workflow.workflowId}:${branch}`
     );
     for (const task of input.acceptedTasks) {
       const sha = task.push!.commitSha;
@@ -256,7 +256,7 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     const worktree = await this.ensureWorktree(
       repositoryRoot,
       input.implementation.branch,
-      `integration:${input.workflow.workflowId}:${input.workflow.revision}`
+      `integration:${input.workflow.workflowId}:${input.implementation.branch}`
     );
     await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
     const report = await this.independentTest(
@@ -286,7 +286,7 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     const worktree = await this.ensureWorktree(
       repositoryRoot,
       input.implementation.branch,
-      `integration:${input.workflow.workflowId}:${input.workflow.revision}`
+      `integration:${input.workflow.workflowId}:${input.implementation.branch}`
     );
     await this.assertCommittedCandidate(worktree, input.implementation.candidateDigest);
     const commitSha = await this.gitText(worktree, ["rev-parse", "HEAD"]);
@@ -320,8 +320,8 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     return root;
   }
 
-  private async taskBranch(task: DevTaskRecord): Promise<string> {
-    const branch = task.plannedBranch ?? `codex/${safeRefPart(task.taskId)}-attempt-${task.attempt}`;
+  private async taskBranch(workflow: DevAutonomousWorkflow, task: DevTaskRecord): Promise<string> {
+    const branch = task.plannedBranch ?? `codex/${safeRefPart(workflow.workflowId)}/${safeRefPart(task.taskId)}`;
     if (["main", "master", "trunk"].includes(branch)) {
       throw blocked("unsafe_branch", "Autonomous task work cannot target a primary branch directly.");
     }
@@ -336,21 +336,25 @@ export class CodexCliAutonomousLocalPort implements DevAutonomousLocalPort {
     if (!inside(worktreesRoot, path)) throw blocked("state_path_invalid", "Owned worktree path escaped the autonomous state root.");
     await mkdir(worktreesRoot, { recursive: true, mode: 0o700 });
 
-    const existing = await this.gitRaw(path, ["rev-parse", "--show-toplevel"]);
-    if (existing.exitCode === 0) {
-      const observed = resolve(existing.stdout.trim());
-      if (observed !== path) throw blocked("worktree_mismatch", "An existing autonomous worktree has an unexpected Git root.");
-      const currentBranch = await this.gitText(path, ["branch", "--show-current"]);
-      if (currentBranch !== branch) throw blocked("worktree_mismatch", "An existing autonomous worktree is bound to a different branch.");
-      return path;
-    }
-
+    let pathState: "missing" | "directory" | "occupied" = "missing";
     try {
-      const stat = await lstat(path);
-      if (stat.isDirectory()) await rm(path, { recursive: true, force: true });
-      else throw blocked("worktree_mismatch", "The owned worktree path is occupied by a non-directory entry.");
-    } catch (error) {
-      if (error instanceof PortError) throw error;
+      pathState = (await lstat(path)).isDirectory() ? "directory" : "occupied";
+    } catch {
+      pathState = "missing";
+    }
+    if (pathState === "occupied") {
+      throw blocked("worktree_mismatch", "The owned worktree path is occupied by a non-directory entry.");
+    }
+    if (pathState === "directory") {
+      const existing = await this.gitRaw(path, ["rev-parse", "--show-toplevel"]);
+      if (existing.exitCode === 0) {
+        const observed = resolve(existing.stdout.trim());
+        if (observed !== path) throw blocked("worktree_mismatch", "An existing autonomous worktree has an unexpected Git root.");
+        const currentBranch = await this.gitText(path, ["branch", "--show-current"]);
+        if (currentBranch !== branch) throw blocked("worktree_mismatch", "An existing autonomous worktree is bound to a different branch.");
+        return path;
+      }
+      await rm(path, { recursive: true, force: true });
     }
 
     const ref = await this.gitRaw(repositoryRoot, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
