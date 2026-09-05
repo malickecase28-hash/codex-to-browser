@@ -11,9 +11,24 @@ const REQUIRED_FILES = [
   "CHANGELOG.md",
   "dist/src/index.js",
   "dist/src/index.d.ts",
+  "dist/src/dev/autonomous-api.js",
+  "dist/src/dev/autonomous-api.d.ts",
+  "dist/src/dev/autonomous-chatgpt-port.js",
+  "dist/src/dev/autonomous-chatgpt-port.d.ts",
+  "dist/src/dev/autonomous-engine.js",
+  "dist/src/dev/autonomous-engine.d.ts",
+  "dist/src/dev/autonomous-workflow.js",
+  "dist/src/dev/autonomous-workflow.d.ts",
+  "dist/src/dev/codex-cli-local-port.js",
+  "dist/src/dev/codex-cli-local-port.d.ts",
+  "dist/src/dev/client.js",
+  "dist/src/dev/client.d.ts",
+  "dist/src/scripts/backend-server.js",
+  "dist/src/scripts/chatgpt-thread-bin.js",
   "dist/codex-chatgpt-control.bundle.mjs",
   "dist/codex-chatgpt-control-backend.mjs",
-  "contracts/v1/manifest.json"
+  "contracts/v1/manifest.json",
+  "references/autonomous-development.md"
 ];
 
 const FORBIDDEN_PATTERNS = [
@@ -49,6 +64,7 @@ function main() {
     filename: pack.filename,
     files: files.length,
     unpackedSize: pack.unpackedSize,
+    required: REQUIRED_FILES.length,
     missing,
     forbidden
   };
