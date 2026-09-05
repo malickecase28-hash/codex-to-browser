@@ -175,7 +175,7 @@ async function installAndVerify(root, specs, versions) {
   const pythonEnv = join(root, "python-env");
   await mkdir(nodeEnv, { recursive: true });
   await writeFile(join(nodeEnv, "package.json"), '{"private":true,"type":"module"}\n', "utf8");
-  const npmInstallArgs = ["install", "--ignore-scripts", "--no-audit", "--no-fund"];
+  const npmInstallArgs = ["install", "--no-audit", "--no-fund"];
   if (specs.registry) npmInstallArgs.push(`--registry=${NPM_REGISTRY}`);
   npmInstallArgs.push(specs.nodeSpec);
   const npm = npmInvocation(npmInstallArgs);
