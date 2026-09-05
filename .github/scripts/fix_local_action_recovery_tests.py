@@ -10,6 +10,18 @@ def replace_once(path: str, old: str, new: str) -> None:
     file.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
+# Integration owns one physical branch/worktree for the entire workflow. A
+# workflow-state revision is not a branch-identity boundary.
+replace_once(
+    "packages/node/src/dev/codex-cli-local-port.ts",
+    'function integrationBranch(workflow: DevAutonomousWorkflow): string {\n'
+    '  return `codex/${safeRefPart(workflow.workflowId)}-integration-r${workflow.revision}`;\n'
+    '}\n',
+    'function integrationBranch(workflow: DevAutonomousWorkflow): string {\n'
+    '  return `codex/${safeRefPart(workflow.workflowId)}-integration`;\n'
+    '}\n',
+)
+
 # Remove an accidental placeholder assertion from the recovery test. The actual
 # proof is the durable action record plus zero second Codex invocations.
 replace_once(
